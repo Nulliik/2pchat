@@ -1,6 +1,7 @@
 package com.example.twopchat
 
 import com.example.twopchat.ui.chat.Message
+import com.example.twopchat.ui.chat.MessageDeliveryStatus
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -45,7 +46,7 @@ class MediaTransferStatusStateMachineTest {
     }
 
     @Test
-    fun outgoingMedia_onTransferSuccess_transitionsToSentThenRead() {
+    fun outgoingMedia_incomingActivityDoesNotMarkMessageAsRead() {
         var msg = Message(
             id = "msg-102",
             text = "Sent a video",
@@ -66,11 +67,18 @@ class MediaTransferStatusStateMachineTest {
 
         assertFalse(isPendingOrSending)
 
-        // Now an incoming message arrives
-        val incomingAfter = true
-        val isRead = msg.isMe && !isPendingOrSending && incomingAfter
+        // Another incoming message or typing activity is not a read receipt.
+        val isRead = msg.isMe && !isPendingOrSending &&
+            msg.status?.startsWith("READ") == true
 
-        assertTrue("Completed SENT media message should become READ when peer replies", isRead)
+        assertFalse("Only an explicit read receipt can mark a message as READ", isRead)
+    }
+
+    @Test
+    fun deliveryAndReadReceiptsAdvanceStatusWithoutRegression() {
+        assertEquals("DELIVERED", MessageDeliveryStatus.merge("SENT", "DELIVERED"))
+        assertEquals("READ", MessageDeliveryStatus.merge("DELIVERED", "READ"))
+        assertEquals("READ", MessageDeliveryStatus.merge("READ", "DELIVERED"))
     }
 
     @Test

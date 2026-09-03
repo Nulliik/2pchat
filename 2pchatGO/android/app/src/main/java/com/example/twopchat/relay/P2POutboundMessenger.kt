@@ -339,6 +339,16 @@ internal class P2POutboundMessenger(
         sendPersistedControl(context, peerName, endpoint, controlId, "read_receipt", payload, deleteAfterSend = true)
     }
 
+    fun sendDeliveryReceipt(context: Context, peerName: String, endpoint: String?, messageId: String) {
+        val controlId = "delivery:$messageId"
+        val payload = JSONObject().apply {
+            put("type", "delivery_receipt")
+            put("message_id", messageId)
+            put("control_id", controlId)
+        }
+        sendPersistedControl(context, peerName, endpoint, controlId, "delivery_receipt", payload, deleteAfterSend = true)
+    }
+
     /** Persist a receipt before a short-lived component (such as a receiver) returns. */
     fun enqueueReadReceipt(context: Context, peerName: String, messageId: String): Boolean {
         if (messageId.isBlank() || isPaused(context, peerName)) return false
@@ -754,7 +764,9 @@ internal class P2POutboundMessenger(
                 control.payload,
                 TrafficDirection.SENT,
             )
-            if (control.type == "read_receipt" || control.type == "delete_message") db.deletePendingControl(control.id)
+            if (control.type == "read_receipt" || control.type == "delivery_receipt" || control.type == "delete_message") {
+                db.deletePendingControl(control.id)
+            }
             // Edits remain until the receiver returns edit_ack.
         }
     }

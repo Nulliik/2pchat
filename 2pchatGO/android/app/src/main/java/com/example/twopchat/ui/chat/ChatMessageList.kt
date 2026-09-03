@@ -100,9 +100,6 @@ internal fun ChatMessageList(
 ) {
     val coroutineScope = rememberCoroutineScope()
     val displayMessages = messages
-    val incomingAfter = remember(messages) {
-        incomingMessageAfterFlags(messages)
-    }
     val currentMessages by rememberUpdatedState(displayMessages)
     val currentOnOpenImages by rememberUpdatedState(onOpenImages)
     val onScrollToReply = remember(listState, coroutineScope) {
@@ -259,11 +256,11 @@ internal fun ChatMessageList(
                 msg.status?.startsWith("SENDING") == true ||
                 msg.status?.startsWith("FAILED") == true
             val isRead = msg.isMe && !isPendingOrSending && (
-                incomingAfter.getOrElse(index) { false } ||
-                    msg.status?.startsWith("READ") == true ||
-                    isTyping ||
-                    peerName == "Saved Messages"
-                )
+                msg.status?.startsWith("READ") == true || peerName == "Saved Messages"
+            )
+            val isDelivered = msg.isMe && !isPendingOrSending && (
+                isRead || msg.status?.startsWith("DELIVERED") == true
+            )
             val isSelected = msg.id in selectedIds
             if (isSearchMode && searchQuery.isNotEmpty() && onJumpToMessage != null) {
                 Box(modifier = Modifier.fillMaxWidth().clickable { onJumpToMessage(msg) }) {
@@ -275,6 +272,7 @@ internal fun ChatMessageList(
                         onSelectionChange = onSelectionChange,
                         isSelectMode = isSelectMode,
                         isRead = isRead,
+                        isDelivered = isDelivered,
                         peerName = peerName,
                         myAvatarBitmap = myAvatarBitmap,
                         appLanguage = appLanguage,
@@ -306,6 +304,7 @@ internal fun ChatMessageList(
                     onSelectionChange = onSelectionChange,
                     isSelectMode = isSelectMode,
                     isRead = isRead,
+                    isDelivered = isDelivered,
                     peerName = peerName,
                     myAvatarBitmap = myAvatarBitmap,
                     appLanguage = appLanguage,

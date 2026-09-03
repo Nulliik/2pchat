@@ -831,6 +831,9 @@ object P2PMessageRelay {
                 countAsNew = countAsNew,
             )
         )
+        if (!message.isMe && message.id.isNotBlank()) {
+            sendDeliveryReceipt(context, sender, peerEndpoints[sender], message.id)
+        }
     }
 
     fun isRawFingerprint(name: String): Boolean {
@@ -1938,6 +1941,22 @@ object P2PMessageRelay {
                                                 it.onMessageStatusChanged(resolvedSender, msgId, "READ")
                                                 if (resolvedSender != sender) {
                                                     it.onMessageStatusChanged(sender, msgId, "READ")
+                                                }
+                                            }
+                                        }
+                                    }
+                                    return
+                                }
+                                "delivery_receipt" -> {
+                                    val msgId = json.optString("message_id")
+                                    if (msgId.isNotEmpty()) {
+                                        val db = ChatDatabaseHelper.getInstance(appContext)
+                                        db.updateMessageStatus(msgId, "DELIVERED")
+                                        serviceScope.launch(Dispatchers.Main) {
+                                            messageListeners.forEach {
+                                                it.onMessageStatusChanged(resolvedSender, msgId, "DELIVERED")
+                                                if (resolvedSender != sender) {
+                                                    it.onMessageStatusChanged(sender, msgId, "DELIVERED")
                                                 }
                                             }
                                         }
@@ -3320,6 +3339,10 @@ object P2PMessageRelay {
 
     fun sendReadReceipt(context: Context, peerName: String, endpoint: String?, messageId: String) {
         outboundMessenger.sendReadReceipt(context, peerName, endpoint, messageId)
+    }
+
+    fun sendDeliveryReceipt(context: Context, peerName: String, endpoint: String?, messageId: String) {
+        outboundMessenger.sendDeliveryReceipt(context, peerName, endpoint, messageId)
     }
 
     fun enqueueReadReceipt(context: Context, peerName: String, messageId: String): Boolean =

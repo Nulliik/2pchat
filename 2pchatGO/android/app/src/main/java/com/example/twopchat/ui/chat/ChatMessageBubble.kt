@@ -101,6 +101,7 @@ internal fun ChatMessageBubble(
     onSelectionChange: (Message, Boolean) -> Unit,
     isSelectMode: Boolean,
     isRead: Boolean,
+    isDelivered: Boolean,
     peerName: String,
     myAvatarBitmap: Bitmap?,
     appLanguage: String,
@@ -408,6 +409,7 @@ internal fun ChatMessageBubble(
                                         onSelectionChange = onSelectionChange,
                                         isSelectMode = isSelectMode,
                                         isRead = isRead,
+                                        isDelivered = isDelivered,
                                         appLanguage = appLanguage,
                                         primaryColor = primaryColor,
                                         textColor = textColor,
@@ -688,8 +690,8 @@ internal fun ChatMessageBubble(
                                                                 )
                                                             } else {
                                                                 Icon(
-                                                                    painter = painterResource(id = if (isRead) com.example.twopchat.R.drawable.ic_msg_double_check else com.example.twopchat.R.drawable.ic_msg_single_check),
-                                                                    contentDescription = if (isRead) "Read" else "Sent",
+                                                                    painter = painterResource(id = if (isDelivered) com.example.twopchat.R.drawable.ic_msg_double_check else com.example.twopchat.R.drawable.ic_msg_single_check),
+                                                                    contentDescription = if (isRead) "Read" else if (isDelivered) "Delivered" else "Sent",
                                                                     tint = if (isRead) Color(0xFF64B5F6) else Color.White.copy(alpha = 0.95f),
                                                                     modifier = Modifier.size(13.dp)
                                                                 )
@@ -736,16 +738,18 @@ internal fun ChatMessageBubble(
                                                                 )
                                                             } else {
                                                                 AnimatedContent(
-                                                                    targetState = isRead,
+                                                                    targetState = isDelivered to isRead,
                                                                     transitionSpec = {
                                                                         (scaleIn(initialScale = 0.7f, animationSpec = tween(140, easing = FastOutSlowInEasing)) + fadeIn(animationSpec = tween(140)))
                                                                             .togetherWith(fadeOut(animationSpec = tween(90)))
                                                                     },
                                                                     label = "MessageStatusCheckTransition"
-                                                                ) { readState ->
+                                                                ) { deliveryState ->
+                                                                    val deliveredState = deliveryState.first
+                                                                    val readState = deliveryState.second
                                                                     Icon(
-                                                                        painter = painterResource(id = if (readState) com.example.twopchat.R.drawable.ic_msg_double_check else com.example.twopchat.R.drawable.ic_msg_single_check),
-                                                                        contentDescription = if (readState) "Read" else "Sent",
+                                                                        painter = painterResource(id = if (deliveredState) com.example.twopchat.R.drawable.ic_msg_double_check else com.example.twopchat.R.drawable.ic_msg_single_check),
+                                                                        contentDescription = if (readState) "Read" else if (deliveredState) "Delivered" else "Sent",
                                                                         tint = if (readState) {
                                                                             if (msg.isMe && primaryColor == com.example.twopchat.theme.MintGreen) StealthBlack else Color(0xFF64B5F6)
                                                                         } else textColor.copy(alpha = 0.75f),
@@ -1044,8 +1048,8 @@ internal fun ChatMessageBubble(
                                                             )
                                                         } else {
                                                             Icon(
-                                                                painter = painterResource(id = if (isRead) com.example.twopchat.R.drawable.ic_msg_double_check else com.example.twopchat.R.drawable.ic_msg_single_check),
-                                                                contentDescription = if (isRead) "Read" else "Sent",
+                                                                painter = painterResource(id = if (isDelivered) com.example.twopchat.R.drawable.ic_msg_double_check else com.example.twopchat.R.drawable.ic_msg_single_check),
+                                                                contentDescription = if (isRead) "Read" else if (isDelivered) "Delivered" else "Sent",
                                                                 tint = if (isRead) Color(0xFF64B5F6) else Color.White.copy(alpha = 0.95f),
                                                                 modifier = Modifier.size(13.dp)
                                                             )
@@ -1092,8 +1096,8 @@ internal fun ChatMessageBubble(
                                                             )
                                                         } else {
                                                             Icon(
-                                                                painter = painterResource(id = if (isRead) com.example.twopchat.R.drawable.ic_msg_double_check else com.example.twopchat.R.drawable.ic_msg_single_check),
-                                                                contentDescription = if (isRead) "Read" else "Sent",
+                                                                painter = painterResource(id = if (isDelivered) com.example.twopchat.R.drawable.ic_msg_double_check else com.example.twopchat.R.drawable.ic_msg_single_check),
+                                                                contentDescription = if (isRead) "Read" else if (isDelivered) "Delivered" else "Sent",
                                                                 tint = if (isRead) {
                                                                     if (msg.isMe && primaryColor == com.example.twopchat.theme.MintGreen) StealthBlack else Color(0xFF64B5F6)
                                                                 } else textColor.copy(alpha = 0.75f),
@@ -1464,11 +1468,11 @@ internal fun ChatMessageBubble(
                                                     color = statusColor,
                                                     fontSize = 9.sp
                                                 )
-                                            } else if (isRead) {
+                                            } else if (isDelivered) {
                                                 Icon(
                                                     painter = painterResource(id = com.example.twopchat.R.drawable.ic_msg_double_check),
-                                                    contentDescription = "Read",
-                                                    tint = if (isTransparentBubble) Color(0xFF64B5F6) else statusColor,
+                                                    contentDescription = if (isRead) "Read" else "Delivered",
+                                                    tint = if (isRead) Color(0xFF64B5F6) else statusColor,
                                                     modifier = Modifier.height(11.dp).width(16.dp)
                                                 )
                                             } else {
@@ -2135,6 +2139,7 @@ private fun MediaAlbumGridBubble(
     onSelectionChange: (Message, Boolean) -> Unit,
     isSelectMode: Boolean,
     isRead: Boolean,
+    isDelivered: Boolean,
     appLanguage: String,
     primaryColor: Color,
     textColor: Color,
@@ -2350,8 +2355,8 @@ private fun MediaAlbumGridBubble(
                             )
                         } else {
                             Icon(
-                                painter = painterResource(id = if (isRead) com.example.twopchat.R.drawable.ic_msg_double_check else com.example.twopchat.R.drawable.ic_msg_single_check),
-                                contentDescription = if (isRead) "Read" else "Sent",
+                                painter = painterResource(id = if (isDelivered) com.example.twopchat.R.drawable.ic_msg_double_check else com.example.twopchat.R.drawable.ic_msg_single_check),
+                                contentDescription = if (isRead) "Read" else if (isDelivered) "Delivered" else "Sent",
                                 tint = if (isRead) Color(0xFF64B5F6) else Color.White.copy(alpha = 0.95f),
                                 modifier = Modifier.size(13.dp)
                             )
@@ -2396,8 +2401,8 @@ private fun MediaAlbumGridBubble(
                             )
                         } else {
                             Icon(
-                                painter = painterResource(id = if (isRead) com.example.twopchat.R.drawable.ic_msg_double_check else com.example.twopchat.R.drawable.ic_msg_single_check),
-                                contentDescription = if (isRead) "Read" else "Sent",
+                                painter = painterResource(id = if (isDelivered) com.example.twopchat.R.drawable.ic_msg_double_check else com.example.twopchat.R.drawable.ic_msg_single_check),
+                                contentDescription = if (isRead) "Read" else if (isDelivered) "Delivered" else "Sent",
                                 tint = if (isRead) Color(0xFF64B5F6) else textColor.copy(alpha = 0.6f),
                                 modifier = Modifier.size(14.dp)
                             )
