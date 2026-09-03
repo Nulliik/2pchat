@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"encoding/base64"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -408,5 +410,82 @@ func TestDiskBackedLowMemoryStreaming(t *testing.T) {
 	}
 	if !bytes.Equal(saved, testData) {
 		t.Fatal("saved file does not match original data")
+	}
+}
+
+func TestFileTransfer_PathTraversalHardening(t *testing.T) {
+	tmpDir := t.TempDir()
+	downloadsDir := filepath.Join(tmpDir, "downloads")
+
+	receiver := NewFileTransferManager(nil)
+
+	// Test malicious filenames and messageIDs
+	maliciousCases := []struct {
+		name      string
+		msgID     string
+		fileName  string
+		expectEsc bool
+	}{
+		{name: "dotdot_root", msgID: "msg_1", fileName: "..", expectEsc: false},
+		{name: "dot", msgID: "msg_2", fileName: ".", expectEsc: false},
+		{name: "traversal_unix", msgID: "msg_3", fileName: "../../../../etc/passwd", expectEsc: false},
+		{name: "traversal_win", msgID: "msg_4", fileName: "..\\..\\evil.txt", expectEsc: false},
+		{name: "msgid_traversal", msgID: "../../../evil_id", fileName: "legit.txt", expectEsc: false},
+		{name: "null_byte", msgID: "msg_5", fileName: "innocent.txt\x00.exe", expectEsc: false},
+	}
+
+	testData := []byte("confidential content")
+	fileSize := int64(len(testData))
+
+	for _, tc := range maliciousCases {
+		t.Run(tc.name, func(t *testing.T) {
+			meta, chunkChan, err := EncryptFileStream(bytes.NewReader(testData), fileSize, tc.fileName, "", "", DefaultChunkSize)
+			if err != nil {
+				t.Fatalf("EncryptFileStream failed: %v", err)
+			}
+			meta.FileName = tc.fileName // ensure test case filename is passed directly
+
+			metaJSON, err := meta.EncodeMetadataJSON()
+			if err != nil {
+				t.Fatalf("EncodeMetadataJSON failed: %v", err)
+			}
+
+			// Deliver metadata
+			res, err := receiver.ReceiveChunk("peer_attacker", tc.msgID, base64.StdEncoding.EncodeToString(metaJSON), downloadsDir)
+			if err != nil {
+				t.Fatalf("ReceiveChunk metadata failed: %v", err)
+			}
+			if res != nil {
+				t.Fatal("expected nil result on metadata delivery")
+			}
+
+			// Deliver chunk
+			chunk := <-chunkChan
+			res, err = receiver.ReceiveChunk("peer_attacker", tc.msgID, base64.StdEncoding.EncodeToString(chunk.Payload), downloadsDir)
+			if err != nil {
+				t.Fatalf("ReceiveChunk payload failed: %v", err)
+			}
+			if res == nil {
+				t.Fatal("expected assembled file on final chunk delivery")
+			}
+
+			// Verify that the assembled file is strictly inside downloadsDir
+			rel, err := filepath.Rel(downloadsDir, res.FilePath)
+			if err != nil {
+				t.Fatalf("filepath.Rel failed: %v", err)
+			}
+			if strings.HasPrefix(rel, "..") || rel == "." {
+				t.Fatalf("SECURITY VIOLATION: Assembled file escaped downloads directory! Path=%s, Rel=%s", res.FilePath, rel)
+			}
+
+			// Verify file content is intact
+			savedData, err := os.ReadFile(res.FilePath)
+			if err != nil {
+				t.Fatalf("failed to read saved file %s: %v", res.FilePath, err)
+			}
+			if !bytes.Equal(savedData, testData) {
+				t.Fatalf("file content mismatch")
+			}
+		})
 	}
 }

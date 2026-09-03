@@ -511,6 +511,27 @@ func (m *FileTransferManager) SendFileStreamParallel(
 	return nil
 }
 
+// sanitizePathToken strips directory traversal components, backslashes, control characters, and special names.
+func sanitizePathToken(token string, fallback string) string {
+	token = strings.ReplaceAll(token, "\\", "/")
+	token = filepath.Base(token)
+	token = strings.TrimSpace(token)
+	if token == "." || token == ".." || token == "/" || token == "" {
+		return fallback
+	}
+	cleaned := strings.Map(func(r rune) rune {
+		if r < 32 || r == 127 {
+			return -1
+		}
+		return r
+	}, token)
+	cleaned = strings.TrimSpace(cleaned)
+	if cleaned == "" || cleaned == "." || cleaned == ".." {
+		return fallback
+	}
+	return cleaned
+}
+
 // ReceiveChunk processes an incoming file chunk, streams decrypted slice to disk (.part file), and renames when complete.
 func (m *FileTransferManager) ReceiveChunk(
 	peerFP string,
@@ -521,6 +542,8 @@ func (m *FileTransferManager) ReceiveChunk(
 	if messageID == "" || payloadB64 == "" {
 		return nil, errors.New("empty messageID or payload")
 	}
+
+	safeMessageID := sanitizePathToken(messageID, fmt.Sprintf("msg_%d", time.Now().UnixNano()))
 
 	payload, err := base64.StdEncoding.DecodeString(payloadB64)
 	if err != nil {
@@ -546,8 +569,8 @@ func (m *FileTransferManager) ReceiveChunk(
 			m.mu.Lock()
 			transfer.Meta = meta
 			if err := os.MkdirAll(downloadsDir, 0755); err == nil {
-				transfer.PartPath = filepath.Join(downloadsDir, fmt.Sprintf(".part_%s", messageID))
-				transfer.BitmaskPath = filepath.Join(downloadsDir, fmt.Sprintf(".part_%s.bitmask", messageID))
+				transfer.PartPath = filepath.Join(downloadsDir, fmt.Sprintf(".part_%s", safeMessageID))
+				transfer.BitmaskPath = filepath.Join(downloadsDir, fmt.Sprintf(".part_%s.bitmask", safeMessageID))
 				partFile, err := os.OpenFile(transfer.PartPath, os.O_CREATE|os.O_RDWR, 0600)
 				if err == nil {
 					transfer.PartFile = partFile
@@ -583,8 +606,8 @@ func (m *FileTransferManager) ReceiveChunk(
 	}
 	if transfer.PartFile == nil {
 		if err := os.MkdirAll(downloadsDir, 0755); err == nil {
-			transfer.PartPath = filepath.Join(downloadsDir, fmt.Sprintf(".part_%s", messageID))
-			transfer.BitmaskPath = filepath.Join(downloadsDir, fmt.Sprintf(".part_%s.bitmask", messageID))
+			transfer.PartPath = filepath.Join(downloadsDir, fmt.Sprintf(".part_%s", safeMessageID))
+			transfer.BitmaskPath = filepath.Join(downloadsDir, fmt.Sprintf(".part_%s.bitmask", safeMessageID))
 			partFile, err := os.OpenFile(transfer.PartPath, os.O_CREATE|os.O_RDWR, 0600)
 			if err == nil {
 				transfer.PartFile = partFile
@@ -703,17 +726,17 @@ func (m *FileTransferManager) ReceiveChunk(
 			return nil, fmt.Errorf("failed to create downloads directory: %w", err)
 		}
 
-		fileName := meta.FileName
-		if fileName == "" {
-			fileName = fmt.Sprintf("file_%s", messageID)
+		safeFileName := sanitizePathToken(meta.FileName, fmt.Sprintf("file_%s", safeMessageID))
+		targetPath := filepath.Clean(filepath.Join(downloadsDir, safeFileName))
+		rel, relErr := filepath.Rel(downloadsDir, targetPath)
+		if relErr != nil || strings.HasPrefix(rel, "..") || rel == "." {
+			targetPath = filepath.Join(downloadsDir, fmt.Sprintf("file_%s", safeMessageID))
 		}
-		fileName = filepath.Base(fileName)
-		targetPath := filepath.Join(downloadsDir, fileName)
 
 		// Handle name collisions cleanly
 		if _, err := os.Stat(targetPath); err == nil {
-			ext := filepath.Ext(fileName)
-			stem := strings.TrimSuffix(fileName, ext)
+			ext := filepath.Ext(safeFileName)
+			stem := strings.TrimSuffix(safeFileName, ext)
 			targetPath = filepath.Join(downloadsDir, fmt.Sprintf("%s_%d%s", stem, time.Now().UnixMilli(), ext))
 		}
 
