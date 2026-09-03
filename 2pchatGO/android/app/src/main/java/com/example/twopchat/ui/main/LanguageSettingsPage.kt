@@ -47,7 +47,8 @@ fun LanguageSettingsPage(
             Triple("Deutsch", "German", "🇩🇪"),
             Triple("Español", "Spanish", "🇪🇸"),
             Triple("Français", "French", "🇫🇷"),
-            Triple("Português", "Portuguese", "🇵🇹")
+            Triple("Português", "Portuguese", "🇵🇹"),
+            Triple("Türkçe", "Turkish", "🇹🇷")
         )
     }
 
@@ -180,6 +181,7 @@ fun LanguageSettingsPage(
                                 "Español" -> "Idioma cambiado a Español"
                                 "Français" -> "Langue changée en Français"
                                 "Português" -> "Idioma alterado para Português"
+                                "Türkçe" -> "Dil Türkçe olarak değiştirildi"
                                 else -> "Language changed to $englishName"
                             }
                             Toast.makeText(context, toastMsg, Toast.LENGTH_SHORT).show()

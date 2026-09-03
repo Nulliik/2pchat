@@ -1996,6 +1996,7 @@ private fun GroupTabNavigation(
         "Français" -> listOf("Membres", "Médias", "Favoris", "Fichiers")
         "Português" -> listOf("Membros", "Mídia", "Favoritos", "Arquivos")
         "Русский" -> listOf("Участники", "Медиа", "Избранное", "Файлы")
+        "Türkçe" -> listOf("Üyeler", "Medya", "Favoriler", "Dosyalar")
         else -> listOf("Members", "Media", "Favorites", "Files")
     }
     Surface(

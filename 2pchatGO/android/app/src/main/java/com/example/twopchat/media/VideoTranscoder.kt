@@ -35,15 +35,13 @@ object VideoTranscoder {
                 "Español" -> "720p (Comprimido)"
                 "Français" -> "720p (Compressé)"
                 "Português" -> "720p (Comprimido)"
+                "Türkçe" -> "720p (Sıkıştırılmış)"
                 else -> "720p (Compressed)"
             }
             FULL_HD_1080P -> "1080p (HD)"
             ORIGINAL -> when (appLanguage) {
                 "Русский" -> "Оригинал"
-                "Deutsch" -> "Original"
-                "Español" -> "Original"
-                "Français" -> "Original"
-                "Português" -> "Original"
+                "Türkçe" -> "Orijinal"
                 else -> "Original"
             }
         }

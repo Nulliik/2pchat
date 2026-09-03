@@ -183,7 +183,8 @@ fun SettingsModalsAndDialogs(
             Pair("Deutsch", "🇩🇪"),
             Pair("Español", "🇪🇸"),
             Pair("Français", "🇫🇷"),
-            Pair("Português", "🇵🇹")
+            Pair("Português", "🇵🇹"),
+            Pair("Türkçe", "🇹🇷")
         )
         AlertDialog(
             onDismissRequest = onDismissLanguageDialog,

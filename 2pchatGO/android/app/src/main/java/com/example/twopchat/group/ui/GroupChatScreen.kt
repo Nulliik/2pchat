@@ -1936,6 +1936,13 @@ private fun GroupChatHeader(
                                         .replace(" и ", " e ")
                                         .replace("Несколько участников", "Vários membros")
                                 }
+                                "Türkçe" -> {
+                                    state.typingStatus
+                                        .replace(" печатает...", " yazıyor...")
+                                        .replace(" печатают...", " yazıyorlar...")
+                                        .replace(" и ", " ve ")
+                                        .replace("Несколько участников", "Birkaç üye")
+                                }
                                 "Русский" -> state.typingStatus
                                 else -> {
                                     state.typingStatus
@@ -1957,6 +1964,7 @@ private fun GroupChatHeader(
                                 "Español" -> if (state.memberCount == 1) "miembro" else "miembros"
                                 "Français" -> if (state.memberCount == 1) "membre" else "membres"
                                 "Português" -> if (state.memberCount == 1) "membro" else "membros"
+                                "Türkçe" -> "üye"
                                 "Русский" -> {
                                     when {
                                         state.memberCount % 100 in 11..19 -> "участников"

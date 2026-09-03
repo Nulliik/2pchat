@@ -480,7 +480,8 @@ private fun ConnectionSweepCard(
                             de = "VERBINDUNGSTEST-ERGEBNIS",
                             es = "RESULTADO DE LA PRUEBA DE CONEXIÓN",
                             fr = "RÉSULTAT DU TEST DE CONNEXION",
-                            pt = "RESULTADO DO TESTE DE CONEXÃO"
+                            pt = "RESULTADO DO TESTE DE CONEXÃO",
+                            tr = "BAĞLANTI TESTİ SONUCU"
                         ),
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
@@ -519,7 +520,8 @@ private fun ConnectionSweepCard(
                     de = "Direktes P2P erreichbar (STUN/UPnP)",
                     es = "P2P directo accesible (STUN/UPnP)",
                     fr = "P2P direct accessible (STUN/UPnP)",
-                    pt = "P2P direto acessível (STUN/UPnP)"
+                    pt = "P2P direto acessível (STUN/UPnP)",
+                    tr = "Doğrudan P2P erişilebilir (STUN/UPnP)"
                 )
                 result.verdict.contains("Symmetric NAT") -> Localizations.tr(
                     appLanguage,
@@ -528,7 +530,8 @@ private fun ConnectionSweepCard(
                     de = "Symmetrisches NAT (Hole Punch / Relay aktiv)",
                     es = "NAT simétrico (Hole Punch / Relay activo)",
                     fr = "NAT symétrique (Hole Punch / Relay actif)",
-                    pt = "NAT simétrico (Hole Punch / Relay ativo)"
+                    pt = "NAT simétrico (Hole Punch / Relay ativo)",
+                    tr = "Simetrik NAT (Hole Punch / Relay aktif)"
                 )
                 result.verdict.contains("Dual-Stack") -> Localizations.tr(
                     appLanguage,
@@ -537,7 +540,8 @@ private fun ConnectionSweepCard(
                     de = "Dual-Stack: Direktes P2P + Yggdrasil Mesh",
                     es = "Dual-Stack: P2P directo + Yggdrasil Mesh",
                     fr = "Dual-Stack : P2P direct + Yggdrasil Mesh",
-                    pt = "Dual-Stack: P2P direto + Yggdrasil Mesh"
+                    pt = "Dual-Stack: P2P direto + Yggdrasil Mesh",
+                    tr = "Dual-Stack: Doğrudan P2P + Yggdrasil Mesh"
                 )
                 result.verdict.contains("Tor") -> Localizations.tr(
                     appLanguage,
@@ -546,7 +550,8 @@ private fun ConnectionSweepCard(
                     de = "Tor: über Datenschutznetzwerk geroutet",
                     es = "Tor: enrutado a través de red privada",
                     fr = "Tor : acheminé via le réseau privé",
-                    pt = "Tor: roteado via rede de privacidade"
+                    pt = "Tor: roteado via rede de privacidade",
+                    tr = "Tor: gizlilik ağı üzerinden yönlendirildi"
                 )
                 result.verdict == "P2P Operational" -> Localizations.tr(
                     appLanguage,
@@ -555,7 +560,8 @@ private fun ConnectionSweepCard(
                     de = "P2P-Systeme betriebsbereit",
                     es = "Sistemas P2P operativos",
                     fr = "Systèmes P2P opérationnels",
-                    pt = "Sistemas P2P operacionais"
+                    pt = "Sistemas P2P operacionais",
+                    tr = "P2P sistemleri çalışır durumda"
                 )
                 result.verdict == "P2P Listener Offline" -> Localizations.tr(
                     appLanguage,
@@ -564,7 +570,8 @@ private fun ConnectionSweepCard(
                     de = "P2P-Listener offline",
                     es = "Oyente P2P desconectado",
                     fr = "Écouteur P2P hors ligne",
-                    pt = "Ouvinte P2P offline"
+                    pt = "Ouvinte P2P offline",
+                    tr = "P2P dinleyici çevrimdışı"
                 )
                 else -> result.verdict
             }
@@ -583,11 +590,11 @@ private fun ConnectionSweepCard(
 
             // Diagnostic badges grid
             SweepStatusRow(
-                label = Localizations.tr(appLanguage, ru = "P2P Сервер", en = "P2P Server", de = "P2P-Server", es = "Servidor P2P", fr = "Serveur P2P", pt = "Servidor P2P"),
+                label = Localizations.tr(appLanguage, ru = "P2P Сервер", en = "P2P Server", de = "P2P-Server", es = "Servidor P2P", fr = "Serveur P2P", pt = "Servidor P2P", tr = "P2P Sunucusu"),
                 value = if (result.portOk) {
-                    Localizations.tr(appLanguage, ru = "Порт ${result.port} (Активен)", en = "Port ${result.port} (Active)", de = "Port ${result.port} (Aktiv)", es = "Puerto ${result.port} (Activo)", fr = "Port ${result.port} (Actif)", pt = "Porta ${result.port} (Ativo)")
+                    Localizations.tr(appLanguage, ru = "Порт ${result.port} (Активен)", en = "Port ${result.port} (Active)", de = "Port ${result.port} (Aktiv)", es = "Puerto ${result.port} (Activo)", fr = "Port ${result.port} (Actif)", pt = "Porta ${result.port} (Ativo)", tr = "Port ${result.port} (Aktif)")
                 } else {
-                    Localizations.tr(appLanguage, ru = "Не активен", en = "Inactive", de = "Inaktiv", es = "Inactivo", fr = "Inactif", pt = "Inativo")
+                    Localizations.tr(appLanguage, ru = "Не активен", en = "Inactive", de = "Inaktiv", es = "Inactivo", fr = "Inactif", pt = "Inativo", tr = "Devre Dışı")
                 },
                 isOk = result.portOk,
                 onSurfaceVariant = onSurfaceVariant
@@ -608,27 +615,27 @@ private fun ConnectionSweepCard(
             )
 
             val trackerText = if (result.trackersTotal > 0) {
-                val rttUnit = Localizations.tr(appLanguage, ru = "мс", en = "ms", de = "ms", es = "ms", fr = "ms", pt = "ms")
-                val onlineText = Localizations.tr(appLanguage, ru = "онлайн", en = "online", de = "online", es = "en línea", fr = "en ligne", pt = "online")
+                val rttUnit = Localizations.tr(appLanguage, ru = "мс", en = "ms", de = "ms", es = "ms", fr = "ms", pt = "ms", tr = "ms")
+                val onlineText = Localizations.tr(appLanguage, ru = "онлайн", en = "online", de = "online", es = "en línea", fr = "en ligne", pt = "online", tr = "çevrimiçi")
                 val rttText = if (result.trackerAvgRtt > 0) " (RTT ~${result.trackerAvgRtt}$rttUnit)" else ""
                 "${result.trackersOnline}/${result.trackersTotal} $onlineText$rttText"
             } else {
-                Localizations.tr(appLanguage, ru = "Не настроены", en = "None", de = "Keine", es = "Ninguno", fr = "Aucun", pt = "Nenhum")
+                Localizations.tr(appLanguage, ru = "Не настроены", en = "None", de = "Keine", es = "Ninguno", fr = "Aucun", pt = "Nenhum", tr = "Yapılandırılmadı")
             }
             SweepStatusRow(
-                label = Localizations.tr(appLanguage, ru = "Трекеры Discovery", en = "Discovery Trackers", de = "Discovery-Tracker", es = "Trackers descubrimiento", fr = "Trackers découverte", pt = "Rastreadores descoberta"),
+                label = Localizations.tr(appLanguage, ru = "Трекеры Discovery", en = "Discovery Trackers", de = "Discovery-Tracker", es = "Trackers descubrimiento", fr = "Trackers découverte", pt = "Rastreadores descoberta", tr = "Keşif İzleyicileri"),
                 value = trackerText,
                 isOk = result.trackersOnline > 0,
                 onSurfaceVariant = onSurfaceVariant
             )
 
             val meshText = buildString {
-                if (result.yggOk) append("YGG: OK") else append(Localizations.tr(appLanguage, ru = "YGG: Выкл", en = "YGG: Off", de = "YGG: Aus", es = "YGG: Desact.", fr = "YGG: Désactivé", pt = "YGG: Desl."))
+                if (result.yggOk) append("YGG: OK") else append(Localizations.tr(appLanguage, ru = "YGG: Выкл", en = "YGG: Off", de = "YGG: Aus", es = "YGG: Desact.", fr = "YGG: Désactivé", pt = "YGG: Desl.", tr = "YGG: Kapalı"))
                 append(" · ")
-                if (result.torActive) append(Localizations.tr(appLanguage, ru = "Tor: Активен", en = "Tor: Active", de = "Tor: Aktiv", es = "Tor: Activo", fr = "Tor : Actif", pt = "Tor: Ativo")) else append(Localizations.tr(appLanguage, ru = "Tor: Выкл", en = "Tor: Off", de = "Tor: Aus", es = "Tor: Desact.", fr = "Tor : Désactivé", pt = "Tor: Desl."))
+                if (result.torActive) append(Localizations.tr(appLanguage, ru = "Tor: Активен", en = "Tor: Active", de = "Tor: Aktiv", es = "Tor: Activo", fr = "Tor : Actif", pt = "Tor: Ativo", tr = "Tor: Aktif")) else append(Localizations.tr(appLanguage, ru = "Tor: Выкл", en = "Tor: Off", de = "Tor: Aus", es = "Tor: Desact.", fr = "Tor : Désactivé", pt = "Tor: Desl.", tr = "Tor: Kapalı"))
             }
             SweepStatusRow(
-                label = Localizations.tr(appLanguage, ru = "Сети Ygg & Tor", en = "Ygg & Tor Mesh", de = "Ygg- & Tor-Mesh", es = "Redes Ygg y Tor", fr = "Réseaux Ygg et Tor", pt = "Redes Ygg e Tor"),
+                label = Localizations.tr(appLanguage, ru = "Сети Ygg & Tor", en = "Ygg & Tor Mesh", de = "Ygg- & Tor-Mesh", es = "Redes Ygg y Tor", fr = "Réseaux Ygg et Tor", pt = "Redes Ygg e Tor", tr = "Ygg ve Tor Ağları"),
                 value = meshText,
                 isOk = result.yggOk || result.torActive,
                 onSurfaceVariant = onSurfaceVariant
@@ -637,24 +644,24 @@ private fun ConnectionSweepCard(
             SweepStatusRow(
                 label = "Relay & Hole Punch",
                 value = if (result.relayReady) {
-                    Localizations.tr(appLanguage, ru = "Готов (E2EE туннель)", en = "Ready (E2EE tunnel)", de = "Bereit (E2EE-Tunnel)", es = "Listo (túnel E2EE)", fr = "Prêt (tunnel E2EE)", pt = "Pronto (túnel E2EE)")
+                    Localizations.tr(appLanguage, ru = "Готов (E2EE туннель)", en = "Ready (E2EE tunnel)", de = "Bereit (E2EE-Tunnel)", es = "Listo (túnel E2EE)", fr = "Prêt (tunnel E2EE)", pt = "Pronto (túnel E2EE)", tr = "Hazır (E2EE tünel)")
                 } else {
-                    Localizations.tr(appLanguage, ru = "Недоступен", en = "Disabled", de = "Deaktiviert", es = "Desactivado", fr = "Désactivé", pt = "Desativado")
+                    Localizations.tr(appLanguage, ru = "Недоступен", en = "Disabled", de = "Deaktiviert", es = "Desactivado", fr = "Désactivé", pt = "Desativado", tr = "Devre Dışı")
                 },
                 isOk = result.relayReady,
                 onSurfaceVariant = onSurfaceVariant
             )
 
-            val peersUnit = Localizations.tr(appLanguage, ru = "пиров", en = "peers", de = "Peers", es = "pares", fr = "pairs", pt = "pares")
+            val peersUnit = Localizations.tr(appLanguage, ru = "пиров", en = "peers", de = "Peers", es = "pares", fr = "pairs", pt = "pares", tr = "eş")
             SweepStatusRow(
-                label = Localizations.tr(appLanguage, ru = "Активные сессии", en = "Active Sessions", de = "Aktive Sitzungen", es = "Sesiones activas", fr = "Sessions actives", pt = "Sessões ativas"),
+                label = Localizations.tr(appLanguage, ru = "Активные сессии", en = "Active Sessions", de = "Aktive Sitzungen", es = "Sesiones activas", fr = "Sessions actives", pt = "Sessões ativas", tr = "Aktif Oturumlar"),
                 value = "${result.activePeersCount} $peersUnit",
                 isOk = true,
                 onSurfaceVariant = onSurfaceVariant
             )
 
             Text(
-                text = "${Localizations.tr(appLanguage, ru = "Замер от", en = "Tested at", de = "Gemessen am", es = "Probado en", fr = "Testé à", pt = "Testado em")}: ${result.timestamp}",
+                text = "${Localizations.tr(appLanguage, ru = "Замер от", en = "Tested at", de = "Gemessen am", es = "Probado en", fr = "Testé à", pt = "Testado em", tr = "Test zamanı")}: ${result.timestamp}",
                 fontSize = 9.sp,
                 fontFamily = FontFamily.Monospace,
                 color = onSurfaceVariant.copy(alpha = 0.6f),
@@ -1005,7 +1012,8 @@ fun NetworkDiagnosticsDialog(
                                         de = "Netzwerk-Debugger",
                                         es = "Depurador de red",
                                         fr = "Débogueur réseau",
-                                        pt = "Depurador de rede"
+                                        pt = "Depurador de rede",
+                                        tr = "Ağ Hata Ayıklayıcı"
                                     ),
                                     fontSize = 18.sp,
                                     fontWeight = FontWeight.Bold,
@@ -1061,7 +1069,8 @@ fun NetworkDiagnosticsDialog(
                                             de = "📊 Netzwerkdiagnose-Übersicht",
                                             es = "📊 Resumen de diagnóstico de red",
                                             fr = "📊 Résumé du diagnostic réseau",
-                                            pt = "📊 Resumo do diagnóstico de rede"
+                                            pt = "📊 Resumo do diagnóstico de rede",
+                                            tr = "📊 Ağ Durumu Özeti"
                                         ),
                                         fontSize = 12.sp,
                                         fontWeight = FontWeight.Bold,
@@ -1179,7 +1188,8 @@ fun NetworkDiagnosticsDialog(
                                             de = "Bericht kopiert",
                                             es = "Informe copiado",
                                             fr = "Rapport copié",
-                                            pt = "Relatório copiado"
+                                            pt = "Relatório copiado",
+                                            tr = "Rapor kopyalandı"
                                         ),
                                         Toast.LENGTH_SHORT
                                     ).show()
@@ -1199,11 +1209,11 @@ fun NetworkDiagnosticsDialog(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             listOf(
-                                "ALL" to Localizations.tr(appLanguage, ru = "ВСЕ", en = "ALL", de = "ALLE", es = "TODOS", fr = "TOUS", pt = "TODOS"),
-                                "ERRORS" to Localizations.tr(appLanguage, ru = "ОШИБКИ", en = "ERRORS", de = "FEHLER", es = "ERRORES", fr = "ERREURS", pt = "ERROS"),
+                                "ALL" to Localizations.tr(appLanguage, ru = "ВСЕ", en = "ALL", de = "ALLE", es = "TODOS", fr = "TOUS", pt = "TODOS", tr = "TÜMÜ"),
+                                "ERRORS" to Localizations.tr(appLanguage, ru = "ОШИБКИ", en = "ERRORS", de = "FEHLER", es = "ERRORES", fr = "ERREURS", pt = "ERROS", tr = "HATALAR"),
                                 "P2P" to "P2P",
                                 "YGG" to "YGGDRASIL",
-                                "TRACKERS" to Localizations.tr(appLanguage, ru = "ТРЕКЕРЫ", en = "TRACKERS", de = "TRACKER", es = "TRACKERS", fr = "TRACKERS", pt = "RASTREADORES"),
+                                "TRACKERS" to Localizations.tr(appLanguage, ru = "ТРЕКЕРЫ", en = "TRACKERS", de = "TRACKER", es = "TRACKERS", fr = "TRACKERS", pt = "RASTREADORES", tr = "İZLEYİCİLER"),
                                 "TOR" to "TOR"
                             ).forEach { (key, label) ->
                                 val isSelected = levelFilter == key
@@ -1268,7 +1278,8 @@ fun NetworkDiagnosticsDialog(
                                                 de = "Protokolle durchsuchen...",
                                                 es = "Buscar en registros...",
                                                 fr = "Rechercher dans les journaux...",
-                                                pt = "Pesquisar nos registros..."
+                                                pt = "Pesquisar nos registros...",
+                                                tr = "Günlüklerde ara..."
                                             ),
                                             fontSize = 12.sp,
                                             color = onSurfaceVariant.copy(alpha = 0.6f)
@@ -1323,7 +1334,8 @@ fun NetworkDiagnosticsDialog(
                                         de = "SYSTEMPROTOKOLL",
                                         es = "REGISTRO DEL SISTEMA",
                                         fr = "JOURNAL SYSTÈME",
-                                        pt = "REGISTRO DO SISTEMA"
+                                        pt = "REGISTRO DO SISTEMA",
+                                        tr = "SİSTEM GÜNLÜĞÜ"
                                     ),
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.Bold,
@@ -1337,7 +1349,8 @@ fun NetworkDiagnosticsDialog(
                                         de = "Zeilen",
                                         es = "líneas",
                                         fr = "lignes",
-                                        pt = "linhas"
+                                        pt = "linhas",
+                                        tr = "satır"
                                     ) + ")",
                                     fontSize = 10.sp,
                                     fontFamily = FontFamily.Monospace,
@@ -1383,7 +1396,8 @@ fun NetworkDiagnosticsDialog(
                                                     de = "Protokolle kopiert",
                                                     es = "Registros copiados",
                                                     fr = "Journaux copiés",
-                                                    pt = "Registros copiados"
+                                                    pt = "Registros copiados",
+                                                    tr = "Günlükler kopyalandı"
                                                 ),
                                                 Toast.LENGTH_SHORT
                                             ).show()
@@ -1528,7 +1542,8 @@ fun NetworkDiagnosticsDialog(
                                                     de = "Verbindungstest abgeschlossen!",
                                                     es = "¡Prueba de conexión completada!",
                                                     fr = "Test de connexion terminé !",
-                                                    pt = "Teste de conexão concluído!"
+                                                    pt = "Teste de conexão concluído!",
+                                                    tr = "Bağlantı testi tamamlandı!"
                                                 ),
                                                 Toast.LENGTH_SHORT
                                             ).show()
@@ -1557,7 +1572,8 @@ fun NetworkDiagnosticsDialog(
                                                 de = "Testen...",
                                                 es = "Probando...",
                                                 fr = "Test en cours...",
-                                                pt = "Testando..."
+                                                pt = "Testando...",
+                                                tr = "Test ediliyor..."
                                             )
                                         } else {
                                             Localizations.tr(
@@ -1567,7 +1583,8 @@ fun NetworkDiagnosticsDialog(
                                                 de = "Verbindungstest",
                                                 es = "Prueba de red",
                                                 fr = "Test de connexion",
-                                                pt = "Teste de rede"
+                                                pt = "Teste de rede",
+                                                tr = "Bağlantı Testi"
                                             )
                                         },
                                         color = onSurfaceColor,
