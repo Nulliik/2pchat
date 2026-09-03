@@ -4,6 +4,7 @@ import (
 	"context"
 	crand "crypto/rand"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"twopchat/core/pkg/crypto"
 	"twopchat/core/pkg/discovery"
@@ -563,6 +565,31 @@ func (m *Manager) dispatchSessionMessages(s *Session, peerFP string) {
 				"emoji":      firstNonEmptyString(msg["emoji"], ""),
 				"mime":       guessMimeType(fileNameStr),
 			}
+			if albumID, ok := msg["album_id"].(string); ok && albumID != "" {
+				var aCount int
+				switch v := msg["album_count"].(type) {
+				case float64:
+					aCount = int(v)
+				case int:
+					aCount = v
+				case int64:
+					aCount = int(v)
+				}
+				var aIdx int = -1
+				switch v := msg["album_index"].(type) {
+				case float64:
+					aIdx = int(v)
+				case int:
+					aIdx = v
+				case int64:
+					aIdx = int(v)
+				}
+				if aCount >= 2 && aCount <= 100 && aIdx >= 0 && aIdx < aCount {
+					offer["album_id"] = albumID
+					offer["album_index"] = aIdx
+					offer["album_count"] = aCount
+				}
+			}
 			rawOffer, err := json.Marshal(offer)
 			callbacks := m.callbacksSnapshot()
 			if err == nil && callbacks.OnMessageReceived != nil {
@@ -612,6 +639,11 @@ func (m *Manager) dispatchSessionMessages(s *Session, peerFP string) {
 					"emoji":      assembled.Emoji,
 					"size":       assembled.FileSize,
 					"mime":       guessMimeType(assembled.FileName),
+				}
+				if assembled.AlbumID != "" && assembled.AlbumCount >= 2 && assembled.AlbumIndex >= 0 && assembled.AlbumIndex < assembled.AlbumCount {
+					fileMsg["album_id"] = assembled.AlbumID
+					fileMsg["album_index"] = assembled.AlbumIndex
+					fileMsg["album_count"] = assembled.AlbumCount
 				}
 				rawFileMsg, err := json.Marshal(fileMsg)
 				callbacks := m.callbacksSnapshot()
@@ -786,7 +818,7 @@ func (m *Manager) IsPeerOnline(peerFP string) bool {
 }
 
 // SendFile streams a local file to a connected peer in 256 KiB chunks.
-func (m *Manager) SendFile(peerFP, filePath, messageID, fileName, caption, emoji string) (string, error) {
+func (m *Manager) SendFile(peerFP, filePath, messageID, fileName, caption, emoji, albumID string, albumIndex, albumCount int) (string, error) {
 	m.mu.RLock()
 	s, exists := m.resolveSessionLocked(peerFP)
 	m.mu.RUnlock()
@@ -824,6 +856,12 @@ func (m *Manager) SendFile(peerFP, filePath, messageID, fileName, caption, emoji
 					metadata.ChunkFormat = transport.FileChunkFormatV2
 					metadata.AckWindow = transport.DefaultFileChunkAckWindow
 					metadata.Timestamp = time.Now().Unix()
+					if albumID != "" && albumCount >= 2 && albumIndex >= 0 && albumIndex < albumCount {
+						metadata.AlbumID = albumID
+						idx := albumIndex
+						metadata.AlbumIndex = &idx
+						metadata.AlbumCount = albumCount
+					}
 					rawMeta, err := metadata.EncodeMetadataJSON()
 					if err != nil {
 						return err
@@ -835,8 +873,13 @@ func (m *Manager) SendFile(peerFP, filePath, messageID, fileName, caption, emoji
 					_, err = s.SendReliable(metaMessage)
 					return err
 				}
-				_, err := s.SendReliableFileChunk(metadata.FileID, nextChunkIndex, payload)
-				nextChunkIndex++
+				var chunkIdx uint32
+				if len(payload) >= crypto.SecretBoxNonceSize {
+					chunkIdx = uint32(binary.BigEndian.Uint64(payload[transport.FileNoncePrefixSize:crypto.SecretBoxNonceSize]))
+				} else {
+					chunkIdx = atomic.AddUint32(&nextChunkIndex, 1) - 1
+				}
+				_, err := s.SendReliableFileChunk(metadata.FileID, chunkIdx, payload)
 				return err
 			},
 		)

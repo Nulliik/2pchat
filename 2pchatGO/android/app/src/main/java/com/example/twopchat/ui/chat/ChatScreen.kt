@@ -1411,6 +1411,7 @@ fun ChatScreen(
             }
             if (peerName != "Saved Messages") {
                 coroutineScope.launch(Dispatchers.IO) {
+                    var allTransfersOk = true
                     for ((idx, file) in tempFiles.withIndex()) {
                         val fileCaption = if (idx == 0) customCaption else ""
                         val fileTransferId = "${outMsg.id}_$idx"
@@ -1432,11 +1433,20 @@ fun ChatScreen(
                         }
                         latch.await(5, java.util.concurrent.TimeUnit.MINUTES)
                         if (!transferOk) {
+                            allTransfersOk = false
                             persistDatabase { db.updateMessageStatus(outMsg.id, "PENDING") }
                             withContext(Dispatchers.Main) {
                                 val messageIdx = initialMessages.indexOfFirst { it.id == outMsg.id }
                                 if (messageIdx != -1) initialMessages[messageIdx] = outMsg.copy(status = "PENDING")
                             }
+                            break
+                        }
+                    }
+                    if (allTransfersOk) {
+                        persistDatabase { db.updateMessageStatus(outMsg.id, "SENT") }
+                        withContext(Dispatchers.Main) {
+                            val messageIdx = initialMessages.indexOfFirst { it.id == outMsg.id }
+                            if (messageIdx != -1) initialMessages[messageIdx] = outMsg.copy(status = "SENT")
                         }
                     }
                 }

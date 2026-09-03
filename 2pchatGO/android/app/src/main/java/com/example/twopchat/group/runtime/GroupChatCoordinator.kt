@@ -170,6 +170,25 @@ object GroupChatCoordinator {
     private val controlAncestorCache = ConcurrentHashMap<String, ControlAncestorCache>()
     private val typingMembersByGroup = ConcurrentHashMap<String, ConcurrentHashMap<String, Long>>()
 
+    internal data class PendingKeyPackageRecord(
+        val senderPeerName: String,
+        val json: JSONObject,
+        val keyPackage: GroupEpochKeyPackage,
+        val receivedAtMs: Long = System.currentTimeMillis(),
+    )
+
+    internal data class PendingGroupEventRecord(
+        val senderPeerName: String,
+        val json: JSONObject,
+        val event: GroupWireEvent,
+        val receivedAtMs: Long = System.currentTimeMillis(),
+    )
+
+    private val pendingKeyPackages = ConcurrentHashMap<String, MutableList<PendingKeyPackageRecord>>()
+    private val pendingEpochEvents = ConcurrentHashMap<String, MutableList<PendingGroupEventRecord>>()
+    private val PENDING_BUFFER_TTL_MS = 5 * 60 * 1000L
+    private val MAX_PENDING_BUFFER_PER_GROUP = 50
+
     private val _summaries = MutableStateFlow<List<GroupSummary>>(emptyList())
     val summaries: StateFlow<List<GroupSummary>> = _summaries.asStateFlow()
     private val _createState = MutableStateFlow(CreateGroupUiState())
@@ -2223,7 +2242,15 @@ object GroupChatCoordinator {
         require(event.hlcPhysicalMs <= now + MAX_CLOCK_SKEW_MS)
         require(event.expiresAtMs == 0L || event.expiresAtMs >= now)
         val epochKey = db().getEpochKey(group.groupId, event.epoch)
-            ?: throw SecurityException("missing group epoch key")
+            ?: run {
+                Log.i(TAG, "Buffering out-of-order group event ${event.eventId} (epoch ${event.epoch}) in group ${group.groupId} waiting for epoch key")
+                bufferPendingGroupEvent(group.groupId, senderPeerName, json, event)
+                val author = db().getMember(group.groupId, event.authorDeviceId)
+                if (author != null) {
+                    sendSyncRequests(group, author)
+                }
+                return
+            }
         val payload = eventFactory.decrypt(event, epochKey.keyMaterial)
         val localMembership = db().getMember(group.groupId, group.localDeviceId)
             ?: throw SecurityException("local device has no group membership")
@@ -2256,6 +2283,7 @@ object GroupChatCoordinator {
             if (isSerializedControl(event.kind)) {
                 applySerializedControl(group, event, payload)
                 drainStoredControlChain(group.groupId)
+                drainPendingKeyPackages(group.groupId)
             }
             maybeProcessControlProposal(group, event, payload, author)
             if (acknowledge) {
@@ -2296,6 +2324,7 @@ object GroupChatCoordinator {
         if (isSerializedControl(event.kind)) {
             applySerializedControl(group, event, payload)
             drainStoredControlChain(group.groupId)
+            drainPendingKeyPackages(group.groupId)
         } else {
             applyApplicationProjection(event)
         }
@@ -2499,7 +2528,25 @@ object GroupChatCoordinator {
         require(sender.signingKeyBase64 == keyPackage.senderSigningKey)
         require(keyPackage.verify())
         val control = db().getEvent(group.groupId, keyPackage.controlHead)
-            ?: throw SecurityException("epoch key package has no accepted control event")
+        if (control == null) {
+            Log.i(
+                TAG,
+                "Buffering out-of-order key package for group ${group.groupId} epoch ${keyPackage.epoch} waiting for control event ${keyPackage.controlHead}",
+            )
+            bufferPendingKeyPackage(group.groupId, senderPeerName, json, keyPackage)
+            sendSyncRequests(group, sender)
+            return
+        }
+        applyKeyPackageWithControl(group, sender, senderPeerName, keyPackage, control)
+    }
+
+    private suspend fun applyKeyPackageWithControl(
+        group: StoredGroup,
+        sender: StoredGroupMember,
+        senderPeerName: String,
+        keyPackage: GroupEpochKeyPackage,
+        control: StoredGroupEvent,
+    ) {
         require(isCanonicalControlEvent(group, control.eventId)) {
             "epoch key package refers to a losing control fork"
         }
@@ -2516,9 +2563,13 @@ object GroupChatCoordinator {
         require(memberWasActiveAt(localMember, keyPackage.epoch))
         val secret = keyPackage.epochSecretBase64.decodeBase64()
         require(secret.size == 32)
-        require(
-            db().storeEpochKey(StoredGroupEpochKey(group.groupId, keyPackage.epoch, secret)),
-        ) { "conflicting secret for an existing group epoch" }
+        val stored = db().storeEpochKey(StoredGroupEpochKey(group.groupId, keyPackage.epoch, secret))
+        if (!stored) {
+            val existing = db().getEpochKey(group.groupId, keyPackage.epoch)
+            require(existing != null && existing.keyMaterial.contentEquals(secret)) {
+                "conflicting secret for an existing group epoch"
+            }
+        }
         sendAck(
             senderPeerName,
             GroupStoreAck(
@@ -2529,6 +2580,96 @@ object GroupChatCoordinator {
             ),
         )
         refreshGroup(group.groupId)
+        drainPendingEventsForEpoch(group.groupId, keyPackage.epoch)
+    }
+
+    private fun bufferPendingKeyPackage(
+        groupId: String,
+        senderPeerName: String,
+        json: JSONObject,
+        keyPackage: GroupEpochKeyPackage,
+    ) {
+        val list = pendingKeyPackages.computeIfAbsent(groupId) { mutableListOf() }
+        synchronized(list) {
+            val now = System.currentTimeMillis()
+            list.removeAll { (now - it.receivedAtMs) > PENDING_BUFFER_TTL_MS }
+            if (list.none { it.keyPackage.epoch == keyPackage.epoch && it.keyPackage.controlHead == keyPackage.controlHead }) {
+                if (list.size >= MAX_PENDING_BUFFER_PER_GROUP) {
+                    list.removeAt(0)
+                }
+                list.add(PendingKeyPackageRecord(senderPeerName, json, keyPackage, now))
+            }
+        }
+    }
+
+    private fun bufferPendingGroupEvent(
+        groupId: String,
+        senderPeerName: String,
+        json: JSONObject,
+        event: GroupWireEvent,
+    ) {
+        val list = pendingEpochEvents.computeIfAbsent(groupId) { mutableListOf() }
+        synchronized(list) {
+            val now = System.currentTimeMillis()
+            list.removeAll { (now - it.receivedAtMs) > PENDING_BUFFER_TTL_MS }
+            if (list.none { it.event.eventId == event.eventId }) {
+                if (list.size >= MAX_PENDING_BUFFER_PER_GROUP) {
+                    list.removeAt(0)
+                }
+                list.add(PendingGroupEventRecord(senderPeerName, json, event, now))
+            }
+        }
+    }
+
+    private suspend fun drainPendingKeyPackages(groupId: String) {
+        val list = pendingKeyPackages[groupId] ?: return
+        val group = db().getGroup(groupId) ?: return
+        val now = System.currentTimeMillis()
+        val ready = mutableListOf<PendingKeyPackageRecord>()
+        synchronized(list) {
+            list.removeAll { (now - it.receivedAtMs) > PENDING_BUFFER_TTL_MS }
+            val iterator = list.iterator()
+            while (iterator.hasNext()) {
+                val item = iterator.next()
+                if (db().getEvent(groupId, item.keyPackage.controlHead) != null) {
+                    ready.add(item)
+                    iterator.remove()
+                }
+            }
+        }
+        for (item in ready) {
+            runCatching {
+                val sender = db().getMember(groupId, item.keyPackage.senderDeviceId) ?: return@runCatching
+                val control = db().getEvent(groupId, item.keyPackage.controlHead) ?: return@runCatching
+                applyKeyPackageWithControl(group, sender, item.senderPeerName, item.keyPackage, control)
+            }.onFailure { error ->
+                Log.w(TAG, "Failed applying drained key package for group $groupId, epoch ${item.keyPackage.epoch}: ${error.message}")
+            }
+        }
+    }
+
+    private suspend fun drainPendingEventsForEpoch(groupId: String, epoch: Long) {
+        val list = pendingEpochEvents[groupId] ?: return
+        val now = System.currentTimeMillis()
+        val ready = mutableListOf<PendingGroupEventRecord>()
+        synchronized(list) {
+            list.removeAll { (now - it.receivedAtMs) > PENDING_BUFFER_TTL_MS }
+            val iterator = list.iterator()
+            while (iterator.hasNext()) {
+                val item = iterator.next()
+                if (item.event.epoch == epoch) {
+                    ready.add(item)
+                    iterator.remove()
+                }
+            }
+        }
+        for (item in ready) {
+            runCatching {
+                receiveEvent(item.senderPeerName, item.json, acknowledge = true)
+            }.onFailure { error ->
+                Log.w(TAG, "Failed applying drained group event ${item.event.eventId} for epoch $epoch: ${error.message}")
+            }
+        }
     }
 
     private suspend fun receiveRosterSnapshot(senderPeerName: String, json: JSONObject) {
@@ -3779,8 +3920,12 @@ object GroupChatCoordinator {
                 advanced = db().getGroup(groupId)?.controlHead != current.controlHead
                 if (advanced) break
             }
-            if (!advanced) return
+            if (!advanced) {
+                scope.launch { drainPendingKeyPackages(groupId) }
+                return
+            }
         }
+        scope.launch { drainPendingKeyPackages(groupId) }
     }
 
     private fun applyApplicationProjection(@Suppress("UNUSED_PARAMETER") event: GroupWireEvent) {

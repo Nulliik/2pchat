@@ -525,7 +525,17 @@ class NativeBridgeImpl : IP2PBridge {
 
         val fileName = File(filePath).name
         val emoji = if (caption.length in 1..4 && caption.any { Character.isSurrogate(it) || Character.getType(it) == Character.OTHER_SYMBOL.toInt() }) caption else ""
-        val resId = NativeBridge.sendFile(target, filePath, messageId, fileName, caption, emoji)
+        val resId = NativeBridge.sendFile(
+            target,
+            filePath,
+            messageId,
+            fileName,
+            caption,
+            emoji,
+            albumId,
+            albumIndex,
+            albumCount,
+        )
         return resId != null
     }
 

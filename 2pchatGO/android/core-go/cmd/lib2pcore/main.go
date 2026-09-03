@@ -479,6 +479,9 @@ func Java_com_example_twopchat_NativeBridge_nativeSendFile(
 	jFileName C.jstring,
 	jCaption C.jstring,
 	jEmoji C.jstring,
+	jAlbumID C.jstring,
+	jAlbumIndex C.jint,
+	jAlbumCount C.jint,
 ) C.jstring {
 	cFP := C.getJStringUTFChars(env, jPeerFP)
 	if cFP == nil {
@@ -522,7 +525,16 @@ func Java_com_example_twopchat_NativeBridge_nativeSendFile(
 		C.releaseJStringUTFChars(env, jEmoji, cEmoji)
 	}
 
-	metaID, err := bridge.GetManager().SendFile(peerFP, filePath, messageID, fileName, caption, emoji)
+	var albumID string
+	cAlbumID := C.getJStringUTFChars(env, jAlbumID)
+	if cAlbumID != nil {
+		albumID = C.GoString(cAlbumID)
+		C.releaseJStringUTFChars(env, jAlbumID, cAlbumID)
+	}
+	albumIndex := int(jAlbumIndex)
+	albumCount := int(jAlbumCount)
+
+	metaID, err := bridge.GetManager().SendFile(peerFP, filePath, messageID, fileName, caption, emoji, albumID, albumIndex, albumCount)
 	if err != nil {
 		return C.nullJString()
 	}

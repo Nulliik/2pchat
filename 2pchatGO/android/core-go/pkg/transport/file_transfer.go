@@ -40,9 +40,12 @@ type AssembledFile struct {
 	MessageID string
 	FilePath  string
 	FileName  string
-	Caption   string
-	Emoji     string
-	FileSize  int64
+	Caption    string
+	Emoji      string
+	FileSize   int64
+	AlbumID    string
+	AlbumIndex int
+	AlbumCount int
 }
 
 // FileTransferManager manages active outbound and inbound chunked file transfers.
@@ -773,9 +776,17 @@ func (m *FileTransferManager) ReceiveChunk(
 			MessageID: assembledMessageID,
 			FilePath:  targetPath,
 			FileName:  filepath.Base(targetPath),
-			Caption:   meta.Caption,
-			Emoji:     meta.Emoji,
-			FileSize:  meta.FileSize,
+			Caption:    meta.Caption,
+			Emoji:      meta.Emoji,
+			FileSize:   meta.FileSize,
+			AlbumID:    meta.AlbumID,
+			AlbumIndex: func() int {
+				if meta.AlbumIndex != nil {
+					return *meta.AlbumIndex
+				}
+				return -1
+			}(),
+			AlbumCount: meta.AlbumCount,
 		}, nil
 	}
 

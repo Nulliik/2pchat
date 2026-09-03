@@ -77,6 +77,10 @@ type FileMetadata struct {
 	AckWindow       int    `json:"ack_window,omitempty"`
 	Timestamp       int64  `json:"timestamp,omitempty"`
 
+	AlbumID    string `json:"album_id,omitempty"`
+	AlbumIndex *int   `json:"album_index,omitempty"`
+	AlbumCount int    `json:"album_count,omitempty"`
+
 	// Wire Base64 JSON fields
 	FileIDB64          string `json:"file_id"`
 	FileKeyB64         string `json:"file_key"`

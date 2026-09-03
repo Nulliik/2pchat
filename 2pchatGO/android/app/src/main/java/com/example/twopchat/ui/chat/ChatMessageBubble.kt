@@ -2423,7 +2423,19 @@ private fun AlbumItemCell(
     onOpenVideo: (String, Message?) -> Unit,
     onShowOptions: (Message) -> Unit
 ) {
-    if (uri.isBlank()) return
+    if (uri.isBlank()) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = modifier.background(Color.DarkGray.copy(alpha = 0.5f))
+        ) {
+            androidx.compose.material3.CircularProgressIndicator(
+                modifier = Modifier.size(24.dp),
+                color = Color.White.copy(alpha = 0.7f),
+                strokeWidth = 2.dp
+            )
+        }
+        return
+    }
     val isVideo = type == "VIDEO" || uri.endsWith(".mp4", ignoreCase = true) || uri.endsWith(".mov", ignoreCase = true)
     val imageBitmap = if (!isVideo) rememberSampledImage(uri) else null
     val videoThumbnail = if (isVideo) rememberVideoThumbnail(uri) else null

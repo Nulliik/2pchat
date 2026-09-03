@@ -6,11 +6,15 @@ import android.graphics.BitmapFactory
 import android.util.Base64
 import com.example.twopchat.relay.PeerAvatarCache
 import java.io.ByteArrayOutputStream
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 internal class AvatarManager(
     private val sharedAvatarCache: PeerAvatarCache,
 ) {
     val peerAvatars = sharedAvatarCache.avatars
+    private val ioScope = CoroutineScope(Dispatchers.IO)
 
     fun loadPersistedAvatars(context: Context, log: (Context, String, String, Throwable?) -> Unit) {
         sharedAvatarCache.loadPersisted(context) { error ->
@@ -25,9 +29,11 @@ internal class AvatarManager(
             sharedAvatarCache.put(toKey, bitmap)
         }
         if (context != null) {
-            try {
-                sharedAvatarCache.savePersisted(context, toKey, bitmap)
-            } catch (_: Throwable) {}
+            ioScope.launch {
+                try {
+                    sharedAvatarCache.savePersisted(context, toKey, bitmap)
+                } catch (_: Throwable) {}
+            }
         }
     }
 
@@ -48,14 +54,22 @@ internal class AvatarManager(
                 bounds.outWidth.toLong() * bounds.outHeight.toLong() > 16_000_000L) return
             var sample = 1
             while (bounds.outWidth / sample > 1024 || bounds.outHeight / sample > 1024) sample *= 2
-            val bitmap = BitmapFactory.decodeByteArray(
+            val rawBitmap = BitmapFactory.decodeByteArray(
                 bytes, 0, bytes.size,
                 BitmapFactory.Options().apply {
                     inSampleSize = sample
                     inPreferredConfig = Bitmap.Config.RGB_565
                 }
             )
-            if (bitmap != null) {
+            if (rawBitmap != null) {
+                val scale = minOf(96f / rawBitmap.width.toFloat(), 96f / rawBitmap.height.toFloat())
+                val bitmap = if (rawBitmap.width <= 96 && rawBitmap.height <= 96) {
+                    rawBitmap
+                } else {
+                    val targetW = (rawBitmap.width * scale).toInt().coerceAtLeast(1)
+                    val targetH = (rawBitmap.height * scale).toInt().coerceAtLeast(1)
+                    Bitmap.createScaledBitmap(rawBitmap, targetW, targetH, true)
+                }
                 val keys = listOfNotNull(
                     sender.takeIf { it.isNotBlank() },
                     effectiveName?.takeIf { it.isNotBlank() },
@@ -67,11 +81,13 @@ internal class AvatarManager(
                     }
                 }
                 log(context, "Received and cached an authenticated peer avatar for ${effectiveName ?: sender}", "INFO", null)
-                for (k in keys) {
-                    try {
-                        sharedAvatarCache.savePersisted(context, k, bitmap)
-                    } catch (saveEx: Exception) {
-                        log(context, "Failed to save avatar file for $k: ${saveEx.message}", "ERROR", saveEx)
+                ioScope.launch {
+                    for (k in keys) {
+                        try {
+                            sharedAvatarCache.savePersisted(context, k, rawBitmap)
+                        } catch (saveEx: Exception) {
+                            log(context, "Failed to save avatar file for $k: ${saveEx.message}", "ERROR", saveEx)
+                        }
                     }
                 }
             }

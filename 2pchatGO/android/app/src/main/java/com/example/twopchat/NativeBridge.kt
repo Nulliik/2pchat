@@ -211,10 +211,20 @@ object NativeBridge {
         }
     }
 
-    fun sendFile(peerFingerprint: String, filePath: String, messageId: String = "", fileName: String = "", caption: String = "", emoji: String = ""): String? {
+    fun sendFile(
+        peerFingerprint: String,
+        filePath: String,
+        messageId: String = "",
+        fileName: String = "",
+        caption: String = "",
+        emoji: String = "",
+        albumId: String = "",
+        albumIndex: Int = -1,
+        albumCount: Int = 0,
+    ): String? {
         if (!isLoaded) return null
         return try {
-            nativeSendFile(peerFingerprint, filePath, messageId, fileName, caption, emoji)
+            nativeSendFile(peerFingerprint, filePath, messageId, fileName, caption, emoji, albumId, albumIndex, albumCount)
         } catch (e: Throwable) {
             Log.e(TAG, "nativeSendFile failed", e)
             null
@@ -672,7 +682,17 @@ object NativeBridge {
     private external fun nativeSendMessageBinary(peerFingerprint: String, directBuffer: java.nio.ByteBuffer, offset: Int, length: Int): String?
     private external fun nativeSendRawBytes(peerFingerprint: String, payload: ByteArray): String?
     private external fun nativeIsPeerOnline(peerFingerprint: String): Boolean
-    private external fun nativeSendFile(peerFingerprint: String, filePath: String, messageId: String, fileName: String, caption: String, emoji: String): String?
+    private external fun nativeSendFile(
+        peerFingerprint: String,
+        filePath: String,
+        messageId: String,
+        fileName: String,
+        caption: String,
+        emoji: String,
+        albumId: String,
+        albumIndex: Int,
+        albumCount: Int,
+    ): String?
     private external fun nativeCancelFile(messageId: String): Boolean
     private external fun nativeSetTorProxy(enabled: Boolean, proxyAddr: String)
     private external fun nativeSetYggdrasilConfig(mode: String, proxyAddr: String)

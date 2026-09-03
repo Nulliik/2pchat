@@ -36,6 +36,7 @@ import java.util.Locale
 import java.util.Date
 import java.util.UUID
 import android.util.Base64
+import android.os.SystemClock
 import androidx.compose.runtime.mutableStateMapOf
 import com.example.twopchat.group.runtime.GroupChatCoordinator
 import com.example.twopchat.group.protocol.GroupWireProtocol
@@ -182,8 +183,26 @@ object P2PMessageRelay {
         return _peerEndpoints.keys.filter { !isPlaceholderPeerName(it) }
     }
 
+    @Volatile
+    private var cachedLocalIp: String? = null
+    @Volatile
+    private var cachedLocalIpExpiryMs: Long = 0L
+
+    @Volatile
+    private var cachedYggIp: String? = null
+    @Volatile
+    private var cachedYggIpExpiryMs: Long = 0L
+
+    private const val IP_CACHE_TTL_MS = 15_000L
+
     fun getLocalIpAddress(context: Context? = null): String {
-        try {
+        val now = System.currentTimeMillis()
+        val cached = cachedLocalIp
+        if (cached != null && now < cachedLocalIpExpiryMs) {
+            return cached
+        }
+        val ip = try {
+            var found = "127.0.0.1"
             val interfaces = java.net.NetworkInterface.getNetworkInterfaces()
             while (interfaces.hasMoreElements()) {
                 val iface = interfaces.nextElement()
@@ -192,16 +211,29 @@ object P2PMessageRelay {
                 while (addrs.hasMoreElements()) {
                     val addr = addrs.nextElement()
                     if (addr is java.net.Inet4Address && !addr.isLoopbackAddress) {
-                        return addr.hostAddress ?: "127.0.0.1"
+                        found = addr.hostAddress ?: "127.0.0.1"
+                        break
                     }
                 }
+                if (found != "127.0.0.1") break
             }
-        } catch (_: Exception) {}
-        return "127.0.0.1"
+            found
+        } catch (_: Exception) {
+            "127.0.0.1"
+        }
+        cachedLocalIp = ip
+        cachedLocalIpExpiryMs = now + IP_CACHE_TTL_MS
+        return ip
     }
 
     fun getYggdrasilAddress(): String {
-        try {
+        val now = System.currentTimeMillis()
+        val cached = cachedYggIp
+        if (cached != null && now < cachedYggIpExpiryMs) {
+            return cached
+        }
+        val ip = try {
+            var found = ""
             val interfaces = java.net.NetworkInterface.getNetworkInterfaces()
             while (interfaces.hasMoreElements()) {
                 val iface = interfaces.nextElement()
@@ -210,22 +242,29 @@ object P2PMessageRelay {
                     val addr = addrs.nextElement()
                     val host = addr.hostAddress.orEmpty()
                     if (host.startsWith("0200:") || host.startsWith("0300:") || host.startsWith("200:") || host.startsWith("300:")) {
-                        return host.split("%")[0]
+                        found = host.split("%")[0]
+                        break
+                    }
+                }
+                if (found.isNotEmpty()) break
+            }
+            if (found.isEmpty()) {
+                storedAppContext?.let { ctx ->
+                    val prefs = P2PPreferences.prefs(ctx)
+                    val state = prefs.getString("yggdrasil_runtime_state", "")?.trim().orEmpty()
+                    val runtimeIp = prefs.getString("yggdrasil_runtime_ip", "")?.trim().orEmpty()
+                    if (runtimeIp.isNotEmpty() && (state.equals("enabled", ignoreCase = true) || state.equals("connected", ignoreCase = true))) {
+                        found = runtimeIp
                     }
                 }
             }
-        } catch (_: Exception) {}
-        try {
-            storedAppContext?.let { ctx ->
-                val prefs = P2PPreferences.prefs(ctx)
-                val state = prefs.getString("yggdrasil_runtime_state", "")?.trim().orEmpty()
-                val ip = prefs.getString("yggdrasil_runtime_ip", "")?.trim().orEmpty()
-                if (ip.isNotEmpty() && (state.equals("enabled", ignoreCase = true) || state.equals("connected", ignoreCase = true))) {
-                    return ip
-                }
-            }
-        } catch (_: Exception) {}
-        return ""
+            found
+        } catch (_: Exception) {
+            ""
+        }
+        cachedYggIp = ip
+        cachedYggIpExpiryMs = now + IP_CACHE_TTL_MS
+        return ip
     }
 
     fun refreshAnnouncement(context: Context) {
@@ -2152,56 +2191,66 @@ object P2PMessageRelay {
                             log(appContext, "Rejected an invalid incoming file payload", "ERROR")
                             return
                         }
-                        val albumKey = incomingAttachment?.albumId?.let { "$sender:$it" }
-                        val existingAlbum = if (albumKey != null) {
-                            incomingAlbums[albumKey]
-                                ?: ChatDatabaseHelper.getInstance(appContext).findMessageForReaction(
-                                    sender,
-                                    incomingAttachment.albumId,
-                                    "",
-                                )
-                        } else {
-                            null
-                        }
-                        val incomingMessage = if (
-                            incomingAttachment != null &&
+                        val peerKey = resolvedSender.ifBlank { sender }
+                        val albumKey = incomingAttachment?.albumId?.let { "$peerKey:$it" }
+                        val isAlbumPart = incomingAttachment != null &&
                             incomingAttachment.albumId != null &&
                             incomingAttachment.albumIndex != null &&
                             incomingAttachment.albumCount != null
-                        ) {
-                            val totalParts = incomingAttachment.albumCount.coerceIn(1, 100)
-                            val albumUris = existingAlbum?.albumMediaUris.orEmpty().toMutableList()
-                            val albumTypes = existingAlbum?.albumMediaTypes.orEmpty().toMutableList()
-                            while (albumUris.size < totalParts) albumUris.add("")
-                            while (albumTypes.size < totalParts) albumTypes.add("IMAGE")
-                            val partIndex = incomingAttachment.albumIndex
-                            if (partIndex in 0 until totalParts) {
-                                albumUris[partIndex] = incomingAttachment.attachmentUri
-                                albumTypes[partIndex] = incomingAttachment.attachmentType
-                            }
-                            val albumComplete = albumUris.take(totalParts).all { it.isNotBlank() }
-                            Message(
-                                id = incomingAttachment.albumId,
-                                text = existingAlbum?.text
-                                    ?: incomingAttachment.caption
-                                    ?: "Sent an album (${incomingAttachment.albumCount})",
-                                isMe = false,
-                                timestamp = existingAlbum?.timestamp
-                                    ?: java.text.SimpleDateFormat(
-                                        "HH:mm",
-                                        java.util.Locale.getDefault(),
-                                    ).format(java.util.Date()),
-                                attachmentType = "ALBUM",
-                                attachmentUri = albumUris.firstOrNull { it.isNotBlank() } ?: albumUris.firstOrNull(),
-                                attachmentName = "Album",
-                                status = if (albumComplete) "SENT" else "RECEIVING",
-                                albumMediaUris = albumUris,
-                                albumMediaTypes = albumTypes,
-                            ).also { albumMessage ->
-                                if (albumComplete) {
-                                    incomingAlbums.remove(albumKey)
-                                } else if (albumKey != null) {
-                                    incomingAlbums[albumKey] = albumMessage
+
+                        var albumWasNew = false
+                        val incomingMessage = if (isAlbumPart) {
+                            synchronized(incomingAlbums) {
+                                val existingAlbum = albumKey?.let {
+                                    incomingAlbums[it]
+                                        ?: incomingAlbums["$sender:${incomingAttachment.albumId}"]
+                                        ?: incomingAlbums["$resolvedSender:${incomingAttachment.albumId}"]
+                                        ?: ChatDatabaseHelper.getInstance(appContext).findMessageForReaction(
+                                            peerKey,
+                                            incomingAttachment.albumId,
+                                            "",
+                                        )
+                                }
+                                albumWasNew = (existingAlbum == null)
+                                val totalParts = incomingAttachment.albumCount.coerceIn(1, 100)
+                                val albumUris = existingAlbum?.albumMediaUris.orEmpty().toMutableList()
+                                val albumTypes = existingAlbum?.albumMediaTypes.orEmpty().toMutableList()
+                                while (albumUris.size < totalParts) albumUris.add("")
+                                while (albumTypes.size < totalParts) albumTypes.add("IMAGE")
+                                val partIndex = incomingAttachment.albumIndex
+                                if (partIndex in 0 until totalParts) {
+                                    albumUris[partIndex] = incomingAttachment.attachmentUri
+                                    albumTypes[partIndex] = incomingAttachment.attachmentType
+                                }
+                                val albumComplete = albumUris.take(totalParts).all { it.isNotBlank() }
+                                val defaultTitle = if (runCatching { P2PPreferences.getAppLanguage(appContext) == "Русский" }.getOrDefault(false)) {
+                                    "Альбом (${incomingAttachment.albumCount})"
+                                } else {
+                                    "Sent an album (${incomingAttachment.albumCount})"
+                                }
+                                Message(
+                                    id = incomingAttachment.albumId,
+                                    text = existingAlbum?.text
+                                        ?: incomingAttachment.caption
+                                        ?: defaultTitle,
+                                    isMe = false,
+                                    timestamp = existingAlbum?.timestamp
+                                        ?: java.text.SimpleDateFormat(
+                                            "HH:mm",
+                                            java.util.Locale.getDefault(),
+                                        ).format(java.util.Date()),
+                                    attachmentType = "ALBUM",
+                                    attachmentUri = albumUris.firstOrNull { it.isNotBlank() } ?: albumUris.firstOrNull(),
+                                    attachmentName = "Album",
+                                    status = if (albumComplete) "SENT" else "RECEIVING",
+                                    albumMediaUris = albumUris,
+                                    albumMediaTypes = albumTypes,
+                                ).also { albumMessage ->
+                                    if (albumKey != null) {
+                                        incomingAlbums[albumKey] = albumMessage
+                                        incomingAlbums["$sender:${incomingAttachment.albumId}"] = albumMessage
+                                        incomingAlbums["$resolvedSender:${incomingAttachment.albumId}"] = albumMessage
+                                    }
                                 }
                             }
                         } else if (incomingAttachment != null) {
@@ -2305,8 +2354,8 @@ object P2PMessageRelay {
                             appContext,
                             resolvedSender,
                             incomingMessage,
-                            countAsNew = if (albumKey != null) {
-                                existingAlbum == null
+                            countAsNew = if (isAlbumPart) {
+                                albumWasNew
                             } else {
                                 !completedOffer
                             },

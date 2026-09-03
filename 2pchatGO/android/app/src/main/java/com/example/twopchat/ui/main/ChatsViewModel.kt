@@ -83,7 +83,7 @@ internal class ChatsViewModel(
         val combined = (prefChats + dbChats).filter { it.isNotBlank() && it != "null" && it != "Saved Messages" }.toSet()
         if (activeChatsSet.value != combined) {
             activeChatsSet.value = combined
-            notifyChatListChanged(immediate = true)
+            notifyChatListChanged(immediate = false)
         }
         prefetchTopActiveChats(combined)
     }

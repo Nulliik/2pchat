@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"os"
 	"path/filepath"
@@ -487,5 +488,65 @@ func TestFileTransfer_PathTraversalHardening(t *testing.T) {
 				t.Fatalf("file content mismatch")
 			}
 		})
+	}
+}
+
+func TestFileTransferWithAlbumMetadata(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFilePath := filepath.Join(tmpDir, "album_photo.jpg")
+	testData := []byte("fake image data for album test")
+	if err := os.WriteFile(testFilePath, testData, 0600); err != nil {
+		t.Fatalf("failed to write test file: %v", err)
+	}
+
+	downloadsDir := filepath.Join(tmpDir, "downloads")
+	receiver := NewFileTransferManager(nil)
+
+	r := bytes.NewReader(testData)
+	meta, chunkChan, err := EncryptFileStream(r, int64(len(testData)), "album_photo.jpg", "Album caption", "", 64*1024)
+	if err != nil {
+		t.Fatalf("EncryptFileStream failed: %v", err)
+	}
+
+	h := sha256.Sum256(testData)
+	meta.FileHash = h[:]
+	meta.AlbumID = "album_999"
+	idx := 1
+	meta.AlbumIndex = &idx
+	meta.AlbumCount = 3
+
+	metaJSON, err := meta.EncodeMetadataJSON()
+	if err != nil {
+		t.Fatalf("EncodeMetadataJSON failed: %v", err)
+	}
+
+	msgID := "msg_album_1"
+	// Deliver metadata
+	res, err := receiver.ReceiveChunk("peer_sender", msgID, base64.StdEncoding.EncodeToString(metaJSON), downloadsDir)
+	if err != nil {
+		t.Fatalf("ReceiveChunk metadata failed: %v", err)
+	}
+	if res != nil {
+		t.Fatal("expected nil result on metadata delivery")
+	}
+
+	// Deliver chunk
+	chunk := <-chunkChan
+	res, err = receiver.ReceiveChunk("peer_sender", msgID, base64.StdEncoding.EncodeToString(chunk.Payload), downloadsDir)
+	if err != nil {
+		t.Fatalf("ReceiveChunk payload failed: %v", err)
+	}
+	if res == nil {
+		t.Fatal("expected assembled file")
+	}
+
+	if res.AlbumID != "album_999" {
+		t.Fatalf("expected AlbumID 'album_999', got '%s'", res.AlbumID)
+	}
+	if res.AlbumIndex != 1 {
+		t.Fatalf("expected AlbumIndex 1, got %d", res.AlbumIndex)
+	}
+	if res.AlbumCount != 3 {
+		t.Fatalf("expected AlbumCount 3, got %d", res.AlbumCount)
 	}
 }
