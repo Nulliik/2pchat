@@ -1604,8 +1604,16 @@ fun ChatScreen(
             surfaceColor = MaterialTheme.colorScheme.surface,
             onSurfaceColor = MaterialTheme.colorScheme.onSurface,
             onDismiss = {
+                val filesToClean = pendingAlbumFiles
                 pendingAlbumFiles = null
                 pendingAlbumTypes = null
+                if (!filesToClean.isNullOrEmpty()) {
+                    coroutineScope.launch(Dispatchers.IO) {
+                        filesToClean.forEach {
+                            com.example.twopchat.security.TemporaryCacheSanitizer.shredFile(it)
+                        }
+                    }
+                }
             },
             onSendAlbum = { finalFiles, caption ->
                 val types = pendingAlbumTypes ?: emptyList()
@@ -2390,7 +2398,10 @@ fun ChatScreen(
                 },
                 onDeleteSelected = {
                     selectedMessages.forEach { msg ->
-                                    persistDatabase { db.deleteMessage(msg.id) }
+                                    persistDatabase {
+                                        db.deleteMessage(msg.id)
+                                        com.example.twopchat.media.AttachmentStorageManager.deleteMessageAttachments(context, msg.attachmentUri, msg.albumMediaUris)
+                                    }
                                     initialMessages.remove(msg)
                                     P2PMessageRelay.sendDeleteMessage(context, peerName, msg.id)
                                     if (msg.id == pinnedMsgId) {
@@ -2699,7 +2710,10 @@ fun ChatScreen(
                     selectedMessageForOptions = null
                 },
                 onDelete = {
-                    persistDatabase { db.deleteMessage(msg.id) }
+                    persistDatabase {
+                        db.deleteMessage(msg.id)
+                        com.example.twopchat.media.AttachmentStorageManager.deleteMessageAttachments(context, msg.attachmentUri, msg.albumMediaUris)
+                    }
                     initialMessages.remove(msg)
                     P2PMessageRelay.sendDeleteMessage(context, peerName, msg.id)
                     if (msg.id == pinnedMsgId) {
@@ -2900,7 +2914,10 @@ fun ChatScreen(
                 if (targetId != null) {
                     val targetMsg = initialMessages.find { it.id == targetId }
                     if (targetMsg != null) {
-                        persistDatabase { db.deleteMessage(targetMsg.id) }
+                        persistDatabase {
+                            db.deleteMessage(targetMsg.id)
+                            com.example.twopchat.media.AttachmentStorageManager.deleteMessageAttachments(context, targetMsg.attachmentUri, targetMsg.albumMediaUris)
+                        }
                         initialMessages.remove(targetMsg)
                         P2PMessageRelay.sendDeleteMessage(context, peerName, targetMsg.id)
                     }

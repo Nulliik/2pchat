@@ -1743,8 +1743,16 @@ fun GroupChatScreen(
         pendingAlbumFiles = pendingAlbumFiles,
         pendingAlbumTypes = pendingAlbumTypes,
         onDismissAlbumPreview = {
+            val filesToClean = pendingAlbumFiles
             pendingAlbumFiles = null
             pendingAlbumTypes = null
+            if (!filesToClean.isNullOrEmpty()) {
+                coroutineScope.launch(Dispatchers.IO) {
+                    filesToClean.forEach {
+                        com.example.twopchat.security.TemporaryCacheSanitizer.shredFile(it)
+                    }
+                }
+            }
         },
         activeFullscreenImages = finalFullImages,
         activeFullscreenImageIndex = finalFullIndex,

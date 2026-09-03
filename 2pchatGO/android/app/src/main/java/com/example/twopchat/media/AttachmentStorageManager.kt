@@ -230,4 +230,25 @@ object AttachmentStorageManager {
             skippedActiveTransfers = skippedActiveTransfers,
         )
     }
+
+    fun deleteMessageAttachments(
+        context: Context,
+        attachmentUri: String?,
+        albumMediaUris: List<String> = emptyList(),
+    ) {
+        val appContext = context.applicationContext
+        val roots = managedRoots(appContext) + listOf(appContext.cacheDir)
+        val allPaths = (listOfNotNull(attachmentUri) + albumMediaUris)
+            .filter { it.isNotBlank() && "://" !in it }
+            .distinct()
+
+        allPaths.forEach { path ->
+            try {
+                val file = File(path)
+                if (file.isFile && isFileInsideAnyRoot(file, roots)) {
+                    com.example.twopchat.security.TemporaryCacheSanitizer.shredFile(file)
+                }
+            } catch (_: Throwable) {}
+        }
+    }
 }

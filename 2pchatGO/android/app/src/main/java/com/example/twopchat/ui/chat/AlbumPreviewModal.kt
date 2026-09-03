@@ -136,7 +136,10 @@ fun AlbumPreviewModal(
                         IconButton(
                             onClick = {
                                 if (currentFiles.isNotEmpty()) {
-                                    currentFiles.removeAt(selectedPreviewIndex)
+                                    val removedFile = currentFiles.removeAt(selectedPreviewIndex)
+                                    scope.launch(Dispatchers.IO) {
+                                        com.example.twopchat.security.TemporaryCacheSanitizer.shredFile(removedFile)
+                                    }
                                     if (currentFiles.isEmpty()) {
                                         onDismiss()
                                     } else if (selectedPreviewIndex >= currentFiles.size) {
@@ -369,13 +372,23 @@ fun AlbumPreviewModal(
                                                                 if (scaledBmp != bmp) bmp.recycle()
                                                             }
                                                             val destFile = File(attachmentsDir, "album_${timeStamp}_${idx}_${java.util.UUID.randomUUID().toString().take(6)}.jpg")
-                                                            try {
+                                                            val wroteOk = try {
                                                                 java.io.FileOutputStream(destFile).use { out ->
                                                                     scaledBmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 82, out)
                                                                 }
-                                                                destFile
+                                                                true
+                                                            } catch (_: Throwable) {
+                                                                false
                                                             } finally {
                                                                 scaledBmp.recycle()
+                                                            }
+                                                            if (wroteOk && destFile.exists() && destFile.length() > 0L) {
+                                                                if (destFile != file) {
+                                                                    com.example.twopchat.security.TemporaryCacheSanitizer.shredFile(file)
+                                                                }
+                                                                destFile
+                                                            } else {
+                                                                file
                                                             }
                                                         } else file
                                                     } else file
