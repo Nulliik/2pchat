@@ -2318,7 +2318,7 @@ object GroupChatCoordinator {
                 val prefs = com.example.twopchat.config.P2PPreferences.prefs(context)
                 val text = if (event.kind == GroupEventKind.POLL) {
                     val appLang = prefs.getString("app_language", "en") ?: "en"
-                    val pollPrefix = com.example.twopchat.data.Localizations.tr(appLang, "poll_notification_prefix", "Poll: ")
+                    val pollPrefix = com.example.twopchat.data.Localizations.getString("poll_notification_prefix", appLang)
                     "$pollPrefix${payload.optString("question")}"
                 } else {
                     payload.optString("text")
