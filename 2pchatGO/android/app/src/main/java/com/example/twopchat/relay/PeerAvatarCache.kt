@@ -224,11 +224,7 @@ internal class PeerAvatarCache(
         )
         val targetWidth = (width * scale).toInt().coerceAtLeast(1)
         val targetHeight = (height * scale).toInt().coerceAtLeast(1)
-        val scaled = Bitmap.createScaledBitmap(this, targetWidth, targetHeight, true)
-        if (scaled !== this && !this.isRecycled) {
-            this.recycle()
-        }
-        return scaled
+        return Bitmap.createScaledBitmap(this, targetWidth, targetHeight, true)
     }
 
     private companion object {
