@@ -173,27 +173,7 @@ internal class IncomingMessageRouter(
                             log(context, "Saved Tor .onion endpoint from profile share for $effectiveName: $formatted", "INFO", null)
                         }
                         if (aboutMe != null) {
-                            val keys = linkedSetOf<String>()
-                            keys.add(effectiveName)
-                            val baseEff = effectiveName.substringBefore("#").trim()
-                            if (baseEff.isNotEmpty()) keys.add(baseEff)
-                            if (sender.isNotBlank()) {
-                                keys.add(sender)
-                                val baseSender = sender.substringBefore("#").trim()
-                                if (baseSender.isNotEmpty()) keys.add(baseSender)
-                            }
-                            if (fingerprint != null) {
-                                keys.add(fingerprint)
-                            }
-                            val editor = P2PPreferences.prefs(context).edit()
-                            val db = ChatDatabaseHelper.getInstance(context)
-                            for (k in keys) {
-                                if (k.isNotEmpty()) {
-                                    editor.putString("peer_about_me_$k", aboutMe)
-                                    db.savePeerAboutMe(k, aboutMe)
-                                }
-                            }
-                            editor.apply()
+                            P2PMessageRelay.handlePeerNicknameReceived(context, sender, nickname, aboutMe)
                         }
                         val discCode = json.optString("discovery_code").takeIf { it.isNotBlank() }
                         if (discCode != null) {

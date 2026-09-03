@@ -88,15 +88,33 @@ internal class ChatsViewModel(
         prefetchTopActiveChats(combined)
     }
 
+    private var refreshChatsJob: kotlinx.coroutines.Job? = null
+
+    private fun scheduleRefreshActiveChats() {
+        if (refreshChatsJob?.isActive == true) return
+        refreshChatsJob = viewModelScope.launch(Dispatchers.IO) {
+            delay(100L)
+            refreshActiveChats()
+        }
+    }
+
     private val preferenceListener = SharedPreferences.OnSharedPreferenceChangeListener { prefs, key ->
         when {
             key == "active_chats" -> {
-                viewModelScope.launch(Dispatchers.IO) {
-                    refreshActiveChats()
-                }
+                scheduleRefreshActiveChats()
             }
-            key?.startsWith("last_msg_") == true ||
-                key?.startsWith("draft_msg_") == true ||
+            key?.startsWith("last_msg_") == true -> {
+                val peerName = key.removePrefix("last_msg_")
+                val raw = prefs.getString(key, null)
+                val dec = com.example.twopchat.security.SecureStorage.decrypt(raw)
+                if (dec != null) {
+                    com.example.twopchat.config.P2PPreferences.lastMessageCache[peerName] = dec
+                } else {
+                    com.example.twopchat.config.P2PPreferences.lastMessageCache.remove(peerName)
+                }
+                notifyChatListChanged()
+            }
+            key?.startsWith("draft_msg_") == true ||
                 key?.startsWith("transport_") == true ||
                 key?.startsWith("last_endpoint_") == true ||
                 key?.startsWith("unread_count_") == true ||

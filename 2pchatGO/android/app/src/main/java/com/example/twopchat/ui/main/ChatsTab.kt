@@ -145,9 +145,14 @@ fun ChatsTab(
             val lastMsg = if (hasDraft) {
                 "$draftPrefix$draft"
             } else {
-                SecureStorage.decrypt(
-                    sharedPrefs.getString("last_msg_$name", null)
-                ) ?: "No messages yet"
+                com.example.twopchat.config.P2PPreferences.lastMessageCache[name] ?: run {
+                    val rawEncrypted = sharedPrefs.getString("last_msg_$name", null)
+                    val decrypted = SecureStorage.decrypt(rawEncrypted) ?: "No messages yet"
+                    if (rawEncrypted != null) {
+                        com.example.twopchat.config.P2PPreferences.lastMessageCache[name] = decrypted
+                    }
+                    decrypted
+                }
             }
             val transport = canonicalConnectionTransport(
                 rawTransport = P2PMessageRelay.peerConnectionTransports[name]

@@ -299,6 +299,8 @@ internal class MessageNotificationService {
             return icon
         }
 
+        private val channelCreated = java.util.concurrent.atomic.AtomicBoolean(false)
+
         fun show(context: Context, sender: String, text: String, messageId: String) {
         val settings = P2PPreferences.prefs(context)
         if (!settings.getBoolean("settings_notifications", true)) return
@@ -316,16 +318,18 @@ internal class MessageNotificationService {
 
         // 4. Heads-Up High Importance Channel
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                CHANNEL_ID,
-                "P2P Messages",
-                NotificationManager.IMPORTANCE_HIGH
-            ).apply {
-                description = "Incoming P2P encrypted chat notifications"
-                enableVibration(true)
-                vibrationPattern = longArrayOf(0, 150, 100, 150)
+            if (channelCreated.compareAndSet(false, true)) {
+                val channel = NotificationChannel(
+                    CHANNEL_ID,
+                    "P2P Messages",
+                    NotificationManager.IMPORTANCE_HIGH
+                ).apply {
+                    description = "Incoming P2P encrypted chat notifications"
+                    enableVibration(true)
+                    vibrationPattern = longArrayOf(0, 150, 100, 150)
+                }
+                manager.createNotificationChannel(channel)
             }
-            manager.createNotificationChannel(channel)
         }
 
         val intent = context.packageManager.getLaunchIntentForPackage(context.packageName)?.apply {

@@ -13,6 +13,7 @@ import java.util.concurrent.ConcurrentHashMap
 
 /** Canonical keys for relay state which is intentionally small key/value metadata. */
 object P2PPreferences {
+    val lastMessageCache = ConcurrentHashMap<String, String>()
     const val FILE_NAME = "2pchat_prefs"
     private const val ENCRYPTED_FILE_NAME = "2pchat_secure_prefs"
     const val ACTIVE_CHATS = "active_chats"

@@ -19,6 +19,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.channels.Channel
 import com.example.twopchat.data.ChatDatabaseHelper
 import com.example.twopchat.ui.chat.Message
 import android.content.Context
@@ -656,44 +658,95 @@ object P2PMessageRelay {
         }
     }
 
-    internal fun persistAndDispatchIncoming(
-        context: Context,
-        sender: String,
-        message: Message,
-        notificationText: String = message.text,
-        countAsNew: Boolean = true,
-    ) {
-        // 1. Immediately deliver to active in-app chat listeners so message appears instantly
-        runOnMain {
-            messageListeners.forEach { it.onMessageReceived(sender, message) }
-        }
+    private data class IncomingPersistenceTask(
+        val context: Context,
+        val sender: String,
+        val message: Message,
+        val notificationText: String,
+        val countAsNew: Boolean,
+    )
 
-        // 2. Perform DB persistence, encryption, and notification asynchronously on IO dispatcher
-        serviceScope.launch(Dispatchers.IO) {
-            val prefs = P2PPreferences.prefs(context)
-            val activeSet = prefs.getStringSet(P2PPreferences.ACTIVE_CHATS, emptySet()).orEmpty()
-            if (sender !in activeSet) {
-                prefs.edit { putStringSet(P2PPreferences.ACTIVE_CHATS, activeSet + sender) }
-            }
-            if (!P2PPreferences.isAppLocked()) {
-                if (prefs.getBoolean("persist_chat_history", true)) {
+    private val incomingPersistenceQueue = Channel<IncomingPersistenceTask>(Channel.UNLIMITED)
+    private val incomingBatchProcessorStarted = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    private fun ensureIncomingBatchProcessorStarted() {
+        if (incomingBatchProcessorStarted.compareAndSet(false, true)) {
+            serviceScope.launch(Dispatchers.IO) {
+                while (isActive) {
                     try {
-                        ChatDatabaseHelper.getInstance(context).saveMessage(sender, message)
+                        val firstTask = incomingPersistenceQueue.receive()
+                        val batch = mutableListOf(firstTask)
+                        val deadline = System.currentTimeMillis() + 35L
+                        while (batch.size < 50) {
+                            val next = incomingPersistenceQueue.tryReceive().getOrNull()
+                            if (next != null) {
+                                batch.add(next)
+                            } else {
+                                val remaining = deadline - System.currentTimeMillis()
+                                if (remaining > 0) {
+                                    delay(minOf(remaining, 10L))
+                                    val waited = incomingPersistenceQueue.tryReceive().getOrNull()
+                                    if (waited != null) {
+                                        batch.add(waited)
+                                    } else {
+                                        break
+                                    }
+                                } else {
+                                    break
+                                }
+                            }
+                        }
+                        processIncomingPersistenceBatch(batch)
                     } catch (e: Exception) {
-                        log(context, "Failed to persist incoming message: ${e.message}", "ERROR", e)
+                        Log.e(TAG, "Error processing incoming persistence batch", e)
                     }
                 }
-                prefs.edit {
-                    putString(P2PPreferences.lastMessage(sender), SecureStorage.encrypt(notificationText))
+            }
+        }
+    }
+
+    private fun processIncomingPersistenceBatch(batch: List<IncomingPersistenceTask>) {
+        if (batch.isEmpty()) return
+        val bySender = batch.groupBy { it.sender }
+        for ((sender, senderTasks) in bySender) {
+            val context = senderTasks.first().context
+            val prefs = P2PPreferences.prefs(context)
+            val activeSet = prefs.getStringSet(P2PPreferences.ACTIVE_CHATS, emptySet()).orEmpty()
+            val needsActiveAdd = sender !in activeSet
+            val isLocked = P2PPreferences.isAppLocked()
+            val persistHistory = prefs.getBoolean("persist_chat_history", true)
+
+            if (!isLocked && persistHistory) {
+                try {
+                    val messages = senderTasks.map { it.message }
+                    ChatDatabaseHelper.getInstance(context).saveMessages(sender, messages)
+                } catch (e: Exception) {
+                    log(context, "Failed to persist incoming message batch: ${e.message}", "ERROR", e)
                 }
             }
 
+            val latestTask = senderTasks.last()
+            val latestNotificationText = latestTask.notificationText
             val currentActivePeer = activeChatPeer.get()
             val isChatOpenWithSender = currentActivePeer != null && P2PPreferences.isSamePeer(context, currentActivePeer, sender)
-            if (countAsNew && !isChatOpenWithSender) {
-                val unreadKey = P2PPreferences.unreadCount(sender)
-                prefs.edit { putInt(unreadKey, prefs.getInt(unreadKey, 0) + 1) }
-                showNotification(context, sender, message, notificationText)
+
+            val newCount = senderTasks.count { it.countAsNew }
+            val unreadKey = P2PPreferences.unreadCount(sender)
+
+            prefs.edit {
+                if (needsActiveAdd) {
+                    putStringSet(P2PPreferences.ACTIVE_CHATS, activeSet + sender)
+                }
+                if (!isLocked) {
+                    putString(P2PPreferences.lastMessage(sender), SecureStorage.encrypt(latestNotificationText))
+                }
+                if (newCount > 0 && !isChatOpenWithSender) {
+                    putInt(unreadKey, prefs.getInt(unreadKey, 0) + newCount)
+                }
+            }
+
+            if (newCount > 0 && !isChatOpenWithSender) {
+                showNotification(context, sender, latestTask.message, latestNotificationText)
             } else {
                 MessageNotificationService.cancelNotificationForPeer(context, sender)
                 if (currentActivePeer != null) {
@@ -701,6 +754,34 @@ object P2PMessageRelay {
                 }
             }
         }
+    }
+
+    internal fun persistAndDispatchIncoming(
+        context: Context,
+        sender: String,
+        message: Message,
+        notificationText: String = message.text,
+        countAsNew: Boolean = true,
+    ) {
+        // Cache plaintext immediately so UI reads it with zero Keystore overhead
+        P2PPreferences.lastMessageCache[sender] = notificationText
+
+        // 1. Immediately deliver to active in-app chat listeners so message appears instantly
+        runOnMain {
+            messageListeners.forEach { it.onMessageReceived(sender, message) }
+        }
+
+        // 2. Queue for batched DB persistence, encryption, and notification
+        ensureIncomingBatchProcessorStarted()
+        incomingPersistenceQueue.trySend(
+            IncomingPersistenceTask(
+                context = context,
+                sender = sender,
+                message = message,
+                notificationText = notificationText,
+                countAsNew = countAsNew,
+            )
+        )
     }
 
     fun isRawFingerprint(name: String): Boolean {
@@ -736,34 +817,44 @@ object P2PMessageRelay {
 
         val sharedPrefs = P2PPreferences.prefs(context)
         if (cleanAboutMe != null) {
-            val db = ChatDatabaseHelper.getInstance(context)
-            val keys = linkedSetOf<String>()
-            keys.add(targetKey)
-            val baseTarget = targetKey.substringBefore("#").trim()
-            if (baseTarget.isNotEmpty()) keys.add(baseTarget)
-            if (cleanNickname != null) {
-                keys.add(cleanNickname)
-                val baseClean = cleanNickname.substringBefore("#").trim()
-                if (baseClean.isNotEmpty()) keys.add(baseClean)
-            }
-            if (sender.isNotBlank()) {
-                keys.add(sender)
-                val baseSender = sender.substringBefore("#").trim()
-                if (baseSender.isNotEmpty()) keys.add(baseSender)
-            }
-            val currentFp = sharedPrefs.getString("peer_fingerprint_$targetKey", null)
-                ?: if (isRawFingerprint(targetKey)) targetKey else null
-            if (currentFp != null) {
-                keys.add(currentFp)
-            }
-            val editor = sharedPrefs.edit()
-            for (k in keys) {
-                if (k.isNotEmpty()) {
-                    editor.putString("peer_about_me_$k", cleanAboutMe)
-                    db.savePeerAboutMe(k, cleanAboutMe)
+            val existingTargetAboutMe = sharedPrefs.getString("peer_about_me_$targetKey", null)
+            if (existingTargetAboutMe != cleanAboutMe) {
+                val db = ChatDatabaseHelper.getInstance(context)
+                val keys = linkedSetOf<String>()
+                keys.add(targetKey)
+                val baseTarget = targetKey.substringBefore("#").trim()
+                if (baseTarget.isNotEmpty()) keys.add(baseTarget)
+                if (cleanNickname != null) {
+                    keys.add(cleanNickname)
+                    val baseClean = cleanNickname.substringBefore("#").trim()
+                    if (baseClean.isNotEmpty()) keys.add(baseClean)
+                }
+                if (sender.isNotBlank()) {
+                    keys.add(sender)
+                    val baseSender = sender.substringBefore("#").trim()
+                    if (baseSender.isNotEmpty()) keys.add(baseSender)
+                }
+                val currentFp = sharedPrefs.getString("peer_fingerprint_$targetKey", null)
+                    ?: if (isRawFingerprint(targetKey)) targetKey else null
+                if (currentFp != null) {
+                    keys.add(currentFp)
+                }
+                val editor = sharedPrefs.edit()
+                var anyChanged = false
+                for (k in keys) {
+                    if (k.isNotEmpty()) {
+                        val currentVal = sharedPrefs.getString("peer_about_me_$k", null)
+                        if (currentVal != cleanAboutMe) {
+                            editor.putString("peer_about_me_$k", cleanAboutMe)
+                            db.savePeerAboutMe(k, cleanAboutMe)
+                            anyChanged = true
+                        }
+                    }
+                }
+                if (anyChanged) {
+                    editor.apply()
                 }
             }
-            editor.apply()
         }
 
         if (cleanNickname != null && cleanNickname != targetKey) {
@@ -942,6 +1033,9 @@ object P2PMessageRelay {
                     sharedPrefs.getString("$prefix$fromName", null)?.let {
                         editor.putString("$prefix$toName", it)
                     }
+                    P2PPreferences.lastMessageCache.remove(fromName)?.let {
+                        P2PPreferences.lastMessageCache[toName] = it
+                    }
                 }
                 "peer_about_me_" -> {
                     val value = sharedPrefs.getString("$prefix$fromName", null)?.trim()?.takeIf { it.isNotBlank() }
@@ -989,6 +1083,7 @@ object P2PMessageRelay {
         if (!prefs.getBoolean("persist_chat_history", true)) return
         val latest = db.getLastMessageForPeer(peerName) ?: return
         val preview = if (latest.isMe) "You: ${latest.text}" else latest.text
+        P2PPreferences.lastMessageCache[peerName] = preview
         prefs.edit().putString("last_msg_$peerName", SecureStorage.encrypt(preview)).apply()
     }
 

@@ -1225,20 +1225,12 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
 
     fun savePeerAboutMe(peerName: String, aboutMe: String) {
         val db = this.safeWritableDatabase
-        try {
-            db.execSQL("ALTER TABLE $TABLE_PEERS ADD COLUMN $KEY_ABOUT_ME TEXT")
-        } catch (_: Exception) {}
         val values = ContentValues().apply {
             put(KEY_PEER_NAME, peerName)
             put(KEY_ABOUT_ME, aboutMe)
             put(KEY_UPDATED_AT_MS, System.currentTimeMillis())
         }
-        db.insertWithOnConflict(TABLE_PEERS, null, values, SQLiteDatabase.CONFLICT_IGNORE)
-        val updateValues = ContentValues().apply {
-            put(KEY_ABOUT_ME, aboutMe)
-            put(KEY_UPDATED_AT_MS, System.currentTimeMillis())
-        }
-        db.update(TABLE_PEERS, updateValues, "$KEY_PEER_NAME = ?", arrayOf(peerName))
+        db.insertWithOnConflict(TABLE_PEERS, null, values, SQLiteDatabase.CONFLICT_REPLACE)
     }
 
     fun getPeerAboutMe(peerName: String): String? {
