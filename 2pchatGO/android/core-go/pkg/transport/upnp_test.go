@@ -1,6 +1,7 @@
 package transport
 
 import (
+	"context"
 	"strings"
 	"testing"
 )
@@ -54,7 +55,7 @@ func TestBuildNATPMPPacket(t *testing.T) {
 
 func TestUPnPTorBlockedGuard(t *testing.T) {
 	mapper := NewUPnPMapper(true)
-	err := mapper.DiscoverAndMapPort(nil, 50001)
+	err := mapper.DiscoverAndMapPort(context.Background(), 50001)
 	if err != ErrUPnPTorBlocked {
 		t.Errorf("Expected ErrUPnPTorBlocked when Tor enabled, got %v", err)
 	}

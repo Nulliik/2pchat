@@ -352,9 +352,10 @@ func (s *RelayTunnelServer) handleConnection(conn net.Conn) {
 				continue
 			}
 			var target net.Conn
-			if conn == pair.connA {
+			switch conn {
+			case pair.connA:
 				target = pair.connB
-			} else if conn == pair.connB {
+			case pair.connB:
 				target = pair.connA
 			}
 			if target != nil {
@@ -372,9 +373,10 @@ func (s *RelayTunnelServer) handleConnection(conn net.Conn) {
 
 			if exists {
 				var target net.Conn
-				if conn == pair.connA {
+				switch conn {
+				case pair.connA:
 					target = pair.connB
-				} else if conn == pair.connB {
+				case pair.connB:
 					target = pair.connA
 				}
 				if target != nil {

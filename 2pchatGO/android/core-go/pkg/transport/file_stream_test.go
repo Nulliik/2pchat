@@ -114,7 +114,7 @@ func BenchmarkEncryptFileStream(b *testing.B) {
 	b.ResetTimer()
 	b.ReportAllocs()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		r := bytes.NewReader(data)
 		_, chunkChan, err := EncryptFileStream(r, int64(fileSize), "bench.bin", "", "", DefaultChunkSize)
 		if err != nil {
