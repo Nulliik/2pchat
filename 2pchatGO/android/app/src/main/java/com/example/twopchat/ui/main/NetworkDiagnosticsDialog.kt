@@ -473,7 +473,15 @@ private fun ConnectionSweepCard(
                             .background(if (result.isAllOk) Color(0xFF4CAF50) else Color(0xFFFFB74D))
                     )
                     Text(
-                        text = if (appLanguage == "Русский") "РЕЗУЛЬТАТ ТЕСТА СВЯЗИ" else "CONNECTION TEST RESULT",
+                        text = Localizations.tr(
+                            appLanguage,
+                            ru = "РЕЗУЛЬТАТ ТЕСТА СВЯЗИ",
+                            en = "CONNECTION TEST RESULT",
+                            de = "VERBINDUNGSTEST-ERGEBNIS",
+                            es = "RESULTADO DE LA PRUEBA DE CONEXIÓN",
+                            fr = "RÉSULTAT DU TEST DE CONNEXION",
+                            pt = "RESULTADO DO TESTE DE CONEXÃO"
+                        ),
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
                         color = primaryColor
@@ -504,12 +512,60 @@ private fun ConnectionSweepCard(
             // Verdict banner
             val verdictColor = if (result.isAllOk) Color(0xFF81C784) else Color(0xFFFFD54F)
             val verdictLabel = when {
-                appLanguage == "Русский" && result.verdict == "Direct P2P Reachable" -> "Прямой P2P доступен (STUN/UPnP)"
-                appLanguage == "Русский" && result.verdict.contains("Symmetric NAT") -> "Симметричный NAT (Hole Punch / Relay активны)"
-                appLanguage == "Русский" && result.verdict.contains("Dual-Stack") -> "Dual-Stack: Прямой P2P + Yggdrasil Mesh"
-                appLanguage == "Русский" && result.verdict.contains("Tor") -> "Tor: маршрутизация через защищённую сеть"
-                appLanguage == "Русский" && result.verdict == "P2P Operational" -> "P2P системы работают штатно"
-                appLanguage == "Русский" && result.verdict == "P2P Listener Offline" -> "Слушатель P2P не запущен"
+                result.verdict == "Direct P2P Reachable" -> Localizations.tr(
+                    appLanguage,
+                    ru = "Прямой P2P доступен (STUN/UPnP)",
+                    en = "Direct P2P reachable (STUN/UPnP)",
+                    de = "Direktes P2P erreichbar (STUN/UPnP)",
+                    es = "P2P directo accesible (STUN/UPnP)",
+                    fr = "P2P direct accessible (STUN/UPnP)",
+                    pt = "P2P direto acessível (STUN/UPnP)"
+                )
+                result.verdict.contains("Symmetric NAT") -> Localizations.tr(
+                    appLanguage,
+                    ru = "Симметричный NAT (Hole Punch / Relay активны)",
+                    en = "Symmetric NAT (Hole Punch / Relay active)",
+                    de = "Symmetrisches NAT (Hole Punch / Relay aktiv)",
+                    es = "NAT simétrico (Hole Punch / Relay activo)",
+                    fr = "NAT symétrique (Hole Punch / Relay actif)",
+                    pt = "NAT simétrico (Hole Punch / Relay ativo)"
+                )
+                result.verdict.contains("Dual-Stack") -> Localizations.tr(
+                    appLanguage,
+                    ru = "Dual-Stack: Прямой P2P + Yggdrasil Mesh",
+                    en = "Dual-Stack: Direct P2P + Yggdrasil Mesh",
+                    de = "Dual-Stack: Direktes P2P + Yggdrasil Mesh",
+                    es = "Dual-Stack: P2P directo + Yggdrasil Mesh",
+                    fr = "Dual-Stack : P2P direct + Yggdrasil Mesh",
+                    pt = "Dual-Stack: P2P direto + Yggdrasil Mesh"
+                )
+                result.verdict.contains("Tor") -> Localizations.tr(
+                    appLanguage,
+                    ru = "Tor: маршрутизация через защищённую сеть",
+                    en = "Tor: routed via privacy network",
+                    de = "Tor: über Datenschutznetzwerk geroutet",
+                    es = "Tor: enrutado a través de red privada",
+                    fr = "Tor : acheminé via le réseau privé",
+                    pt = "Tor: roteado via rede de privacidade"
+                )
+                result.verdict == "P2P Operational" -> Localizations.tr(
+                    appLanguage,
+                    ru = "P2P системы работают штатно",
+                    en = "P2P systems operational",
+                    de = "P2P-Systeme betriebsbereit",
+                    es = "Sistemas P2P operativos",
+                    fr = "Systèmes P2P opérationnels",
+                    pt = "Sistemas P2P operacionais"
+                )
+                result.verdict == "P2P Listener Offline" -> Localizations.tr(
+                    appLanguage,
+                    ru = "Слушатель P2P не запущен",
+                    en = "P2P listener offline",
+                    de = "P2P-Listener offline",
+                    es = "Oyente P2P desconectado",
+                    fr = "Écouteur P2P hors ligne",
+                    pt = "Ouvinte P2P offline"
+                )
                 else -> result.verdict
             }
             Text(
@@ -527,8 +583,12 @@ private fun ConnectionSweepCard(
 
             // Diagnostic badges grid
             SweepStatusRow(
-                label = if (appLanguage == "Русский") "P2P Сервер" else "P2P Server",
-                value = if (result.portOk) "Порт ${result.port} (Активен)" else "Не активен",
+                label = Localizations.tr(appLanguage, ru = "P2P Сервер", en = "P2P Server", de = "P2P-Server", es = "Servidor P2P", fr = "Serveur P2P", pt = "Servidor P2P"),
+                value = if (result.portOk) {
+                    Localizations.tr(appLanguage, ru = "Порт ${result.port} (Активен)", en = "Port ${result.port} (Active)", de = "Port ${result.port} (Aktiv)", es = "Puerto ${result.port} (Activo)", fr = "Port ${result.port} (Actif)", pt = "Porta ${result.port} (Ativo)")
+                } else {
+                    Localizations.tr(appLanguage, ru = "Не активен", en = "Inactive", de = "Inaktiv", es = "Inactivo", fr = "Inactif", pt = "Inativo")
+                },
                 isOk = result.portOk,
                 onSurfaceVariant = onSurfaceVariant
             )
@@ -541,53 +601,60 @@ private fun ConnectionSweepCard(
                 "${result.natType} (Hole Punch / Relay)"
             }
             SweepStatusRow(
-                label = if (appLanguage == "Русский") "NAT & STUN" else "NAT & STUN",
+                label = "NAT & STUN",
                 value = natLabel,
                 isOk = result.upnpMapped || result.natType in setOf("FULL_CONE", "OPEN_INTERNET", "RESTRICTED_CONE"),
                 onSurfaceVariant = onSurfaceVariant
             )
 
             val trackerText = if (result.trackersTotal > 0) {
-                val rttText = if (result.trackerAvgRtt > 0) " (RTT ~${result.trackerAvgRtt}мс)" else ""
-                "${result.trackersOnline}/${result.trackersTotal} онлайн$rttText"
+                val rttUnit = Localizations.tr(appLanguage, ru = "мс", en = "ms", de = "ms", es = "ms", fr = "ms", pt = "ms")
+                val onlineText = Localizations.tr(appLanguage, ru = "онлайн", en = "online", de = "online", es = "en línea", fr = "en ligne", pt = "online")
+                val rttText = if (result.trackerAvgRtt > 0) " (RTT ~${result.trackerAvgRtt}$rttUnit)" else ""
+                "${result.trackersOnline}/${result.trackersTotal} $onlineText$rttText"
             } else {
-                if (appLanguage == "Русский") "Не настроены" else "None"
+                Localizations.tr(appLanguage, ru = "Не настроены", en = "None", de = "Keine", es = "Ninguno", fr = "Aucun", pt = "Nenhum")
             }
             SweepStatusRow(
-                label = if (appLanguage == "Русский") "Трекеры Discovery" else "Discovery Trackers",
+                label = Localizations.tr(appLanguage, ru = "Трекеры Discovery", en = "Discovery Trackers", de = "Discovery-Tracker", es = "Trackers descubrimiento", fr = "Trackers découverte", pt = "Rastreadores descoberta"),
                 value = trackerText,
                 isOk = result.trackersOnline > 0,
                 onSurfaceVariant = onSurfaceVariant
             )
 
             val meshText = buildString {
-                if (result.yggOk) append("YGG: OK") else append(if (appLanguage == "Русский") "YGG: Выкл" else "YGG: Off")
+                if (result.yggOk) append("YGG: OK") else append(Localizations.tr(appLanguage, ru = "YGG: Выкл", en = "YGG: Off", de = "YGG: Aus", es = "YGG: Desact.", fr = "YGG: Désactivé", pt = "YGG: Desl."))
                 append(" · ")
-                if (result.torActive) append(if (appLanguage == "Русский") "Tor: Активен" else "Tor: Active") else append(if (appLanguage == "Русский") "Tor: Выкл" else "Tor: Off")
+                if (result.torActive) append(Localizations.tr(appLanguage, ru = "Tor: Активен", en = "Tor: Active", de = "Tor: Aktiv", es = "Tor: Activo", fr = "Tor : Actif", pt = "Tor: Ativo")) else append(Localizations.tr(appLanguage, ru = "Tor: Выкл", en = "Tor: Off", de = "Tor: Aus", es = "Tor: Desact.", fr = "Tor : Désactivé", pt = "Tor: Desl."))
             }
             SweepStatusRow(
-                label = if (appLanguage == "Русский") "Сети Ygg & Tor" else "Ygg & Tor Mesh",
+                label = Localizations.tr(appLanguage, ru = "Сети Ygg & Tor", en = "Ygg & Tor Mesh", de = "Ygg- & Tor-Mesh", es = "Redes Ygg y Tor", fr = "Réseaux Ygg et Tor", pt = "Redes Ygg e Tor"),
                 value = meshText,
                 isOk = result.yggOk || result.torActive,
                 onSurfaceVariant = onSurfaceVariant
             )
 
             SweepStatusRow(
-                label = if (appLanguage == "Русский") "Relay & Hole Punch" else "Relay & Hole Punch",
-                value = if (result.relayReady) (if (appLanguage == "Русский") "Готов (E2EE туннель)" else "Armed & Ready") else (if (appLanguage == "Русский") "Недоступен" else "Disabled"),
+                label = "Relay & Hole Punch",
+                value = if (result.relayReady) {
+                    Localizations.tr(appLanguage, ru = "Готов (E2EE туннель)", en = "Ready (E2EE tunnel)", de = "Bereit (E2EE-Tunnel)", es = "Listo (túnel E2EE)", fr = "Prêt (tunnel E2EE)", pt = "Pronto (túnel E2EE)")
+                } else {
+                    Localizations.tr(appLanguage, ru = "Недоступен", en = "Disabled", de = "Deaktiviert", es = "Desactivado", fr = "Désactivé", pt = "Desativado")
+                },
                 isOk = result.relayReady,
                 onSurfaceVariant = onSurfaceVariant
             )
 
+            val peersUnit = Localizations.tr(appLanguage, ru = "пиров", en = "peers", de = "Peers", es = "pares", fr = "pairs", pt = "pares")
             SweepStatusRow(
-                label = if (appLanguage == "Русский") "Активные сессии" else "Active Sessions",
-                value = "${result.activePeersCount} ${if (appLanguage == "Русский") "пиров" else "peers"}",
+                label = Localizations.tr(appLanguage, ru = "Активные сессии", en = "Active Sessions", de = "Aktive Sitzungen", es = "Sesiones activas", fr = "Sessions actives", pt = "Sessões ativas"),
+                value = "${result.activePeersCount} $peersUnit",
                 isOk = true,
                 onSurfaceVariant = onSurfaceVariant
             )
 
             Text(
-                text = "${if (appLanguage == "Русский") "Замер от" else "Tested at"}: ${result.timestamp}",
+                text = "${Localizations.tr(appLanguage, ru = "Замер от", en = "Tested at", de = "Gemessen am", es = "Probado en", fr = "Testé à", pt = "Testado em")}: ${result.timestamp}",
                 fontSize = 9.sp,
                 fontFamily = FontFamily.Monospace,
                 color = onSurfaceVariant.copy(alpha = 0.6f),
@@ -931,7 +998,15 @@ fun NetworkDiagnosticsDialog(
                                         .background(Color(0xFF4CAF50), shape = CircleShape)
                                 )
                                 Text(
-                                    text = if (appLanguage == "Русский") "Сетевой отладчик" else "Network Debugger",
+                                    text = Localizations.tr(
+                                        appLanguage,
+                                        ru = "Сетевой отладчик",
+                                        en = "Network Debugger",
+                                        de = "Netzwerk-Debugger",
+                                        es = "Depurador de red",
+                                        fr = "Débogueur réseau",
+                                        pt = "Depurador de rede"
+                                    ),
                                     fontSize = 18.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = onSurfaceColor,
@@ -979,7 +1054,15 @@ fun NetworkDiagnosticsDialog(
                             ) {
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
-                                        text = if (appLanguage == "Русский") "📊 Сводка состояния сети" else "📊 Network Diagnostics Summary",
+                                        text = Localizations.tr(
+                                            appLanguage,
+                                            ru = "📊 Сводка состояния сети",
+                                            en = "📊 Network Diagnostics Summary",
+                                            de = "📊 Netzwerkdiagnose-Übersicht",
+                                            es = "📊 Resumen de diagnóstico de red",
+                                            fr = "📊 Résumé du diagnostic réseau",
+                                            pt = "📊 Resumo do diagnóstico de rede"
+                                        ),
                                         fontSize = 12.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = primaryColor
@@ -1087,7 +1170,19 @@ fun NetworkDiagnosticsDialog(
                                 onSurfaceVariant = onSurfaceVariant,
                                 onCopy = {
                                     clipboardManager.setText(AnnotatedString(lastSweepResult!!.formattedLog))
-                                    Toast.makeText(context, if (appLanguage == "Русский") "Отчёт скопирован" else "Report copied", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(
+                                        context,
+                                        Localizations.tr(
+                                            appLanguage,
+                                            ru = "Отчёт скопирован",
+                                            en = "Report copied",
+                                            de = "Bericht kopiert",
+                                            es = "Informe copiado",
+                                            fr = "Rapport copié",
+                                            pt = "Relatório copiado"
+                                        ),
+                                        Toast.LENGTH_SHORT
+                                    ).show()
                                 },
                                 onDismiss = { lastSweepResult = null }
                             )
@@ -1104,11 +1199,11 @@ fun NetworkDiagnosticsDialog(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             listOf(
-                                "ALL" to (if (appLanguage == "Русский") "ВСЕ" else "ALL"),
-                                "ERRORS" to (if (appLanguage == "Русский") "ОШИБКИ" else "ERRORS"),
+                                "ALL" to Localizations.tr(appLanguage, ru = "ВСЕ", en = "ALL", de = "ALLE", es = "TODOS", fr = "TOUS", pt = "TODOS"),
+                                "ERRORS" to Localizations.tr(appLanguage, ru = "ОШИБКИ", en = "ERRORS", de = "FEHLER", es = "ERRORES", fr = "ERREURS", pt = "ERROS"),
                                 "P2P" to "P2P",
                                 "YGG" to "YGGDRASIL",
-                                "TRACKERS" to (if (appLanguage == "Русский") "ТРЕКЕРЫ" else "TRACKERS"),
+                                "TRACKERS" to Localizations.tr(appLanguage, ru = "ТРЕКЕРЫ", en = "TRACKERS", de = "TRACKER", es = "TRACKERS", fr = "TRACKERS", pt = "RASTREADORES"),
                                 "TOR" to "TOR"
                             ).forEach { (key, label) ->
                                 val isSelected = levelFilter == key
@@ -1166,7 +1261,15 @@ fun NetworkDiagnosticsDialog(
                                 ) {
                                     if (searchQuery.isEmpty()) {
                                         Text(
-                                            text = if (appLanguage == "Русский") "Поиск по логам..." else "Search logs...",
+                                            text = Localizations.tr(
+                                                appLanguage,
+                                                ru = "Поиск по логам...",
+                                                en = "Search logs...",
+                                                de = "Protokolle durchsuchen...",
+                                                es = "Buscar en registros...",
+                                                fr = "Rechercher dans les journaux...",
+                                                pt = "Pesquisar nos registros..."
+                                            ),
                                             fontSize = 12.sp,
                                             color = onSurfaceVariant.copy(alpha = 0.6f)
                                         )
@@ -1213,13 +1316,29 @@ fun NetworkDiagnosticsDialog(
                                 horizontalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
                                 Text(
-                                    text = if (appLanguage == "Русский") "СИСТЕМНЫЙ ЛОГ" else "SYSTEM LOG",
+                                    text = Localizations.tr(
+                                        appLanguage,
+                                        ru = "СИСТЕМНЫЙ ЛОГ",
+                                        en = "SYSTEM LOG",
+                                        de = "SYSTEMPROTOKOLL",
+                                        es = "REGISTRO DEL SISTEMA",
+                                        fr = "JOURNAL SYSTÈME",
+                                        pt = "REGISTRO DO SISTEMA"
+                                    ),
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = onSurfaceVariant
                                 )
                                 Text(
-                                    text = "($lineCount ${if (appLanguage == "Русский") "строк" else "lines"})",
+                                    text = "($lineCount " + Localizations.tr(
+                                        appLanguage,
+                                        ru = "строк",
+                                        en = "lines",
+                                        de = "Zeilen",
+                                        es = "líneas",
+                                        fr = "lignes",
+                                        pt = "linhas"
+                                    ) + ")",
                                     fontSize = 10.sp,
                                     fontFamily = FontFamily.Monospace,
                                     color = primaryColor
@@ -1255,7 +1374,19 @@ fun NetworkDiagnosticsDialog(
                                         .background(onSurfaceColor.copy(alpha = 0.06f))
                                         .clickable {
                                             clipboardManager.setText(AnnotatedString(formattedLogs.text))
-                                            Toast.makeText(context, if (appLanguage == "Русский") "Логи скопированы" else "Logs copied", Toast.LENGTH_SHORT).show()
+                                            Toast.makeText(
+                                                context,
+                                                Localizations.tr(
+                                                    appLanguage,
+                                                    ru = "Логи скопированы",
+                                                    en = "Logs copied",
+                                                    de = "Protokolle kopiert",
+                                                    es = "Registros copiados",
+                                                    fr = "Journaux copiés",
+                                                    pt = "Registros copiados"
+                                                ),
+                                                Toast.LENGTH_SHORT
+                                            ).show()
                                         },
                                     contentAlignment = Alignment.Center
                                 ) {
@@ -1388,7 +1519,19 @@ fun NetworkDiagnosticsDialog(
                                             lastSweepResult = sweep
                                             applySnapshot(withContext(Dispatchers.IO) { readDiagnosticsSnapshot(context) })
                                             isTestingConnection = false
-                                            Toast.makeText(context, if (appLanguage == "Русский") "Тест связи завершен!" else "Connection test complete!", Toast.LENGTH_SHORT).show()
+                                            Toast.makeText(
+                                                context,
+                                                Localizations.tr(
+                                                    appLanguage,
+                                                    ru = "Тест связи завершен!",
+                                                    en = "Connection test complete!",
+                                                    de = "Verbindungstest abgeschlossen!",
+                                                    es = "¡Prueba de conexión completada!",
+                                                    fr = "Test de connexion terminé !",
+                                                    pt = "Teste de conexão concluído!"
+                                                ),
+                                                Toast.LENGTH_SHORT
+                                            ).show()
                                         }
                                     }
                                 },
@@ -1407,9 +1550,25 @@ fun NetworkDiagnosticsDialog(
                                     }
                                     Text(
                                         text = if (isTestingConnection) {
-                                            if (appLanguage == "Русский") "Тестирование..." else "Testing..."
+                                            Localizations.tr(
+                                                appLanguage,
+                                                ru = "Тестирование...",
+                                                en = "Testing...",
+                                                de = "Testen...",
+                                                es = "Probando...",
+                                                fr = "Test en cours...",
+                                                pt = "Testando..."
+                                            )
                                         } else {
-                                            if (appLanguage == "Русский") "Тест связи" else "Test Sweep"
+                                            Localizations.tr(
+                                                appLanguage,
+                                                ru = "Тест связи",
+                                                en = "Test Sweep",
+                                                de = "Verbindungstest",
+                                                es = "Prueba de red",
+                                                fr = "Test de connexion",
+                                                pt = "Teste de rede"
+                                            )
                                         },
                                         color = onSurfaceColor,
                                         fontSize = 12.sp,
