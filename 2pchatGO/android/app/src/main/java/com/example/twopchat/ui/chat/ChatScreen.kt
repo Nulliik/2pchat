@@ -2186,8 +2186,8 @@ fun ChatScreen(
                                 ?: P2PPreferences.prefs(context).getString(P2PPreferences.lastEndpoint(peerName), null).orEmpty()
 
                             if (message.attachmentType == "ALBUM" && message.albumMediaUris.isNotEmpty()) {
-                                val albumFiles = message.albumMediaUris.map { File(it) }.filter { it.exists() }
-                                if (albumFiles.isNotEmpty()) {
+                                val albumFiles = message.albumMediaUris.map(::File)
+                                if (albumFiles.all { it.isFile }) {
                                     val idx = initialMessages.indexOfFirst { it.id == message.id }
                                     if (idx != -1) initialMessages[idx] = message.copy(status = "SENDING")
                                     persistDatabase { db.updateMessageStatus(message.id, "SENDING") }
@@ -2202,6 +2202,19 @@ fun ChatScreen(
                                         val curIdx = initialMessages.indexOfFirst { it.id == message.id }
                                         if (curIdx != -1) initialMessages[curIdx] = message.copy(status = finalStatus)
                                     }
+                                } else {
+                                    // Do not turn a damaged local album into a
+                                    // valid-looking smaller album on retry.
+                                    persistDatabase { db.updateMessageStatus(message.id, "PENDING") }
+                                    Toast.makeText(
+                                        context,
+                                        if (appLanguage == "Русский") {
+                                            "Не все файлы альбома доступны для повторной отправки"
+                                        } else {
+                                            "Not all album files are available for retry"
+                                        },
+                                        Toast.LENGTH_LONG,
+                                    ).show()
                                 }
                             } else {
                                 val filePath = message.attachmentUri ?: return@ChatMessageList

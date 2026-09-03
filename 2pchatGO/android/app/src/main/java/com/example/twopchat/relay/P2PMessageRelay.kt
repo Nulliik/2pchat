@@ -113,6 +113,16 @@ object P2PMessageRelay {
     }
 
     private val activeFileTransfers = ConcurrentHashMap.newKeySet<String>()
+    // Album parts are sent sequentially from serviceScope.  Cancelling the
+    // individual native transfers alone is not sufficient: their callbacks
+    // can arrive later and otherwise make the coordinator start another part.
+    private val mediaAlbumGenerations = ConcurrentHashMap<String, Long>()
+
+    private fun nextMediaAlbumGeneration(albumId: String): Long =
+        mediaAlbumGenerations.compute(albumId) { _, previous -> (previous ?: 0L) + 1L } ?: 1L
+
+    private fun isMediaAlbumCancelled(albumId: String, generation: Long): Boolean =
+        mediaAlbumGenerations[albumId] != generation
 
     @Volatile private var localPeerDiscovery: LocalPeerDiscovery? = null
     private data class LocalPeerCandidate(val fingerprint: String, val endpoint: String)
@@ -2778,14 +2788,18 @@ object P2PMessageRelay {
         val lastReq = lastProfileRequestAt[peerName] ?: 0L
         if (now - lastReq < 30_000L) return
         lastProfileRequestAt[peerName] = now
-        val endpoint = _peerEndpoints[peerName].orEmpty()
-        val expectedFingerprint = P2PPreferences.findPeerFingerprint(appContext, peerName)
-        val payload = JSONObject().apply {
-            put("type", "profile_request")
-            put("sender", P2PPreferences.username(appContext))
-            put("fingerprint", getBridge(appContext).getLocalFingerprint())
-        }.toString()
-        getBridge(appContext).sendP2pMessage(peerName, endpoint, payload, expectedFingerprint)
+        // This can be called from Compose. sendP2pMessage may wait briefly
+        // for a direct peer session, so it must never run on the UI thread.
+        relayScope.launch {
+            val endpoint = _peerEndpoints[peerName].orEmpty()
+            val expectedFingerprint = P2PPreferences.findPeerFingerprint(appContext, peerName)
+            val payload = JSONObject().apply {
+                put("type", "profile_request")
+                put("sender", P2PPreferences.username(appContext))
+                put("fingerprint", getBridge(appContext).getLocalFingerprint())
+            }.toString()
+            getBridge(appContext).sendP2pMessage(peerName, endpoint, payload, expectedFingerprint)
+        }
     }
 
     fun shareOnionAddressWithKnownPeers(context: Context) {
@@ -3168,6 +3182,10 @@ object P2PMessageRelay {
     }
 
     fun cancelMediaAlbum(context: Context, peerName: String, albumId: String, albumCount: Int): Boolean {
+        // Invalidate the active coordinator before cancelling its individual
+        // transfers. A retry uses the same album id, so a generation is safer
+        // than a boolean cancellation flag.
+        nextMediaAlbumGeneration(albumId)
         cancelFileTransfer(context, peerName, albumId)
         for (idx in 0 until albumCount) {
             cancelFileTransfer(context, peerName, "${albumId}_$idx")
@@ -3185,45 +3203,59 @@ object P2PMessageRelay {
         onAlbumStatusChanged: (status: String) -> Unit = {},
     ) {
         val appContext = context.applicationContext
+        // Retrying a previously cancelled album intentionally starts a new
+        // transfer with the same stable album id but a fresh generation.
+        val albumGeneration = nextMediaAlbumGeneration(albumId)
         serviceScope.launch {
-            var allTransfersOk = true
-            val db = ChatDatabaseHelper.getInstance(appContext)
-            for ((idx, file) in files.withIndex()) {
-                val fileCaption = if (idx == 0) caption else ""
-                val fileTransferId = "${albumId}_$idx"
-                val deferred = kotlinx.coroutines.CompletableDeferred<Boolean>()
-                sendFile(
-                    context = appContext,
-                    peerName = peerName,
-                    endpoint = endpoint,
-                    filePath = file.absolutePath,
-                    messageId = fileTransferId,
-                    caption = fileCaption,
-                    albumId = albumId,
-                    albumIndex = idx,
-                    albumCount = files.size,
-                ) { success ->
-                    deferred.complete(success)
-                }
-                val transferOk = kotlinx.coroutines.withTimeoutOrNull(5 * 60 * 1000L) {
-                    deferred.await()
-                } ?: false
+            try {
+                var allTransfersOk = true
+                val db = ChatDatabaseHelper.getInstance(appContext)
+                for ((idx, file) in files.withIndex()) {
+                    if (isMediaAlbumCancelled(albumId, albumGeneration)) return@launch
 
-                if (!transferOk) {
-                    allTransfersOk = false
+                    val fileCaption = if (idx == 0) caption else ""
+                    val fileTransferId = "${albumId}_$idx"
+                    val deferred = kotlinx.coroutines.CompletableDeferred<Boolean>()
+                    sendFile(
+                        context = appContext,
+                        peerName = peerName,
+                        endpoint = endpoint,
+                        filePath = file.absolutePath,
+                        messageId = fileTransferId,
+                        caption = fileCaption,
+                        albumId = albumId,
+                        albumIndex = idx,
+                        albumCount = files.size,
+                    ) { success ->
+                        deferred.complete(success)
+                    }
+                    val transferOk = kotlinx.coroutines.withTimeoutOrNull(5 * 60 * 1000L) {
+                        deferred.await()
+                    } ?: false
+
+                    // A cancelled transfer deliberately reports completion to
+                    // the low-level callback so that progress cleanup can
+                    // finish.  It must never be treated as a sent album part.
+                    if (isMediaAlbumCancelled(albumId, albumGeneration)) return@launch
+
+                    if (!transferOk) {
+                        allTransfersOk = false
+                        try {
+                            db.updateMessageStatus(albumId, "PENDING")
+                        } catch (_: Throwable) {}
+                        runOnMain { onAlbumStatusChanged("PENDING") }
+                        break
+                    }
+                }
+
+                if (allTransfersOk && !isMediaAlbumCancelled(albumId, albumGeneration)) {
                     try {
-                        db.updateMessageStatus(albumId, "PENDING")
+                        db.updateMessageStatus(albumId, "SENT")
                     } catch (_: Throwable) {}
-                    runOnMain { onAlbumStatusChanged("PENDING") }
-                    break
+                    runOnMain { onAlbumStatusChanged("SENT") }
                 }
-            }
-
-            if (allTransfersOk) {
-                try {
-                    db.updateMessageStatus(albumId, "SENT")
-                } catch (_: Throwable) {}
-                runOnMain { onAlbumStatusChanged("SENT") }
+            } finally {
+                mediaAlbumGenerations.remove(albumId, albumGeneration)
             }
         }
     }
