@@ -554,10 +554,14 @@ func (m *SessionManager) SetTorProxy(enabled bool, addr string) {
 	}
 	m.dialer.SetTorProxy(enabled, addr)
 	nm := m.netManager
+	svc := m.discoverySvc
 	m.mu.Unlock()
 
 	if nm != nil {
 		nm.SetTorProxy(enabled, addr)
+	}
+	if svc != nil {
+		svc.SetTorProxy(enabled)
 	}
 }
 

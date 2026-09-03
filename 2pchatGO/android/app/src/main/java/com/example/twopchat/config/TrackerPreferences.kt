@@ -35,21 +35,27 @@ object TrackerPreferences {
     val supportedProtocols = setOf("http", "https", "udp")
 
     val builtInTrackers = listOf(
-        BuiltInTracker("OpenTrackr UDP", "udp://tracker.opentrackr.org:1337/announce", "udp"),
-        BuiltInTracker("OpenTrackr HTTPS", "https://tracker.opentrackr.org:443/announce", "https"),
-        BuiltInTracker("Open Stealth UDP", "udp://open.stealth.si:80/announce", "udp"),
-        BuiltInTracker("Cyberia UDP", "udp://tracker.cyberia.is:6969/announce", "udp"),
-        BuiltInTracker("Qu.Ax UDP", "udp://tracker.qu.ax:6969/announce", "udp"),
-        BuiltInTracker("Bittor UDP", "udp://tracker.bittor.pw:1337/announce", "udp"),
-        BuiltInTracker("Explodie UDP", "udp://explodie.org:6969/announce", "udp"),
-        BuiltInTracker("Filemail UDP", "udp://tracker.filemail.com:6969/announce", "udp"),
-        BuiltInTracker("Dler UDP", "udp://tracker2.dler.org:80/announce", "udp"),
         BuiltInTracker("Nyacat HTTPS", "https://tr.nyacat.pw:443/announce", "https"),
+        BuiltInTracker("Tamers HTTPS", "https://tracker.tamersunion.org:443/announce", "https"),
+        BuiltInTracker("Renfei HTTPS", "https://tracker.renfei.net:443/announce", "https"),
+        BuiltInTracker("OpenTrackr HTTPS", "https://tracker.opentrackr.org:443/announce", "https"),
         BuiltInTracker(
             "Yggdrasil-only UDP",
             "udp://[202:68d0:f0d5:b88d:1d1a:555e:2f6b:3148]:6969/announce",
             "udp",
         ),
+        BuiltInTracker(
+            "Yggdrasil Opentracker",
+            "udp://[201:23a4:4941:da9e:b18a:eb2a:c22c:c4a6]:6969/announce",
+            "udp",
+        ),
+        BuiltInTracker("Qu.Ax UDP", "udp://tracker.qu.ax:6969/announce", "udp"),
+        BuiltInTracker("Bittor UDP", "udp://tracker.bittor.pw:1337/announce", "udp"),
+        BuiltInTracker("Explodie UDP", "udp://explodie.org:6969/announce", "udp"),
+        BuiltInTracker("Open Stealth UDP", "udp://open.stealth.si:80/announce", "udp"),
+        BuiltInTracker("Dler UDP", "udp://tracker2.dler.org:80/announce", "udp"),
+        BuiltInTracker("Cyberia UDP", "udp://tracker.cyberia.is:6969/announce", "udp"),
+        BuiltInTracker("OpenTrackr UDP", "udp://tracker.opentrackr.org:1337/announce", "udp"),
     )
 
     fun announceEnabled(context: Context): Boolean =
@@ -73,9 +79,10 @@ object TrackerPreferences {
 
         val all = (builtins + customs).distinct()
         return if (all.isNotEmpty()) all else listOf(
-            "udp://tracker.opentrackr.org:1337/announce",
-            "udp://tracker.cyberia.is:6969/announce",
-            "udp://open.stealth.si:80/announce",
+            "https://tr.nyacat.pw:443/announce",
+            "https://tracker.tamersunion.org:443/announce",
+            "udp://[202:68d0:f0d5:b88d:1d1a:555e:2f6b:3148]:6969/announce",
+            "udp://tracker.qu.ax:6969/announce",
             "https://tracker.opentrackr.org:443/announce",
         )
     }

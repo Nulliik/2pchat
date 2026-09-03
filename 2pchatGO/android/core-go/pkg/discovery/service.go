@@ -64,8 +64,8 @@ func NewDiscoveryService(
 		listenPort:    listenPort,
 		torEnabled:    torEnabled,
 		infoHashes:    make(map[string][20]byte),
-		udpClient:     NewUDPTrackerClient(torEnabled, 5*time.Second),
-		httpClient:    NewHTTPTrackerClient(dialer, torEnabled, 5*time.Second),
+		udpClient:     NewUDPTrackerClient(torEnabled, DefaultTrackerTimeout),
+		httpClient:    NewHTTPTrackerClient(dialer, torEnabled, DefaultTrackerTimeout),
 		prober:        NewFastTieredProber(),
 		callback:      callback,
 		trackerStatus: trackerStatus,
@@ -78,6 +78,19 @@ func NewDiscoveryService(
 	})
 
 	return s
+}
+
+// SetTorProxy updates whether Tor proxy routing is active for discovery services.
+func (s *DiscoveryService) SetTorProxy(enabled bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.torEnabled = enabled
+	if s.udpClient != nil {
+		s.udpClient.SetTorEnabled(enabled)
+	}
+	if s.httpClient != nil {
+		s.httpClient.SetTorEnabled(enabled)
+	}
 }
 
 func (s *DiscoveryService) reportTrackerStatus(url string, result *AnnounceResult, started time.Time, err error) {
@@ -310,6 +323,12 @@ func (s *DiscoveryService) announceSingle(
 	}
 
 	if u.Scheme == "udp" {
+		s.mu.RLock()
+		tor := s.torEnabled
+		s.mu.RUnlock()
+		if tor && !isYggdrasilTrackerHost(u.Hostname()) {
+			return nil, ErrUDPDisabledUnderTor
+		}
 		return s.udpClient.Announce(ctx, trackerURL, infoHash, peerID, port)
 	}
 

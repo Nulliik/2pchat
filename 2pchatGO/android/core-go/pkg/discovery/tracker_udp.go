@@ -21,7 +21,7 @@ const (
 	ActionScrape         = int32(2)
 	ActionError          = int32(3)
 
-	DefaultTrackerTimeout = 5 * time.Second
+	DefaultTrackerTimeout = 3 * time.Second
 )
 
 var (
@@ -53,12 +53,7 @@ func resolveUDPAddress(ctx context.Context, hostPort string) (*net.UDPAddr, erro
 	if err == nil && len(ips) > 0 {
 		return &net.UDPAddr{IP: ips[0], Port: port}, nil
 	}
-
-	rAddr, err := net.ResolveUDPAddr("udp", hostPort)
-	if err != nil {
-		return nil, fmt.Errorf("failed to resolve UDP tracker %s: %w", hostPort, err)
-	}
-	return rAddr, nil
+	return nil, fmt.Errorf("could not resolve host %s", host)
 }
 
 // PeerEndpoint represents a discovered peer network address.
@@ -90,6 +85,9 @@ type UDPTrackerClient struct {
 
 // SetYggdrasilUDPRelay configures the local user-space Yggdrasil UDP relay.
 func (c *UDPTrackerClient) SetYggdrasilUDPRelay(addr string) { c.yggRelay = addr }
+
+// SetTorEnabled updates whether Tor proxy is enabled.
+func (c *UDPTrackerClient) SetTorEnabled(enabled bool) { c.torEnabled = enabled }
 
 // NewUDPTrackerClient creates a new BEP 15 UDP tracker client.
 func NewUDPTrackerClient(torEnabled bool, timeout time.Duration) *UDPTrackerClient {

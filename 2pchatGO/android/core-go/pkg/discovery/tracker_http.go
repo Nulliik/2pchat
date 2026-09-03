@@ -42,10 +42,27 @@ func NewHTTPTrackerClient(dialer *transport.AdaptiveDialer, torEnabled bool, tim
 		httpClient: &http.Client{
 			Transport: transportObj,
 			Timeout:   timeout,
+			CheckRedirect: func(req *http.Request, via []*http.Request) error {
+				if len(via) >= 3 {
+					return errors.New("stopped after 3 redirects")
+				}
+				if len(via) > 0 {
+					origScheme := via[0].URL.Scheme
+					if origScheme == "https" && req.URL.Scheme == "http" {
+						return fmt.Errorf("insecure HTTP redirect from HTTPS prohibited (%s -> %s)", via[0].URL.String(), req.URL.String())
+					}
+				}
+				return nil
+			},
 		},
 		torEnabled: torEnabled,
 		timeout:    timeout,
 	}
+}
+
+// SetTorEnabled updates whether Tor proxy is enabled.
+func (c *HTTPTrackerClient) SetTorEnabled(enabled bool) {
+	c.torEnabled = enabled
 }
 
 // urlEncodeBinary creates raw percent-encoded byte string for info_hash/peer_id without escaping UTF-8.
