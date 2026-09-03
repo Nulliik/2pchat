@@ -171,6 +171,12 @@ internal fun AnimatedGifImage(
                     }
                     if (imageView.drawable !== drawable) imageView.setImageDrawable(drawable)
                 },
+                onReset = { imageView ->
+                    imageView.setImageDrawable(null)
+                },
+                onRelease = { imageView ->
+                    imageView.setImageDrawable(null)
+                },
                 modifier = Modifier.fillMaxSize(),
             )
             movie != null -> Canvas(Modifier.fillMaxSize()) {

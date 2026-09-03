@@ -219,12 +219,17 @@ func (c *RelayTunnelConn) SetWriteDeadline(t time.Time) error {
 	return c.rawConn.SetWriteDeadline(t)
 }
 
+type relaySessionPair struct {
+	connA net.Conn
+	connB net.Conn
+}
+
 // RelayTunnelServer provides a zero-knowledge, blind relay proxy forwarding frames between two peers.
 type RelayTunnelServer struct {
 	mu          sync.RWMutex
 	listener    net.Listener
-	subscribers map[string]net.Conn // targetFP -> incoming waiting conn
-	sessions    map[[16]byte]net.Conn
+	subscribers map[string]net.Conn           // targetFP -> incoming waiting conn
+	sessions    map[[16]byte]*relaySessionPair // sessionID -> paired conns
 	closed      bool
 	closeChan   chan struct{}
 }
@@ -233,7 +238,7 @@ type RelayTunnelServer struct {
 func NewRelayTunnelServer() *RelayTunnelServer {
 	return &RelayTunnelServer{
 		subscribers: make(map[string]net.Conn),
-		sessions:    make(map[[16]byte]net.Conn),
+		sessions:    make(map[[16]byte]*relaySessionPair),
 		closeChan:   make(chan struct{}),
 	}
 }
@@ -268,7 +273,34 @@ func (s *RelayTunnelServer) acceptLoop() {
 }
 
 func (s *RelayTunnelServer) handleConnection(conn net.Conn) {
-	defer conn.Close()
+	var registeredFPs []string
+	var activeSessions [][16]byte
+
+	defer func() {
+		_ = conn.Close()
+		s.mu.Lock()
+		for _, fp := range registeredFPs {
+			if s.subscribers[fp] == conn {
+				delete(s.subscribers, fp)
+			}
+		}
+		for _, sid := range activeSessions {
+			if pair, exists := s.sessions[sid]; exists {
+				var other net.Conn
+				if pair.connA == conn {
+					other = pair.connB
+				} else if pair.connB == conn {
+					other = pair.connA
+				}
+				delete(s.sessions, sid)
+				if other != nil {
+					closeFrame, _ := EncodeRelayFrame(RelayFrameTypeClose, sid, nil)
+					_, _ = other.Write(closeFrame)
+				}
+			}
+		}
+		s.mu.Unlock()
+	}()
 
 	for {
 		frame, err := ReadRelayFrame(conn)
@@ -281,34 +313,72 @@ func (s *RelayTunnelServer) handleConnection(conn net.Conn) {
 			targetFP := string(frame.Payload)
 			s.mu.Lock()
 			s.subscribers[targetFP] = conn
+			registeredFPs = append(registeredFPs, targetFP)
 			s.mu.Unlock()
 
 		case RelayFrameTypeConnect:
 			targetFP := string(frame.Payload)
-			s.mu.RLock()
+			s.mu.Lock()
 			peerConn, exists := s.subscribers[targetFP]
-			s.mu.RUnlock()
-
 			if !exists {
+				s.mu.Unlock()
 				// Peer not registered / offline
 				resp, _ := EncodeRelayFrame(RelayFrameTypeClose, frame.SessionID, []byte("peer_offline"))
 				_, _ = conn.Write(resp)
 				return
 			}
 
+			pair := &relaySessionPair{
+				connA: conn,
+				connB: peerConn,
+			}
+			s.sessions[frame.SessionID] = pair
+			activeSessions = append(activeSessions, frame.SessionID)
+			s.mu.Unlock()
+
 			// Forward connect frame to peer to initiate session handshake
 			connectFrame, _ := EncodeRelayFrame(RelayFrameTypeConnect, frame.SessionID, nil)
 			_, _ = peerConn.Write(connectFrame)
 
-		case RelayFrameTypeData, RelayFrameTypeClose:
+		case RelayFrameTypeData:
 			s.mu.RLock()
-			for _, c := range s.subscribers {
-				if c != conn {
-					raw, _ := EncodeRelayFrame(frame.Type, frame.SessionID, frame.Payload)
-					_, _ = c.Write(raw)
+			pair, exists := s.sessions[frame.SessionID]
+			s.mu.RUnlock()
+
+			if !exists {
+				continue
+			}
+			var target net.Conn
+			if conn == pair.connA {
+				target = pair.connB
+			} else if conn == pair.connB {
+				target = pair.connA
+			}
+			if target != nil {
+				raw, _ := EncodeRelayFrame(RelayFrameTypeData, frame.SessionID, frame.Payload)
+				_, _ = target.Write(raw)
+			}
+
+		case RelayFrameTypeClose:
+			s.mu.Lock()
+			pair, exists := s.sessions[frame.SessionID]
+			if exists {
+				delete(s.sessions, frame.SessionID)
+			}
+			s.mu.Unlock()
+
+			if exists {
+				var target net.Conn
+				if conn == pair.connA {
+					target = pair.connB
+				} else if conn == pair.connB {
+					target = pair.connA
+				}
+				if target != nil {
+					raw, _ := EncodeRelayFrame(RelayFrameTypeClose, frame.SessionID, frame.Payload)
+					_, _ = target.Write(raw)
 				}
 			}
-			s.mu.RUnlock()
 		}
 	}
 }

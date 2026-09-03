@@ -135,7 +135,12 @@ internal fun AnimatedStickerImage(
         } else {
             (drawable as? Animatable)?.stop()
         }
-        onDispose { (drawable as? Animatable)?.stop() }
+        onDispose {
+            (drawable as? Animatable)?.stop()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                (drawable as? AnimatedImageDrawable)?.clearAnimationCallbacks()
+            }
+        }
     }
 
     Box(
@@ -152,6 +157,12 @@ internal fun AnimatedStickerImage(
                 },
                 update = { imageView ->
                     if (imageView.drawable !== drawable) imageView.setImageDrawable(drawable)
+                },
+                onReset = { imageView ->
+                    imageView.setImageDrawable(null)
+                },
+                onRelease = { imageView ->
+                    imageView.setImageDrawable(null)
                 },
                 modifier = Modifier.fillMaxSize(),
             )

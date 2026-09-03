@@ -100,6 +100,7 @@ type AdaptiveDialer struct {
 	directDialer   *net.Dialer
 	torDialer      proxy.Dialer
 	yggDialer      proxy.Dialer
+	holePuncher    *HolePuncher
 	timeout        time.Duration
 }
 
@@ -401,6 +402,20 @@ func (d *AdaptiveDialer) SetRelayEndpoints(endpoints []string) {
 	d.relayEndpoints = append([]string(nil), endpoints...)
 }
 
+// SetHolePuncher assigns a HolePuncher to the AdaptiveDialer for simultaneous TCP open.
+func (d *AdaptiveDialer) SetHolePuncher(hp *HolePuncher) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.holePuncher = hp
+}
+
+// GetHolePuncher returns the currently configured HolePuncher.
+func (d *AdaptiveDialer) GetHolePuncher() *HolePuncher {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	return d.holePuncher
+}
+
 // GetRelayEndpoints returns a copy of registered Blind Relay server addresses.
 func (d *AdaptiveDialer) GetRelayEndpoints() []string {
 	d.mu.RLock()
@@ -449,6 +464,25 @@ func (d *AdaptiveDialer) DialWithRelayFallback(
 				if res.err == nil && res.conn != nil {
 					return res.conn, res.ep, nil
 				}
+			}
+		}
+	}
+
+	// 1.5. If direct connection timed out/failed, attempt TCP Hole Punching if holePuncher is configured
+	d.mu.RLock()
+	hp := d.holePuncher
+	d.mu.RUnlock()
+	if hp != nil && len(directEndpoints) > 0 && ctx.Err() == nil {
+		var directCandidates []string
+		for _, ep := range directEndpoints {
+			if d.ClassifyEndpoint(ep) == TransportDirect {
+				directCandidates = append(directCandidates, ep)
+			}
+		}
+		if len(directCandidates) > 0 {
+			punchConn, err := hp.Punch(ctx, directCandidates, 3, 300*time.Millisecond)
+			if err == nil && punchConn != nil {
+				return punchConn, punchConn.RemoteAddr().String(), nil
 			}
 		}
 	}

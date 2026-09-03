@@ -393,7 +393,23 @@ func (m *SessionManager) StartListener(port int) error {
 		nm = m.netManager
 	}
 
-	return nm.StartListener(port)
+	err := nm.StartListener(port)
+	if err == nil {
+		actualPort := nm.Port()
+		m.mu.Lock()
+		torActive := m.torEnabled
+		if m.holePuncher == nil {
+			m.holePuncher = transport.NewHolePuncher(actualPort, torActive)
+		} else {
+			m.holePuncher.SetLocalPort(actualPort)
+		}
+		if m.dialer != nil {
+			m.dialer.SetHolePuncher(m.holePuncher)
+		}
+		nm.SetHolePuncher(m.holePuncher)
+		m.mu.Unlock()
+	}
+	return err
 }
 
 // StopListener stops the TCP listener.
@@ -949,6 +965,12 @@ func (m *SessionManager) RefreshNATDiagnostics(ctx context.Context) bool {
 		m.holePuncher = transport.NewHolePuncher(port, torActive)
 	} else {
 		m.holePuncher.SetLocalPort(port)
+	}
+	if m.dialer != nil {
+		m.dialer.SetHolePuncher(m.holePuncher)
+	}
+	if m.netManager != nil {
+		m.netManager.SetHolePuncher(m.holePuncher)
 	}
 	m.mu.Unlock()
 

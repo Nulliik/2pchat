@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	crand "crypto/rand"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -167,6 +168,20 @@ func (m *Manager) SetYggdrasilConfig(mode string, proxyAddr string) {
 	m.dialer.SetYggdrasilConfig(transport.YggdrasilMode(mode), proxyAddr)
 }
 
+// SetHolePuncher configures the HolePuncher for simultaneous TCP open.
+func (m *Manager) SetHolePuncher(hp *transport.HolePuncher) {
+	if m.dialer != nil {
+		m.dialer.SetHolePuncher(hp)
+	}
+}
+
+// SetRelayEndpoints configures Blind Relay endpoints for fallback connectivity.
+func (m *Manager) SetRelayEndpoints(endpoints []string) {
+	if m.dialer != nil {
+		m.dialer.SetRelayEndpoints(endpoints)
+	}
+}
+
 // SetOnionAddress sets the local Tor v3 .onion hidden service hostname and purges obsolete routes.
 func (m *Manager) SetOnionAddress(addr string) {
 	m.mu.Lock()
@@ -328,6 +343,45 @@ func (m *Manager) ConnectPeer(endpoint, expectedFingerprint string) (*Session, e
 			return m.dialer.DialContext(c, "tcp", ep)
 		})
 	}
+
+	// 1. If direct dialing failed, attempt TCP Hole Punching if hole puncher is configured
+	if err != nil && m.dialer != nil && ctx.Err() == nil {
+		if hp := m.dialer.GetHolePuncher(); hp != nil {
+			var directCandidates []string
+			for _, c := range candidates {
+				if m.dialer.ClassifyEndpoint(c) == transport.TransportDirect {
+					directCandidates = append(directCandidates, c)
+				}
+			}
+			if len(directCandidates) > 0 {
+				punchConn, punchErr := hp.Punch(ctx, directCandidates, 3, 300*time.Millisecond)
+				if punchErr == nil && punchConn != nil {
+					conn = punchConn
+					winEndpoint = punchConn.RemoteAddr().String()
+					err = nil
+				}
+			}
+		}
+	}
+
+	// 2. If hole punching also failed, attempt Blind Relay fallback
+	if err != nil && m.dialer != nil && len(m.dialer.GetRelayEndpoints()) > 0 && ctx.Err() == nil {
+		var sessionID [16]byte
+		_, _ = crand.Read(sessionID[:])
+		relayConn, relayEP, relayErr := m.dialer.DialWithRelayFallback(
+			ctx,
+			nil, // already tried direct
+			expectedFingerprint,
+			sessionID,
+			1*time.Second,
+		)
+		if relayErr == nil && relayConn != nil {
+			conn = relayConn
+			winEndpoint = relayEP
+			err = nil
+		}
+	}
+
 	if err != nil {
 		return nil, fmt.Errorf("failed to dial endpoints %v: %w", candidates, err)
 	}
