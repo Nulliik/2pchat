@@ -274,7 +274,6 @@ func (s *RelayTunnelServer) acceptLoop() {
 
 func (s *RelayTunnelServer) handleConnection(conn net.Conn) {
 	var registeredFPs []string
-	var activeSessions [][16]byte
 
 	defer func() {
 		_ = conn.Close()
@@ -284,12 +283,12 @@ func (s *RelayTunnelServer) handleConnection(conn net.Conn) {
 				delete(s.subscribers, fp)
 			}
 		}
-		for _, sid := range activeSessions {
-			if pair, exists := s.sessions[sid]; exists {
+		for sid, pair := range s.sessions {
+			if pair.connA == conn || pair.connB == conn {
 				var other net.Conn
 				if pair.connA == conn {
 					other = pair.connB
-				} else if pair.connB == conn {
+				} else {
 					other = pair.connA
 				}
 				delete(s.sessions, sid)
@@ -328,17 +327,21 @@ func (s *RelayTunnelServer) handleConnection(conn net.Conn) {
 				return
 			}
 
+			// Forward connect frame to peer to initiate session handshake
+			connectFrame, _ := EncodeRelayFrame(RelayFrameTypeConnect, frame.SessionID, nil)
+			if _, err := peerConn.Write(connectFrame); err != nil {
+				s.mu.Unlock()
+				resp, _ := EncodeRelayFrame(RelayFrameTypeClose, frame.SessionID, []byte("peer_offline"))
+				_, _ = conn.Write(resp)
+				return
+			}
+
 			pair := &relaySessionPair{
 				connA: conn,
 				connB: peerConn,
 			}
 			s.sessions[frame.SessionID] = pair
-			activeSessions = append(activeSessions, frame.SessionID)
 			s.mu.Unlock()
-
-			// Forward connect frame to peer to initiate session handshake
-			connectFrame, _ := EncodeRelayFrame(RelayFrameTypeConnect, frame.SessionID, nil)
-			_, _ = peerConn.Write(connectFrame)
 
 		case RelayFrameTypeData:
 			s.mu.RLock()
