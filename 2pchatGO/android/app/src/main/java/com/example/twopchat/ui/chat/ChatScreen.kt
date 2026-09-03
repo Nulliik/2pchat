@@ -1410,45 +1410,16 @@ fun ChatScreen(
                 persistDatabase { db.saveMessage(peerName, outMsg) }
             }
             if (peerName != "Saved Messages") {
-                coroutineScope.launch(Dispatchers.IO) {
-                    var allTransfersOk = true
-                    for ((idx, file) in tempFiles.withIndex()) {
-                        val fileCaption = if (idx == 0) customCaption else ""
-                        val fileTransferId = "${outMsg.id}_$idx"
-                        val deferred = kotlinx.coroutines.CompletableDeferred<Boolean>()
-                        P2PMessageRelay.sendFile(
-                            context = context,
-                            peerName = peerName,
-                            endpoint = endpoint,
-                            filePath = file.absolutePath,
-                            messageId = fileTransferId,
-                            caption = fileCaption,
-                            albumId = outMsg.id,
-                            albumIndex = idx,
-                            albumCount = tempFiles.size,
-                        ) { success ->
-                            deferred.complete(success)
-                        }
-                        val transferOk = kotlinx.coroutines.withTimeoutOrNull(5 * 60 * 1000L) {
-                            deferred.await()
-                        } ?: false
-                        if (!transferOk) {
-                            allTransfersOk = false
-                            persistDatabase { db.updateMessageStatus(outMsg.id, "PENDING") }
-                            withContext(Dispatchers.Main) {
-                                val messageIdx = initialMessages.indexOfFirst { it.id == outMsg.id }
-                                if (messageIdx != -1) initialMessages[messageIdx] = outMsg.copy(status = "PENDING")
-                            }
-                            break
-                        }
-                    }
-                    if (allTransfersOk) {
-                        persistDatabase { db.updateMessageStatus(outMsg.id, "SENT") }
-                        withContext(Dispatchers.Main) {
-                            val messageIdx = initialMessages.indexOfFirst { it.id == outMsg.id }
-                            if (messageIdx != -1) initialMessages[messageIdx] = outMsg.copy(status = "SENT")
-                        }
-                    }
+                P2PMessageRelay.sendMediaAlbum(
+                    context = context,
+                    peerName = peerName,
+                    endpoint = endpoint,
+                    files = tempFiles,
+                    albumId = outMsg.id,
+                    caption = customCaption,
+                ) { finalStatus ->
+                    val messageIdx = initialMessages.indexOfFirst { it.id == outMsg.id }
+                    if (messageIdx != -1) initialMessages[messageIdx] = outMsg.copy(status = finalStatus)
                 }
             }
         }
@@ -2189,11 +2160,20 @@ fun ChatScreen(
                             viewedStickerMessage = it
                         },
                         onCancelFileTransfer = { message ->
-                            P2PMessageRelay.cancelFileTransfer(
-                                context,
-                                peerName,
-                                message.id,
-                            )
+                            if (message.attachmentType == "ALBUM") {
+                                P2PMessageRelay.cancelMediaAlbum(
+                                    context,
+                                    peerName,
+                                    message.id,
+                                    message.albumMediaUris.size,
+                                )
+                            } else {
+                                P2PMessageRelay.cancelFileTransfer(
+                                    context,
+                                    peerName,
+                                    message.id,
+                                )
+                            }
                             val idx = initialMessages.indexOfFirst { it.id == message.id }
                             if (idx != -1) {
                                 val current = initialMessages[idx]
@@ -2201,23 +2181,45 @@ fun ChatScreen(
                             }
                         },
                         onRetryFileTransfer = { message ->
-                            val filePath = message.attachmentUri ?: return@ChatMessageList
-                            val file = File(filePath)
-                            if (file.exists() && peerName != "Saved Messages") {
-                                val endpoint = P2PMessageRelay.peerEndpoints[peerName]
-                                    ?: P2PPreferences.prefs(context).getString(P2PPreferences.lastEndpoint(peerName), null).orEmpty()
-                                val idx = initialMessages.indexOfFirst { it.id == message.id }
-                                if (idx != -1) {
-                                    initialMessages[idx] = message.copy(status = "SENDING")
-                                }
-                                persistDatabase { db.updateMessageStatus(message.id, "SENDING") }
-                                P2PMessageRelay.sendFile(context, peerName, endpoint, file.absolutePath, message.id, message.text) { success ->
-                                    val finalStatus = if (success) "SENT" else "PENDING"
-                                    persistDatabase { db.updateMessageStatus(message.id, finalStatus) }
-                                    coroutineScope.launch {
+                            if (peerName == "Saved Messages") return@ChatMessageList
+                            val endpoint = P2PMessageRelay.peerEndpoints[peerName]
+                                ?: P2PPreferences.prefs(context).getString(P2PPreferences.lastEndpoint(peerName), null).orEmpty()
+
+                            if (message.attachmentType == "ALBUM" && message.albumMediaUris.isNotEmpty()) {
+                                val albumFiles = message.albumMediaUris.map { File(it) }.filter { it.exists() }
+                                if (albumFiles.isNotEmpty()) {
+                                    val idx = initialMessages.indexOfFirst { it.id == message.id }
+                                    if (idx != -1) initialMessages[idx] = message.copy(status = "SENDING")
+                                    persistDatabase { db.updateMessageStatus(message.id, "SENDING") }
+                                    P2PMessageRelay.sendMediaAlbum(
+                                        context = context,
+                                        peerName = peerName,
+                                        endpoint = endpoint,
+                                        files = albumFiles,
+                                        albumId = message.id,
+                                        caption = message.text,
+                                    ) { finalStatus ->
                                         val curIdx = initialMessages.indexOfFirst { it.id == message.id }
-                                        if (curIdx != -1) {
-                                            initialMessages[curIdx] = message.copy(status = finalStatus)
+                                        if (curIdx != -1) initialMessages[curIdx] = message.copy(status = finalStatus)
+                                    }
+                                }
+                            } else {
+                                val filePath = message.attachmentUri ?: return@ChatMessageList
+                                val file = File(filePath)
+                                if (file.exists()) {
+                                    val idx = initialMessages.indexOfFirst { it.id == message.id }
+                                    if (idx != -1) {
+                                        initialMessages[idx] = message.copy(status = "SENDING")
+                                    }
+                                    persistDatabase { db.updateMessageStatus(message.id, "SENDING") }
+                                    P2PMessageRelay.sendFile(context, peerName, endpoint, file.absolutePath, message.id, message.text) { success ->
+                                        val finalStatus = if (success) "SENT" else "PENDING"
+                                        persistDatabase { db.updateMessageStatus(message.id, finalStatus) }
+                                        coroutineScope.launch {
+                                            val curIdx = initialMessages.indexOfFirst { it.id == message.id }
+                                            if (curIdx != -1) {
+                                                initialMessages[curIdx] = message.copy(status = finalStatus)
+                                            }
                                         }
                                     }
                                 }

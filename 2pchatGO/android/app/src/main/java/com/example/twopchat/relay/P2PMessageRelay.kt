@@ -3167,6 +3167,67 @@ object P2PMessageRelay {
         return true
     }
 
+    fun cancelMediaAlbum(context: Context, peerName: String, albumId: String, albumCount: Int): Boolean {
+        cancelFileTransfer(context, peerName, albumId)
+        for (idx in 0 until albumCount) {
+            cancelFileTransfer(context, peerName, "${albumId}_$idx")
+        }
+        return true
+    }
+
+    fun sendMediaAlbum(
+        context: Context,
+        peerName: String,
+        endpoint: String,
+        files: List<File>,
+        albumId: String,
+        caption: String = "",
+        onAlbumStatusChanged: (status: String) -> Unit = {},
+    ) {
+        val appContext = context.applicationContext
+        serviceScope.launch {
+            var allTransfersOk = true
+            val db = ChatDatabaseHelper.getInstance(appContext)
+            for ((idx, file) in files.withIndex()) {
+                val fileCaption = if (idx == 0) caption else ""
+                val fileTransferId = "${albumId}_$idx"
+                val deferred = kotlinx.coroutines.CompletableDeferred<Boolean>()
+                sendFile(
+                    context = appContext,
+                    peerName = peerName,
+                    endpoint = endpoint,
+                    filePath = file.absolutePath,
+                    messageId = fileTransferId,
+                    caption = fileCaption,
+                    albumId = albumId,
+                    albumIndex = idx,
+                    albumCount = files.size,
+                ) { success ->
+                    deferred.complete(success)
+                }
+                val transferOk = kotlinx.coroutines.withTimeoutOrNull(5 * 60 * 1000L) {
+                    deferred.await()
+                } ?: false
+
+                if (!transferOk) {
+                    allTransfersOk = false
+                    try {
+                        db.updateMessageStatus(albumId, "PENDING")
+                    } catch (_: Throwable) {}
+                    runOnMain { onAlbumStatusChanged("PENDING") }
+                    break
+                }
+            }
+
+            if (allTransfersOk) {
+                try {
+                    db.updateMessageStatus(albumId, "SENT")
+                } catch (_: Throwable) {}
+                runOnMain { onAlbumStatusChanged("SENT") }
+            }
+        }
+    }
+
     fun isFileTransferActive(messageId: String): Boolean =
         outboundMessenger.isFileTransferActive(messageId)
 
