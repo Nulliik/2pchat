@@ -91,8 +91,8 @@ android {
         applicationId = "com.example.twopchat.go"
         minSdk = 24
         targetSdk = 36
-        versionCode = 23
-        versionName = "0.0.8.8(1)"
+        versionCode = 24
+        versionName = "0.0.8.8(2)"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk {
             abiFilters.addAll(listOf("arm64-v8a", "x86_64"))
