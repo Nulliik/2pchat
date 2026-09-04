@@ -4,6 +4,9 @@ import com.example.twopchat.logging.SafeLog
 
 import android.content.Context
 import android.content.SharedPreferences
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import com.example.twopchat.relay.*
@@ -508,6 +511,21 @@ object P2PPreferences {
             migrateLegacyPreferences(appContext, preferences)
             cachedPrefs = preferences
             preferences
+        }
+    }
+
+    /**
+     * Asynchronously warms up EncryptedSharedPreferences on a background thread (Dispatchers.IO)
+     * so that Android KeyStore / MasterKey crypto operations do not block the UI thread during startup.
+     */
+    fun warmUp(context: Context) {
+        if (cachedPrefs != null) return
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                prefs(context)
+            } catch (e: Throwable) {
+                SafeLog.w("P2PPreferences", "Asynchronous preferences warm-up encountered error", e)
+            }
         }
     }
 

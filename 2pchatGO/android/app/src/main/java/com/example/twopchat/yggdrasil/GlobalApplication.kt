@@ -1,12 +1,16 @@
 package com.example.twopchat.yggdrasil
 
 import com.example.twopchat.logging.SafeLog
+import com.example.twopchat.config.P2PPreferences
 
 import android.app.*
 import android.content.Context
 import android.content.Intent
 import android.os.Build
 import androidx.core.app.NotificationCompat
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 const val PREF_KEY_ENABLED = "settings_yggdrasil"
 const val PREF_KEY_PEERS_NOTE = "peers_note"
@@ -27,6 +31,15 @@ class GlobalApplication: Application(), YggStateReceiver.StateReceiver {
     override fun onCreate() {
         super.onCreate()
         appContext = applicationContext
+
+        // libgojni.so (Yggdrasil/gomobile) and lib2pcore.so each embed a Go
+        // runtime. Loading both runtimes in one Android process corrupts cgo
+        // callback unwinding and aborts with "fatal error: unknown caller pc".
+        // The VPN service has its own process (:yggdrasil), so keep all main-process
+        // P2P/UI initialization strictly isolated from the Yggdrasil process.
+        if (isYggdrasilServiceProcess(currentProcessName(this))) {
+            return
+        }
 
         if (com.example.twopchat.BuildConfig.DEBUG) {
             try {
@@ -68,24 +81,24 @@ class GlobalApplication: Application(), YggStateReceiver.StateReceiver {
             } catch (e: Throwable) {
                 SafeLog.e("GlobalApplication", "Failed to load sqlcipher", e)
             }
-
-            val prefs = yggdrasilPrefs(applicationContext)
-            if (!prefs.contains(PREF_KEY_ENABLED)) {
-                // Wait for explicit VPN consent. Starting from a network callback
-                // before it is granted makes Builder.establish() return null.
-                prefs.edit().putBoolean(PREF_KEY_ENABLED, false).apply()
-            }
         } finally {
             android.os.StrictMode.setThreadPolicy(oldPolicy)
         }
 
-        // libgojni.so (Yggdrasil/gomobile) and lib2pcore.so each embed a Go
-        // runtime. Loading both runtimes in one Android process corrupts cgo
-        // callback unwinding and aborts with "fatal error: unknown caller pc".
-        // The VPN service has its own process (:yggdrasil), so keep all main-process
-        // P2P/UI initialization strictly isolated from the Yggdrasil process.
-        if (isYggdrasilServiceProcess(currentProcessName(this))) {
-            return
+        // Asynchronously initialize and warm up EncryptedSharedPreferences on Dispatchers.IO
+        // so that KeyStore / Tink AES256-GCM operations do not stall the UI thread or cause frame skips.
+        P2PPreferences.warmUp(applicationContext)
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val prefs = yggdrasilPrefs(applicationContext)
+                if (!prefs.contains(PREF_KEY_ENABLED)) {
+                    // Wait for explicit VPN consent. Starting from a network callback
+                    // before it is granted makes Builder.establish() return null.
+                    prefs.edit().putBoolean(PREF_KEY_ENABLED, false).apply()
+                }
+            } catch (e: Throwable) {
+                SafeLog.w("GlobalApplication", "Failed to initialize default yggdrasil preferences", e)
+            }
         }
 
         val callback = NetworkStateCallback(this)

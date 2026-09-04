@@ -368,7 +368,11 @@ class NativeBridgeImpl(
         }
 
         NativeBridge.onErrorListener = { code, msg ->
-            SafeLog.e(TAG, "[GoCore] Native error ($code): $msg")
+            if (code == 3) {
+                SafeLog.d(TAG, "[GoCore] Probe notice ($code): $msg")
+            } else {
+                SafeLog.e(TAG, "[GoCore] Native error ($code): $msg")
+            }
         }
 
         NativeBridge.onPeerDiscoveredListener = { infoHash, endpoint, source ->

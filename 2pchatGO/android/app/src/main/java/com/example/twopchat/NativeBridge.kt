@@ -498,7 +498,11 @@ object NativeBridge {
 
     @JvmStatic
     fun onError(code: Int, message: String) {
-        SafeLog.e(TAG, "[P2P] Native error ($code): $message")
+        if (code == 3) {
+            SafeLog.d(TAG, "[P2P] Probe notice ($code): $message")
+        } else {
+            SafeLog.e(TAG, "[P2P] Native error ($code): $message")
+        }
         bridgeScope.launch {
             try {
                 onErrorListener?.invoke(code, message)

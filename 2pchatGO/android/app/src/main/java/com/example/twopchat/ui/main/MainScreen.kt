@@ -84,14 +84,18 @@ fun MainScreen(
     var showRadarView by remember { mutableStateOf(true) }
     var selectedRadarNode by remember { mutableStateOf<RadarNode?>(null) }
     LaunchedEffect(Unit) {
-        if (!NativeBridge.isLoaded) {
-            NativeBridge.initialize()
+        withContext(Dispatchers.IO) {
+            if (!NativeBridge.isLoaded) {
+                NativeBridge.initialize()
+            }
         }
         localFingerprint = withContext(Dispatchers.IO) {
             P2PBridgeProvider.get(context).getLocalFingerprint()
         }
-        com.example.twopchat.update.AppUpdateManager.initUpdateState(context)
-        com.example.twopchat.update.AppUpdateManager.checkForUpdatesSilently(context)
+        withContext(Dispatchers.IO) {
+            com.example.twopchat.update.AppUpdateManager.initUpdateState(context)
+            com.example.twopchat.update.AppUpdateManager.checkForUpdatesSilently(context)
+        }
     }
     val availableUpdateRelease by com.example.twopchat.update.AppUpdateManager.availableUpdateRelease.collectAsState()
     val sharedPrefs = remember { com.example.twopchat.config.P2PPreferences.prefs(context) }
