@@ -40,6 +40,14 @@ func (l *AsyncListener) Start(port int, handler ConnectionHandler) error {
 	defer l.mu.Unlock()
 
 	if atomic.LoadInt32(&l.running) == 1 {
+		// The Android service and UI bootstrap may both ask the singleton Go
+		// core to start its configured listener. Treat the repeat request for
+		// that same port (and port 0, meaning "keep the current port") as a
+		// successful no-op. Reporting it as an error makes Kotlin conclude the
+		// peer transport is unavailable even though it is already accepting.
+		if port == 0 || port == l.port {
+			return nil
+		}
 		return ErrListenerAlreadyRunning
 	}
 

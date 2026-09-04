@@ -13,6 +13,11 @@ from pathlib import Path
 PACKAGE = "com.example.twopchat.go"
 RECEIVER = f"{PACKAGE}/com.example.twopchat.debug.E2EControlReceiver"
 TAG, PORT = "2PChatE2E", 50001
+# Each Android emulator has its own NAT namespace and typically reports the
+# same guest address (10.0.2.16).  Reach the other emulator through distinct
+# host-side ADB forward ports instead of attempting to dial that address.
+FIRST_FORWARD_PORT, SECOND_FORWARD_PORT = 55054, 55056
+HOST_FROM_EMULATOR = "10.0.2.2"
 
 
 def run(*args: str, timeout: int = 30) -> str:
@@ -60,6 +65,26 @@ def ipv4(serial: str) -> str:
     if not match:
         raise RuntimeError(f"cannot discover IPv4 for {serial}")
     return match.group(1)
+
+
+def forward_listener(serial: str, host_port: int) -> None:
+    """Expose an emulator's P2P listener to the other emulator via the host."""
+    adb(serial, "forward", "--remove", f"tcp:{host_port}")
+    adb(serial, "forward", f"tcp:{host_port}", f"tcp:{PORT}")
+
+
+def require_online(serial: str, fingerprint: str, timeout: int = 15) -> None:
+    until = time.monotonic() + timeout
+    while time.monotonic() < until:
+        status = control(
+            serial,
+            "com.example.twopchat.debug.STATUS",
+            fingerprint=fingerprint,
+        )
+        if status.get("online") is True:
+            return
+        time.sleep(0.5)
+    raise TimeoutError(f"{serial}: native core did not report {fingerprint} online")
 
 
 def require_log(serial: str, pattern: str, timeout: int) -> None:
@@ -200,7 +225,10 @@ def main() -> int:
     bob = control(b, "com.example.twopchat.debug.PROVISION", nickname="E2EBob")
     finish_onboarding_with_ui(a, "E2EAlice")
     finish_onboarding_with_ui(b, "E2EBob")
-    endpoint_a, endpoint_b = f"{ipv4(a)}:{PORT}", f"{ipv4(b)}:{PORT}"
+    forward_listener(a, FIRST_FORWARD_PORT)
+    forward_listener(b, SECOND_FORWARD_PORT)
+    endpoint_a = f"{HOST_FROM_EMULATOR}:{FIRST_FORWARD_PORT}"
+    endpoint_b = f"{HOST_FROM_EMULATOR}:{SECOND_FORWARD_PORT}"
     info_hash = hashlib.sha256(b"2pchat-android-e2e-v1").hexdigest()
 
     # No tracker mocks: publish to one configured live tracker at a time.
@@ -218,7 +246,32 @@ def main() -> int:
 
     control(a, "com.example.twopchat.debug.CONNECT", endpoint=endpoint_b, fingerprint=bob["fingerprint"])
     require_log(a, r"Peer connected", 30)
+    require_online(a, bob["fingerprint"])
+    require_online(b, alice["fingerprint"])
+
+    # Repeating a connect request must retain the authenticated session rather
+    # than tie-break it away and make the UI show the peer as offline.
+    control(a, "com.example.twopchat.debug.CONNECT", endpoint=endpoint_b, fingerprint=bob["fingerprint"])
+    require_online(a, bob["fingerprint"])
     control(a, "com.example.twopchat.debug.SEND", fingerprint=bob["fingerprint"], body="e2e-ipv4-message")
+    require_log(b, r"Message received", 30)
+
+    # Verify recovery from an actual remote-process loss with its identity
+    # preserved.  A fresh listener must become online again and carry a new
+    # message, which guards the reconnect/offline regression.
+    adb(b, "shell", "am", "force-stop", PACKAGE)
+    time.sleep(1)
+    adb(b, "shell", "monkey", "-p", PACKAGE, "1")
+    time.sleep(3)
+    bob_after_restart = control(b, "com.example.twopchat.debug.PROVISION", nickname="E2EBob")
+    if bob_after_restart["fingerprint"] != bob["fingerprint"]:
+        raise AssertionError("peer identity changed after process restart")
+    forward_listener(b, SECOND_FORWARD_PORT)
+    control(a, "com.example.twopchat.debug.CONNECT", endpoint=endpoint_b, fingerprint=bob["fingerprint"])
+    require_log(a, r"Peer connected", 30)
+    require_online(a, bob["fingerprint"], timeout=30)
+    require_online(b, alice["fingerprint"], timeout=30)
+    control(a, "com.example.twopchat.debug.SEND", fingerprint=bob["fingerprint"], body="e2e-reconnect-message")
     require_log(b, r"Message received", 30)
 
     # The direct IPv4 candidate is real (the peer's Wi-Fi address).  The UI

@@ -595,6 +595,86 @@ func containsSubstring(s, sub string) bool {
 	return len(s) >= len(sub) && (s == sub || (len(s) > 0 && len(sub) > 0 && searchSub(s, sub)))
 }
 
+// TestManagerReconnectsAfterTransportLoss protects the user-visible failure
+// where a peer remains present in UI state but the Go registry no longer has
+// a live connection after a network/process interruption.
+func TestManagerReconnectsAfterTransportLoss(t *testing.T) {
+	newManager := func(t *testing.T) (*Manager, *crypto.IdentityKeyPair) {
+		t.Helper()
+		id, err := crypto.GenerateIdentityKeyPair()
+		if err != nil {
+			t.Fatal(err)
+		}
+		prekeyPriv, prekeyPub, err := crypto.GenerateX25519Keypair()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return NewManager(id, prekeyPriv, prekeyPub, "127.0.0.1:9050", false, EventCallbacks{}), id
+	}
+
+	alice, aliceID := newManager(t)
+	defer alice.Close()
+	bob, bobID := newManager(t)
+	defer bob.Close()
+
+	received := make(chan string, 1)
+	bob.SetCallbacks(EventCallbacks{
+		OnMessageReceived: func(_ string, payload []byte, _ string) {
+			msg, _ := DecodeMessage(payload)
+			if body, _ := msg["body"].(string); body != "" {
+				received <- body
+			}
+		},
+	})
+	if err := bob.StartListener(0); err != nil {
+		t.Fatalf("Bob StartListener failed: %v", err)
+	}
+
+	bobFP := crypto.Fingerprint(bobID.Public.Bytes())
+	aliceFP := crypto.Fingerprint(aliceID.Public.Bytes())
+	endpoint := fmt.Sprintf("127.0.0.1:%d", bob.Port())
+
+	first, err := alice.ConnectPeer(endpoint, bobFP)
+	if err != nil {
+		t.Fatalf("initial ConnectPeer failed: %v", err)
+	}
+	if !alice.IsPeerOnline(bobFP) || !bob.IsPeerOnline(aliceFP) {
+		t.Fatal("peers were not online after initial handshake")
+	}
+
+	// This models the underlying socket disappearing while the app continues
+	// to run. The manager must remove the dead session before a new dial.
+	if err := first.Close(); err != nil {
+		t.Fatalf("closing initial session: %v", err)
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for alice.IsPeerOnline(bobFP) && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if alice.IsPeerOnline(bobFP) {
+		t.Fatal("closed session remained online in the manager")
+	}
+
+	second, err := alice.ConnectPeer(endpoint, bobFP)
+	if err != nil {
+		t.Fatalf("reconnect failed: %v", err)
+	}
+	if second == first || !alice.IsPeerOnline(bobFP) {
+		t.Fatal("reconnect did not install a fresh online session")
+	}
+	if _, err := alice.SendMessage(bobFP, "delivered after reconnect"); err != nil {
+		t.Fatalf("send after reconnect failed: %v", err)
+	}
+	select {
+	case body := <-received:
+		if body != "delivered after reconnect" {
+			t.Fatalf("unexpected message after reconnect: %q", body)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("Bob did not receive a message after reconnect")
+	}
+}
+
 func searchSub(s, sub string) bool {
 	for i := 0; i <= len(s)-len(sub); i++ {
 		if s[i:i+len(sub)] == sub {

@@ -2,6 +2,7 @@ package bridge
 
 import (
 	"bytes"
+	"crypto/ed25519"
 	"crypto/rand"
 	"os"
 	"path/filepath"
@@ -75,6 +76,15 @@ func TestStorageEncryption_EncryptedOnDisk(t *testing.T) {
 	fpRestored := mgr2.GetLocalFingerprint()
 	if fpRestored != fpOriginal {
 		t.Fatalf("fingerprint mismatch after restore: got %s, expected %s", fpRestored, fpOriginal)
+	}
+
+	// A stable fingerprint alone is insufficient: the restored signing key is
+	// used to authenticate every X3DH prekey. This catches retaining a slice of
+	// the decrypted buffer and then zeroizing that buffer during Init.
+	signature := crypto.SignPreKey(mgr2.identity.Signing, mgr2.prekeyPub)
+	transcript := append([]byte(crypto.SignedPrekeyContext), mgr2.prekeyPub.Bytes()...)
+	if !ed25519.Verify(mgr2.identity.Verify, transcript, signature) {
+		t.Fatal("restored identity cannot sign a valid prekey handshake")
 	}
 }
 

@@ -45,6 +45,11 @@ class E2EControlReceiver : BroadcastReceiver() {
                         val body = intent.getStringExtra(EXTRA_BODY).orEmpty()
                         result.put("message_id", NativeBridge.sendMessage(fingerprint, body).orEmpty())
                     }
+                    ACTION_STATUS -> {
+                        val fingerprint = intent.getStringExtra(EXTRA_FINGERPRINT).orEmpty()
+                        require(fingerprint.isNotBlank()) { "fingerprint is required" }
+                        result.put("online", NativeBridge.isPeerOnline(fingerprint))
+                    }
                     ACTION_INVITE -> {
                         val name = P2PPreferences.username(context)
                         require(name.isNotBlank()) { "profile name is unavailable" }
@@ -101,6 +106,7 @@ class E2EControlReceiver : BroadcastReceiver() {
         const val ACTION_PROVISION = "com.example.twopchat.debug.PROVISION"
         const val ACTION_CONNECT = "com.example.twopchat.debug.CONNECT"
         const val ACTION_SEND = "com.example.twopchat.debug.SEND"
+        const val ACTION_STATUS = "com.example.twopchat.debug.STATUS"
         const val ACTION_INVITE = "com.example.twopchat.debug.INVITE"
         const val ACTION_TRACKER = "com.example.twopchat.debug.TRACKER"
         const val ACTION_PROXY = "com.example.twopchat.debug.PROXY"

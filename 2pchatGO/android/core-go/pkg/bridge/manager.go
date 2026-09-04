@@ -192,7 +192,12 @@ func (m *SessionManager) Init() error {
 			if data, readErr := m.readKeyFile(keyPath); readErr == nil && len(data) == 96 {
 				xPriv, xpErr := crypto.X25519PrivateKeyFromBytes(data[:32])
 				if xpErr == nil {
-					edPriv := ed25519.PrivateKey(data[32:96])
+					// readKeyFile's buffer contains decrypted key material and is
+					// wiped below. Copy the Ed25519 private key before retaining it;
+					// otherwise a restart keeps the public fingerprint but signs every
+					// X3DH handshake with zeroed bytes, causing peers to reject it.
+					edPriv := make(ed25519.PrivateKey, ed25519.PrivateKeySize)
+					copy(edPriv, data[32:96])
 					id = &crypto.IdentityKeyPair{
 						Private: xPriv,
 						Public:  xPriv.Public(),
