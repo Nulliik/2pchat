@@ -48,6 +48,9 @@ interface IP2PBridge {
     fun closePeerSession(peerName: String, expectedFingerprint: String?): Boolean
     fun isPeerOnline(peerName: String, expectedFingerprint: String?): Boolean
     fun shutdownAllSessions(): Boolean
+    fun shutdown() {
+        shutdownAllSessions()
+    }
     fun resetStaleEndpointCooldowns(): Boolean
     fun registerMessageListener(listener: BridgeMessageListener)
     fun registerSessionListener(listener: BridgeSessionListener)

@@ -1,6 +1,7 @@
 package com.example.twopchat.bridge
 
 import android.content.Context
+import androidx.annotation.VisibleForTesting
 import com.example.twopchat.logging.SafeLog
 import com.example.twopchat.NativeBridge
 import com.example.twopchat.relay.P2PMessageRelay
@@ -11,14 +12,31 @@ import com.example.twopchat.config.P2PPreferences
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentLinkedQueue
+import kotlin.coroutines.CoroutineContext
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineName
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.json.JSONArray
 import org.json.JSONObject
 
 /**
  * Native Go implementation of IP2PBridge backed by lib2pcore.so.
  */
-class NativeBridgeImpl : IP2PBridge {
+class NativeBridgeImpl(
+    coroutineContext: CoroutineContext = Dispatchers.IO + SupervisorJob() + CoroutineName("bridge"),
+) : IP2PBridge {
     private val TAG = "NativeBridgeImpl"
+    private val bridgeScope = CoroutineScope(coroutineContext)
 
     data class PendingMessage(
         val payload: String,
@@ -31,6 +49,9 @@ class NativeBridgeImpl : IP2PBridge {
 
     companion object {
         const val MESSAGE_TTL_MS = 5 * 60 * 1000L // 5 minutes TTL
+        const val MAX_FLUSH_ATTEMPTS = 5
+        const val FLUSH_RETRY_DELAY_MS = 250L
+        const val MAX_PENDING_PER_PEER = 500
     }
 
     private var messageListener: BridgeMessageListener? = null
@@ -49,12 +70,29 @@ class NativeBridgeImpl : IP2PBridge {
     // until its authenticated-session callback arrives instead of losing the
     // first message while the X3DH handshake is still in progress.
     private val pendingMessages = ConcurrentHashMap<String, ConcurrentLinkedQueue<PendingMessage>>()
+    private val flushJobs = ConcurrentHashMap<String, Job>()
+    private val flushMutexes = ConcurrentHashMap<String, Mutex>()
+
+    @VisibleForTesting
+    internal var sendNow: (peerFP: String, msg: PendingMessage) -> Boolean = { peerFP, msg ->
+        NativeBridge.sendMessage(peerFP, msg.payload) != null
+    }
+
+    @VisibleForTesting
+    internal var isPeerOnlineForFlush: (peerFP: String) -> Boolean = { peerFP ->
+        NativeBridge.isPeerOnline(peerFP)
+    }
+
+    @VisibleForTesting
+    internal var flushRetryDelayMs: Long = FLUSH_RETRY_DELAY_MS
 
     init {
         NativeBridge.initialize()
-        val appContext = com.example.twopchat.yggdrasil.GlobalApplication.appContext
-        val yggMode = P2PPreferences.getYggdrasilMode(appContext)
-        NativeBridge.setYggdrasilConfig(yggMode.id, "127.0.0.1:${P2PPreferences.DEFAULT_YGGDRASIL_PROXY_PORT}")
+        try {
+            val appContext = com.example.twopchat.yggdrasil.GlobalApplication.appContext
+            val yggMode = P2PPreferences.getYggdrasilMode(appContext)
+            NativeBridge.setYggdrasilConfig(yggMode.id, "127.0.0.1:${P2PPreferences.DEFAULT_YGGDRASIL_PROXY_PORT}")
+        } catch (_: Throwable) {}
         setupNativeCallbacks()
         loadPersistedPeerMappings()
     }
@@ -384,9 +422,7 @@ class NativeBridgeImpl : IP2PBridge {
 
             // Always enqueue the message first so it is never dropped during background connection/handshake
             val targetKey = resolvedFP ?: peerName
-            val queue = pendingMessages.getOrPut(targetKey) { ConcurrentLinkedQueue() }
-            pruneExpiredPending(queue)
-            queue.add(PendingMessage(payload, System.currentTimeMillis()))
+            enqueuePending(targetKey, PendingMessage(payload, System.currentTimeMillis()))
 
             if (candidateList.size > 1) {
                 NativeBridge.probePeer(candidateList, resolvedFP.orEmpty())
@@ -418,46 +454,67 @@ class NativeBridgeImpl : IP2PBridge {
         return false
     }
 
-    private fun flushPendingMessages(peerFingerprint: String) {
-        val peerName = resolvePeerName(peerFingerprint) ?: peerNameMap[peerFingerprint]
-        val queuesToFlush = mutableListOf<ConcurrentLinkedQueue<PendingMessage>>()
-        pendingMessages.remove(peerFingerprint)?.let { queuesToFlush.add(it) }
-        if (peerName != null && peerName != peerFingerprint) {
-            pendingMessages.remove(peerName)?.let { queuesToFlush.add(it) }
+    fun enqueuePending(target: String, msg: PendingMessage) {
+        if (target.isBlank()) return
+        val queue = pendingMessages.getOrPut(target) { ConcurrentLinkedQueue() }
+        pruneExpiredPending(queue)
+        if (queue.size >= MAX_PENDING_PER_PEER) {
+            SafeLog.w(TAG, "pending queue overflow for ${SafeLog.fp(target)}, dropping oldest")
+            queue.poll()
         }
-        if (peerName != null) {
-            for (key in pendingMessages.keys()) {
-                if (key.equals(peerName, ignoreCase = true)) {
-                    pendingMessages.remove(key)?.let { queuesToFlush.add(it) }
+        queue.add(msg)
+    }
+
+    fun flushPendingMessages(peerFingerprint: String) {
+        if (peerFingerprint.isBlank()) return
+        flushJobs.compute(peerFingerprint) { _, existing ->
+            if (existing?.isActive == true) {
+                existing
+            } else {
+                bridgeScope.launch {
+                    flushPeer(peerFingerprint)
                 }
             }
         }
-        if (queuesToFlush.isEmpty()) return
+    }
 
-        Thread {
-            val now = System.currentTimeMillis()
-            val target = peerFingerprint.ifBlank { peerName ?: "" }
-            for (queue in queuesToFlush) {
-                while (true) {
-                    val pending = queue.poll() ?: break
-                    if (pending.isExpired(MESSAGE_TTL_MS, now)) {
-                        SafeLog.d(TAG, "[GoCore] Discarded expired pending message for ${SafeLog.fp(peerFingerprint)} (age: ${now - pending.timestampMs}ms)")
+    private suspend fun flushPeer(peerFP: String) {
+        val mutex = flushMutexes.getOrPut(peerFP) { Mutex() }
+        try {
+            mutex.withLock {
+                val queue = pendingMessages[peerFP] ?: return
+                var attempts = 0
+                while (currentCoroutineContext().isActive) {
+                    val msg = queue.peek() ?: break
+                    if (msg.isExpired(MESSAGE_TTL_MS, System.currentTimeMillis())) {
+                        queue.poll()
+                        SafeLog.d(TAG, "[GoCore] Discarded expired pending message for ${SafeLog.fp(peerFP)}")
                         continue
                     }
-                    if (NativeBridge.sendMessage(target, pending.payload) == null) {
-                        // Preserve the unsent tail for a later reconnect if not expired
-                        if (!pending.isExpired(MESSAGE_TTL_MS, System.currentTimeMillis())) {
-                            queue.add(pending)
+                    val ok = runCatching { sendNow(peerFP, msg) }
+                        .onFailure {
+                            if (it is CancellationException) throw it
+                            SafeLog.d(TAG, "flush send failed: ${it.javaClass.simpleName}")
                         }
-                        pendingMessages.merge(target, queue) { current, queued ->
-                            while (true) current.poll()?.let { queued.add(it) } ?: break
-                            queued
-                        }
-                        break
+                        .getOrDefault(false)
+                    if (ok) {
+                        queue.poll()
+                        attempts = 0
+                        continue
                     }
+                    if (++attempts >= MAX_FLUSH_ATTEMPTS || !isPeerOnlineForFlush(peerFP)) break
+                    delay(flushRetryDelayMs)
+                }
+                if (queue.isEmpty()) {
+                    pendingMessages.remove(peerFP, queue)
                 }
             }
-        }.start()
+        } finally {
+            val currentJob = currentCoroutineContext()[Job]
+            if (currentJob != null) {
+                flushJobs.remove(peerFP, currentJob)
+            }
+        }
     }
 
     private fun pruneExpiredPending(queue: ConcurrentLinkedQueue<PendingMessage>, now: Long = System.currentTimeMillis()) {
@@ -700,12 +757,23 @@ class NativeBridgeImpl : IP2PBridge {
     }
 
     override fun shutdownAllSessions(): Boolean {
+        for (job in flushJobs.values) {
+            job.cancel()
+        }
+        flushJobs.clear()
         NativeBridge.stopDiscovery()
         NativeBridge.stopListener()
         onlinePeers.clear()
         lastAuthenticatedInboundAt.clear()
         pendingMessages.clear()
         return true
+    }
+
+    override fun shutdown() {
+        try {
+            bridgeScope.cancel()
+        } catch (_: Throwable) {}
+        shutdownAllSessions()
     }
 
     override fun resetStaleEndpointCooldowns(): Boolean {

@@ -25,7 +25,7 @@ object P2PBridgeProvider {
 
     @Synchronized
     fun reset() {
-        cachedBridge?.shutdownAllSessions()
+        cachedBridge?.shutdown()
         cachedBridge = null
     }
 }
