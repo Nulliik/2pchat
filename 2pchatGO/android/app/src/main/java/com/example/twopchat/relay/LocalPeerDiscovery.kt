@@ -3,7 +3,7 @@ package com.example.twopchat.relay
 import android.content.Context
 import android.net.nsd.NsdManager
 import android.net.nsd.NsdServiceInfo
-import android.util.Log
+import com.example.twopchat.logging.SafeLog
 import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
 
@@ -54,18 +54,18 @@ internal class LocalPeerDiscovery(
             val listener = object : NsdManager.RegistrationListener {
                 override fun onServiceRegistered(serviceInfo: NsdServiceInfo) = Unit
                 override fun onRegistrationFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {
-                    Log.w(TAG, "NSD registration failed: $errorCode")
+                    SafeLog.w(TAG, "NSD registration failed: $errorCode")
                 }
                 override fun onServiceUnregistered(serviceInfo: NsdServiceInfo) = Unit
                 override fun onUnregistrationFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {
-                    Log.w(TAG, "NSD unregistration failed: $errorCode")
+                    SafeLog.w(TAG, "NSD unregistration failed: $errorCode")
                 }
             }
             registrationListener = listener
             try {
                 manager.registerService(service, NsdManager.PROTOCOL_DNS_SD, listener)
             } catch (e: Throwable) {
-                Log.w(TAG, "Failed to register NSD service", e)
+                SafeLog.w(TAG, "Failed to register NSD service", e)
             }
         }
 
@@ -95,29 +95,29 @@ internal class LocalPeerDiscovery(
                                 // Plaintext nickname is not broadcast in mDNS (Privacy Invariant); caller resolves contact or uses candidate ID.
                                 onPeerResolved("", discoveryToken, endpoint)
                             } catch (e: Throwable) {
-                                Log.w(TAG, "Error handling resolved NSD service", e)
+                                SafeLog.w(TAG, "Error handling resolved NSD service", e)
                             }
                         }
                     })
                 } catch (e: Throwable) {
                     resolving.remove(serviceInfo.serviceName)
-                    Log.w(TAG, "Failed to initiate NSD service resolution", e)
+                    SafeLog.w(TAG, "Failed to initiate NSD service resolution", e)
                 }
             }
             override fun onServiceLost(serviceInfo: NsdServiceInfo) = Unit
             override fun onDiscoveryStopped(serviceType: String) = Unit
             override fun onStartDiscoveryFailed(serviceType: String, errorCode: Int) {
-                Log.w(TAG, "NSD discovery start failed: $errorCode")
+                SafeLog.w(TAG, "NSD discovery start failed: $errorCode")
             }
             override fun onStopDiscoveryFailed(serviceType: String, errorCode: Int) {
-                Log.w(TAG, "NSD discovery stop failed: $errorCode")
+                SafeLog.w(TAG, "NSD discovery stop failed: $errorCode")
             }
         }
         discoveryListener = dListener
         try {
             manager.discoverServices(SERVICE_TYPE, NsdManager.PROTOCOL_DNS_SD, dListener)
         } catch (e: Throwable) {
-            Log.w(TAG, "Failed to start NSD service discovery", e)
+            SafeLog.w(TAG, "Failed to start NSD service discovery", e)
         }
     }
 

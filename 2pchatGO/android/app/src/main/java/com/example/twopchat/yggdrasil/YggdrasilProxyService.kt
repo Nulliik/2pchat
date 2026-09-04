@@ -7,7 +7,7 @@ import android.content.pm.ServiceInfo
 import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.IBinder
-import android.util.Log
+import com.example.twopchat.logging.SafeLog
 import androidx.core.app.ServiceCompat
 import com.example.twopchat.config.*
 import com.example.twopchat.yggdrasil.YggStateReceiver.Companion.YGG_STATE_INTENT
@@ -44,13 +44,13 @@ class YggdrasilProxyService : Service() {
             internal set
 
         private fun yggLog(context: Context?, message: String, level: String = "INFO", error: Throwable? = null) {
-            val fullMsg = if (error != null) "$message: ${Log.getStackTraceString(error)}" else message
+            val fullMsg = if (error != null) "$message: ${SafeLog.getStackTraceString(error)}" else message
             if (error != null || level == "ERROR") {
-                Log.e(TAG, fullMsg)
+                SafeLog.e(TAG, fullMsg)
             } else if (level == "WARN") {
-                Log.w(TAG, fullMsg)
+                SafeLog.w(TAG, fullMsg)
             } else {
-                Log.i(TAG, fullMsg)
+                SafeLog.i(TAG, fullMsg)
             }
             if (context != null) {
                 try {
@@ -98,7 +98,7 @@ class YggdrasilProxyService : Service() {
                 startForeground(PROXY_NOTIFICATION_ID, notification)
             }
         } catch (e: Exception) {
-            Log.w(TAG, "Failed to startForeground with specialUse, fallback to regular startForeground", e)
+            SafeLog.w(TAG, "Failed to startForeground with specialUse, fallback to regular startForeground", e)
             try {
                 startForeground(PROXY_NOTIFICATION_ID, notification)
             } catch (_: Exception) {}
@@ -114,33 +114,33 @@ class YggdrasilProxyService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         promoteToForeground()
         if (intent == null) {
-            Log.d(TAG, "Intent is null")
+            SafeLog.d(TAG, "Intent is null")
             return START_NOT_STICKY
         }
         val preferences = yggdrasilPrefs(this)
         val enabled = preferences.getBoolean(PREF_KEY_ENABLED, false)
         return when (intent.action ?: ACTION_STOP) {
             ACTION_STOP -> {
-                Log.d(TAG, "Stopping Yggdrasil proxy service...")
+                SafeLog.d(TAG, "Stopping Yggdrasil proxy service...")
                 preferences.edit().putBoolean(PREF_KEY_ENABLED, false).apply()
                 stop(); START_NOT_STICKY
             }
             ACTION_START -> {
-                Log.d(TAG, "Starting Yggdrasil proxy service explicitly...")
+                SafeLog.d(TAG, "Starting Yggdrasil proxy service explicitly...")
                 if (!enabled) {
                     preferences.edit().putBoolean(PREF_KEY_ENABLED, true).apply()
                 }
                 if (started.get() && isProxyHealthy()) {
-                    Log.d(TAG, "Proxy already started and healthy; skipping redundant start")
+                    SafeLog.d(TAG, "Proxy already started and healthy; skipping redundant start")
                 } else {
                     start()
                 }
                 START_STICKY
             }
             ACTION_CONNECT -> {
-                Log.d(TAG, "Connecting Yggdrasil peers...")
+                SafeLog.d(TAG, "Connecting Yggdrasil peers...")
                 if (!enabled) {
-                    Log.d(TAG, "Yggdrasil is disabled in settings; ignoring ACTION_CONNECT")
+                    SafeLog.d(TAG, "Yggdrasil is disabled in settings; ignoring ACTION_CONNECT")
                     stop(stopService = true)
                     return START_NOT_STICKY
                 }
@@ -152,7 +152,7 @@ class YggdrasilProxyService : Service() {
                 START_STICKY
             }
             ACTION_REGENERATE_KEYS -> {
-                Log.i(TAG, "Regenerating Yggdrasil node keys...")
+                SafeLog.i(TAG, "Regenerating Yggdrasil node keys...")
                 val restart = started.get() || enabled
                 if (started.get()) {
                     stop(stopService = false)
@@ -165,7 +165,7 @@ class YggdrasilProxyService : Service() {
                 START_STICKY
             }
             ACTION_RELOAD_PEERS -> {
-                Log.i(TAG, "Applying updated Yggdrasil peer configuration...")
+                SafeLog.i(TAG, "Applying updated Yggdrasil peer configuration...")
                 val restart = started.get() || enabled
                 if (started.get()) {
                     stop(stopService = false)
@@ -203,7 +203,7 @@ class YggdrasilProxyService : Service() {
         try {
             startProxyEngine()
         } catch (error: Throwable) {
-            Log.e(TAG, "Unable to start Yggdrasil proxy service", error)
+            SafeLog.e(TAG, "Unable to start Yggdrasil proxy service", error)
             stop(stopService = false)
         }
     }
@@ -222,7 +222,7 @@ class YggdrasilProxyService : Service() {
                 startForeground(PROXY_NOTIFICATION_ID, notification)
             }
         } catch (e: Throwable) {
-            Log.w(TAG, "Failed to startForeground in startProxyEngine", e)
+            SafeLog.w(TAG, "Failed to startForeground in startProxyEngine", e)
             try {
                 startForeground(PROXY_NOTIFICATION_ID, notification)
             } catch (_: Throwable) {}
@@ -236,7 +236,7 @@ class YggdrasilProxyService : Service() {
                 acquire()
             }
         } catch (e: Throwable) {
-            Log.w(TAG, "Could not acquire MulticastLock", e)
+            SafeLog.w(TAG, "Could not acquire MulticastLock", e)
             null
         }
 
@@ -244,7 +244,7 @@ class YggdrasilProxyService : Service() {
         try {
             ygg.startJSON(config.getJSONByteArray())
         } catch (e: Throwable) {
-            Log.e(TAG, "Failed to execute startJSON on native Yggdrasil", e)
+            SafeLog.e(TAG, "Failed to execute startJSON on native Yggdrasil", e)
             updateRuntimeState("", STATE_DISABLED)
             stop(stopService = true)
             return
@@ -300,7 +300,7 @@ class YggdrasilProxyService : Service() {
         if (wasStarted) {
             yggdrasil?.let { ygg ->
                 runCatching { ygg.stop() }
-                    .onFailure { Log.w(TAG, "Unable to stop native Yggdrasil cleanly", it) }
+                    .onFailure { SafeLog.w(TAG, "Unable to stop native Yggdrasil cleanly", it) }
             }
             yggdrasil = null
         }
@@ -443,7 +443,7 @@ class YggdrasilProxyService : Service() {
             }
             editor.apply()
         } catch (e: Exception) {
-            Log.w(TAG, "Failed to persist Yggdrasil runtime state", e)
+            SafeLog.w(TAG, "Failed to persist Yggdrasil runtime state", e)
         }
     }
 }

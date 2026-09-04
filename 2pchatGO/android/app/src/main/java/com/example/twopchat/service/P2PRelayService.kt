@@ -22,7 +22,7 @@ import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
-import android.util.Log
+import com.example.twopchat.logging.SafeLog
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import com.example.twopchat.group.runtime.GroupWorkScheduler
@@ -45,14 +45,14 @@ class P2PRelayService : Service() {
             when (intent.action) {
                 Intent.ACTION_SCREEN_ON,
                 Intent.ACTION_USER_PRESENT -> {
-                    Log.d(TAG, "Screen became active: ${intent.action}")
+                    SafeLog.d(TAG, "Screen became active: ${intent.action}")
                     acquireWifiLock()
                     refreshLocks()
                     P2PMessageRelay.onScreenOn(context)
                     P2PMessageRelay.triggerImmediateReconnect(context)
                 }
                 Intent.ACTION_SCREEN_OFF -> {
-                    Log.d(TAG, "Screen turned off -> entering adaptive battery saver mode")
+                    SafeLog.d(TAG, "Screen turned off -> entering adaptive battery saver mode")
                     P2PMessageRelay.onScreenOff()
                     // Release aggressive high-perf Wi-Fi lock to allow Wi-Fi radio power-saving (DTIM)
                     releaseWifiLock()
@@ -60,7 +60,7 @@ class P2PRelayService : Service() {
                 PowerManager.ACTION_DEVICE_IDLE_MODE_CHANGED -> {
                     val powerManager = getSystemService(Context.POWER_SERVICE) as? PowerManager
                     val isIdle = powerManager?.isDeviceIdleMode == true
-                    Log.d(TAG, "Device idle/Doze mode changed: isIdle=$isIdle")
+                    SafeLog.d(TAG, "Device idle/Doze mode changed: isIdle=$isIdle")
                     if (!isIdle) {
                         acquireWifiLock()
                         refreshLocks()
@@ -72,7 +72,7 @@ class P2PRelayService : Service() {
                     }
                 }
                 PowerManager.ACTION_POWER_SAVE_MODE_CHANGED -> {
-                    Log.d(TAG, "Power save mode changed")
+                    SafeLog.d(TAG, "Power save mode changed")
                     P2PMessageRelay.triggerMaintenanceWakeup("POWER_SAVE_CHANGED")
                 }
             }
@@ -112,7 +112,7 @@ class P2PRelayService : Service() {
                 startForeground(NOTIFICATION_ID, notification)
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to start foreground service", e)
+            SafeLog.e(TAG, "Failed to start foreground service", e)
             releaseLocks()
             stopSelf()
             return
@@ -134,7 +134,7 @@ class P2PRelayService : Service() {
                 preferences.getBoolean("onboarding_completed", false) &&
                     !preferences.getString("username_profile", null).isNullOrBlank()
             if (!hasLocalIdentity) {
-                Log.i(TAG, "Relay start deferred until local identity is configured")
+                SafeLog.i(TAG, "Relay start deferred until local identity is configured")
                 stopSelf(startId)
                 return@launch
             }
@@ -179,7 +179,7 @@ class P2PRelayService : Service() {
                 val connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
                 val callback = object : ConnectivityManager.NetworkCallback() {
                     override fun onAvailable(network: Network) {
-                        Log.i(TAG, "Network became available -> triggering fast reconnect")
+                        SafeLog.i(TAG, "Network became available -> triggering fast reconnect")
                         NativeBridge.onNetworkChanged()
                         P2PMessageRelay.resetPeerBackoffs()
                         P2PMessageRelay.triggerImmediateReconnect(applicationContext)
@@ -187,7 +187,7 @@ class P2PRelayService : Service() {
                     }
 
                     override fun onLost(network: Network) {
-                        Log.i(TAG, "Network lost -> notifying native bridge")
+                        SafeLog.i(TAG, "Network lost -> notifying native bridge")
                         NativeBridge.onNetworkChanged()
                         P2PMessageRelay.triggerMaintenanceWakeup("NETWORK_LOST")
                     }
@@ -208,7 +208,7 @@ class P2PRelayService : Service() {
                 networkCallback = callback
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to register power/network listeners", e)
+            SafeLog.e(TAG, "Failed to register power/network listeners", e)
         }
     }
 
@@ -224,7 +224,7 @@ class P2PRelayService : Service() {
                 networkCallback = null
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to unregister power/network listeners", e)
+            SafeLog.e(TAG, "Failed to unregister power/network listeners", e)
         }
     }
 
@@ -242,7 +242,7 @@ class P2PRelayService : Service() {
             }
             acquireWifiLock()
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to acquire WakeLock / WifiLock", e)
+            SafeLog.e(TAG, "Failed to acquire WakeLock / WifiLock", e)
         }
     }
 
@@ -262,7 +262,7 @@ class P2PRelayService : Service() {
                 }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to acquire WifiLock", e)
+            SafeLog.e(TAG, "Failed to acquire WifiLock", e)
         }
     }
 
@@ -273,7 +273,7 @@ class P2PRelayService : Service() {
             }
             wifiLock = null
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to release WifiLock", e)
+            SafeLog.e(TAG, "Failed to release WifiLock", e)
         }
     }
 
@@ -286,7 +286,7 @@ class P2PRelayService : Service() {
                 it.acquire(10 * 60 * 1000L)
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to refresh WakeLock", e)
+            SafeLog.e(TAG, "Failed to refresh WakeLock", e)
         }
     }
 
@@ -298,7 +298,7 @@ class P2PRelayService : Service() {
             wakeLock = null
             releaseWifiLock()
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to release WakeLock / WifiLock", e)
+            SafeLog.e(TAG, "Failed to release WakeLock / WifiLock", e)
         }
     }
 

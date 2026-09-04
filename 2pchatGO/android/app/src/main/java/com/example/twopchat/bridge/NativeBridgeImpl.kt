@@ -1,7 +1,7 @@
 package com.example.twopchat.bridge
 
 import android.content.Context
-import android.util.Log
+import com.example.twopchat.logging.SafeLog
 import com.example.twopchat.NativeBridge
 import com.example.twopchat.relay.P2PMessageRelay
 import com.example.twopchat.relay.canonicalConnectionTransport
@@ -121,7 +121,8 @@ class NativeBridgeImpl : IP2PBridge {
 
     private fun setupNativeCallbacks() {
         NativeBridge.onPeerConnectedListener = { peerFP, endpoint ->
-            Log.i(TAG, "[GoCore] Peer connected: $peerFP @ $endpoint")
+            SafeLog.i(TAG, "[GoCore] Peer connected: ${SafeLog.fp(peerFP)}")
+            SafeLog.d(TAG, "[GoCore] Peer connected: ${SafeLog.fp(peerFP)} @ $endpoint")
             // CRITICAL: populate bidirectional name↔fp maps BEFORE setting onlinePeers.
             // Any concurrent isPeerOnline(nickname, fp) call must find the mapping already
             // present; otherwise it returns false and causes offline UI / skipped avatar share.
@@ -150,7 +151,8 @@ class NativeBridgeImpl : IP2PBridge {
             val transportHint = canonicalConnectionTransport(null, endpoint) ?: "Direct P2P"
             activeEndpoints[peerFP] = endpoint
             activeTransports[peerFP] = transportHint
-            Log.i(TAG, "[GoCore] Active route for $peerFP: $transportHint @ $endpoint")
+            SafeLog.i(TAG, "[GoCore] Active route for ${SafeLog.fp(peerFP)}: $transportHint")
+            SafeLog.d(TAG, "[GoCore] Active route for ${SafeLog.fp(peerFP)}: $transportHint @ $endpoint")
             sessionListener?.onSessionEstablished(resolvedName, peerFP, endpoint, transportHint, "")
             sendAuthenticatedRouteUpdate(peerFP)
             flushPendingMessages(peerFP)
@@ -160,7 +162,7 @@ class NativeBridgeImpl : IP2PBridge {
         }
 
         NativeBridge.onPeerDisconnectedListener = { peerFP, reason ->
-            Log.i(TAG, "[GoCore] Peer disconnected: $peerFP, reason: $reason")
+            SafeLog.i(TAG, "[GoCore] Peer disconnected: ${SafeLog.fp(peerFP)}, reason: $reason")
             val resolvedName = resolvePeerName(peerFP) ?: peerNameMap[peerFP] ?: peerFP
             onlinePeers[peerFP] = false
             onlinePeers[resolvedName] = false
@@ -248,11 +250,11 @@ class NativeBridgeImpl : IP2PBridge {
                                     )
                                 }
                             } else {
-                                Log.w(TAG, "[Security] TOFU key change detected for $remoteNick: existing=$existingFP, incoming=$peerFP")
+                                SafeLog.w(TAG, "[Security] TOFU key change detected for $remoteNick: existing=${SafeLog.fp(existingFP)}, incoming=${SafeLog.fp(peerFP)}")
                                 P2PPreferences.recordPendingPeerIdentity(appContext, remoteNick, peerFP, "")
                             }
                         } else if (claimedFP != peerFP) {
-                            Log.w(TAG, "[Security] Dropping spoofed $mtype packet claiming $claimedFP on session $peerFP")
+                            SafeLog.w(TAG, "[Security] Dropping spoofed $mtype packet claiming ${SafeLog.fp(claimedFP)} on session ${SafeLog.fp(peerFP)}")
                         }
                     }
                 } catch (_: Exception) {}
@@ -262,11 +264,11 @@ class NativeBridgeImpl : IP2PBridge {
         }
 
         NativeBridge.onErrorListener = { code, msg ->
-            Log.e(TAG, "[GoCore] Native error ($code): $msg")
+            SafeLog.e(TAG, "[GoCore] Native error ($code): $msg")
         }
 
         NativeBridge.onPeerDiscoveredListener = { infoHash, endpoint, source ->
-            Log.d(TAG, "[GoCore] Discovered candidate for $infoHash @ $endpoint ($source)")
+            SafeLog.d(TAG, "[GoCore] Discovered candidate for ${SafeLog.fp(infoHash)} (source: $source)")
             sessionListener?.onPeerDiscovered(infoHash, endpoint, source)
         }
 
@@ -326,7 +328,7 @@ class NativeBridgeImpl : IP2PBridge {
         val publicIpv4Available = NativeBridge.getNatDiagnostics()["public_endpoint"]
             ?.substringBeforeLast(':')
             ?.isNotBlank() == true
-        Log.i(
+        SafeLog.i(
             TAG,
             "STUN diagnostics before announce: refreshed=$natRefreshed, publicIpv4Available=$publicIpv4Available"
         )
@@ -439,7 +441,7 @@ class NativeBridgeImpl : IP2PBridge {
                 while (true) {
                     val pending = queue.poll() ?: break
                     if (pending.isExpired(MESSAGE_TTL_MS, now)) {
-                        Log.d(TAG, "[GoCore] Discarded expired pending message for $peerFingerprint (age: ${now - pending.timestampMs}ms)")
+                        SafeLog.d(TAG, "[GoCore] Discarded expired pending message for ${SafeLog.fp(peerFingerprint)} (age: ${now - pending.timestampMs}ms)")
                         continue
                     }
                     if (NativeBridge.sendMessage(target, pending.payload) == null) {
@@ -563,7 +565,7 @@ class NativeBridgeImpl : IP2PBridge {
             !candidate.contains(".onion", ignoreCase = true) || (isTorRunning && !isTorConnecting)
         }
         if (candidateList.isEmpty()) {
-            Log.d(TAG, "[GoCore] Tor is not ready yet; deferring connection to .onion endpoint for $peerName")
+            SafeLog.d(TAG, "[GoCore] Tor is not ready yet; deferring connection to .onion endpoint")
             return false
         }
         return if (candidateList.size > 1) {
@@ -636,7 +638,7 @@ class NativeBridgeImpl : IP2PBridge {
         val knownFingerprint = P2PPreferences.prefs(context)
             .getString(P2PPreferences.peerFingerprint(peerName), null)
         if (peerName != peerFingerprint && !isExpectedPeerFingerprint(knownFingerprint, peerFingerprint)) {
-            Log.w(TAG, "Ignored endpoint_update with unexpected fingerprint")
+            SafeLog.w(TAG, "Ignored endpoint_update with unexpected fingerprint")
             return
         }
         val editor = P2PPreferences.prefs(context).edit()
@@ -661,7 +663,7 @@ class NativeBridgeImpl : IP2PBridge {
         }
         editor.apply()
         sessionListener?.onPeerRoutesUpdated(peerName, peerFingerprint, endpoints)
-        Log.i(TAG, "Stored ${endpoints.split(',').size} authenticated peer route(s)")
+        SafeLog.i(TAG, "Stored ${endpoints.split(',').size} authenticated peer route(s)")
     }
 
     override fun closePeerSession(peerName: String, expectedFingerprint: String?): Boolean {

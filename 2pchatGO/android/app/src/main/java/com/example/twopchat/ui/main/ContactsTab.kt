@@ -1,6 +1,8 @@
 
 package com.example.twopchat.ui.main
 
+import com.example.twopchat.logging.SafeLog
+
 import android.widget.Toast
 import android.content.Context
 import android.content.Intent
@@ -1563,7 +1565,7 @@ fun ContactsTab(
                             performSearch(trimmed)
                         }
                     } catch (e: Throwable) {
-                        android.util.Log.e("ContactsTab", "Error handling scanned QR code", e)
+                        SafeLog.e("ContactsTab", "Error handling scanned QR code", e)
                         Toast.makeText(context, if (appLanguage == "Русский") "Ошибка обработки QR-кода" else "Error processing QR code", Toast.LENGTH_SHORT).show()
                     }
                 }
@@ -2048,7 +2050,7 @@ private fun CameraQrScannerOverlay(
                             val camera = cameraProvider.bindToLifecycle(lifecycleOwner, cameraSelector, preview, imageAnalysis)
                             cameraControl = camera.cameraControl
                         } catch (e: Exception) {
-                            android.util.Log.e("CameraQrScanner", "Camera bind failed", e)
+                            SafeLog.e("CameraQrScanner", "Camera bind failed", e)
                         }
                     }, mainExecutor)
                     previewView

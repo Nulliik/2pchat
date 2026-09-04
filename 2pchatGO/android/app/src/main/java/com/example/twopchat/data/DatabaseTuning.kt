@@ -1,6 +1,6 @@
 package com.example.twopchat.data
 
-import android.util.Log
+import com.example.twopchat.logging.SafeLog
 import net.zetetic.database.sqlcipher.SQLiteDatabase
 
 /**
@@ -23,7 +23,7 @@ object DatabaseTuning {
         try {
             db.enableWriteAheadLogging()
         } catch (e: Exception) {
-            Log.w(TAG, "Could not enable Write-Ahead Logging (WAL)", e)
+            SafeLog.w(TAG, "Could not enable Write-Ahead Logging (WAL)", e)
         }
 
         for (pragma in PRAGMA_STATEMENTS) {
@@ -35,7 +35,7 @@ object DatabaseTuning {
                 try {
                     db.execSQL(pragma)
                 } catch (e: Exception) {
-                    Log.w(TAG, "Failed to execute $pragma", e)
+                    SafeLog.w(TAG, "Failed to execute $pragma", e)
                 }
             }
         }
@@ -45,7 +45,7 @@ object DatabaseTuning {
         try {
             db.execSQL("PRAGMA optimize")
         } catch (e: Exception) {
-            Log.w(TAG, "Failed to execute PRAGMA optimize", e)
+            SafeLog.w(TAG, "Failed to execute PRAGMA optimize", e)
         }
     }
 }

@@ -1,5 +1,7 @@
 package com.example.twopchat
 
+import com.example.twopchat.logging.SafeLog
+
 import androidx.compose.foundation.layout.fillMaxSize
 import com.example.twopchat.config.*
 import com.example.twopchat.relay.*
@@ -78,7 +80,7 @@ fun MainNavigation(
             },
           )
         }.onFailure {
-          android.util.Log.w("MainNavigation", "Could not start P2PRelayService on onboarding complete", it)
+          SafeLog.w("MainNavigation", "Could not start P2PRelayService on onboarding complete", it)
         }
       },
       modifier = Modifier.fillMaxSize()

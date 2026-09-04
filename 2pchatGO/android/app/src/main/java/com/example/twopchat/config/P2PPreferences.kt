@@ -1,5 +1,7 @@
 package com.example.twopchat.config
 
+import com.example.twopchat.logging.SafeLog
+
 import android.content.Context
 import android.content.SharedPreferences
 import androidx.security.crypto.EncryptedSharedPreferences
@@ -496,7 +498,7 @@ object P2PPreferences {
                     EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
                 )
             } catch (e: Exception) {
-                android.util.Log.e("P2PPreferences", "Failed to initialize EncryptedSharedPreferences", e)
+                SafeLog.e("P2PPreferences", "Failed to initialize EncryptedSharedPreferences", e)
                 throw IllegalStateException("EncryptedSharedPreferences initialization failed: Keystore unavailable", e)
             }
             migrateLegacyPreferences(appContext, preferences)

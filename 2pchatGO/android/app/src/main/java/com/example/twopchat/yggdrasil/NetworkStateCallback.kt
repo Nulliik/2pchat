@@ -2,7 +2,7 @@ package com.example.twopchat.yggdrasil
 
 import android.content.Context
 import android.net.*
-import android.util.Log
+import com.example.twopchat.logging.SafeLog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -17,7 +17,7 @@ class NetworkStateCallback(val context: Context) : ConnectivityManager.NetworkCa
 
     override fun onAvailable(network: Network) {
         super.onAvailable(network)
-        Log.d(TAG, "onAvailable")
+        SafeLog.d(TAG, "onAvailable")
         com.example.twopchat.NativeBridge.onNetworkChanged()
 
         val preferences = yggdrasilPrefs(context)
@@ -29,7 +29,7 @@ class NetworkStateCallback(val context: Context) : ConnectivityManager.NetworkCa
                 runCatching {
                     YggdrasilCoordinator.connect(context)
                 }.onFailure {
-                    Log.w(TAG, "Could not reconnect Yggdrasil on network available", it)
+                    SafeLog.w(TAG, "Could not reconnect Yggdrasil on network available", it)
                 }
                 com.example.twopchat.relay.P2PMessageRelay.triggerImmediateReconnect(context)
             }
@@ -38,7 +38,7 @@ class NetworkStateCallback(val context: Context) : ConnectivityManager.NetworkCa
 
     override fun onLost(network: Network) {
         super.onLost(network)
-        Log.d(TAG, "onLost")
+        SafeLog.d(TAG, "onLost")
     }
 
     fun register() {

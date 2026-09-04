@@ -1,7 +1,7 @@
 package com.example.twopchat.security
 
 import android.content.Context
-import android.util.Log
+import com.example.twopchat.logging.SafeLog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
@@ -43,7 +43,7 @@ object TemporaryCacheSanitizer {
             }
             file.delete()
         } catch (e: Exception) {
-            Log.w(TAG, "Failed to securely shred file: ${file.name}", e)
+            SafeLog.w(TAG, "Failed to securely shred file: ${file.name}", e)
             file.delete()
         }
     }
@@ -68,7 +68,7 @@ object TemporaryCacheSanitizer {
                     }
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Error sanitizing temp cache", e)
+                SafeLog.e(TAG, "Error sanitizing temp cache", e)
             }
         }
     }

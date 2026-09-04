@@ -1,5 +1,7 @@
 package com.example.twopchat.yggdrasil
 
+import com.example.twopchat.logging.SafeLog
+
 import android.app.*
 import android.content.Context
 import android.content.Intent
@@ -29,7 +31,7 @@ class GlobalApplication: Application(), YggStateReceiver.StateReceiver {
         val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
             try {
-                android.util.Log.e("FATAL_CRASH", "Uncaught exception in thread ${thread.name}", throwable)
+                SafeLog.e("FATAL_CRASH", "Uncaught exception in thread ${thread.name}", throwable)
                 val sw = java.io.StringWriter()
                 throwable.printStackTrace(java.io.PrintWriter(sw))
                 com.example.twopchat.AppLog.append(
@@ -43,7 +45,7 @@ class GlobalApplication: Application(), YggStateReceiver.StateReceiver {
         try {
             System.loadLibrary("sqlcipher")
         } catch (e: Throwable) {
-            android.util.Log.e("GlobalApplication", "Failed to load sqlcipher", e)
+            SafeLog.e("GlobalApplication", "Failed to load sqlcipher", e)
         }
 
         val prefs = yggdrasilPrefs(applicationContext)
@@ -102,7 +104,7 @@ class GlobalApplication: Application(), YggStateReceiver.StateReceiver {
                     }
                     notificationManager.notify(notifId, notification)
                 }.onFailure {
-                    android.util.Log.w("GlobalApplication", "Could not post Yggdrasil service notification", it)
+                    SafeLog.w("GlobalApplication", "Could not post Yggdrasil service notification", it)
                 }
             }
             if (state == State.Connected) {

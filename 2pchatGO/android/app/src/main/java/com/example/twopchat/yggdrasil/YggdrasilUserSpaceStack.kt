@@ -1,6 +1,6 @@
 package com.example.twopchat.yggdrasil
 
-import android.util.Log
+import com.example.twopchat.logging.SafeLog
 import mobile.Yggdrasil
 import java.io.InputStream
 import java.io.EOFException
@@ -76,21 +76,21 @@ class YggdrasilUserSpaceStack(
                 reuseAddress = true
                 bind(java.net.InetSocketAddress(InetAddress.getByName("127.0.0.1"), socksPort))
             }
-            Log.i(TAG, "SOCKS5 proxy server successfully bound on 127.0.0.1:$socksPort")
+            SafeLog.i(TAG, "SOCKS5 proxy server successfully bound on 127.0.0.1:$socksPort")
             val tSocks = thread(name = "Ygg-SOCKS5-Acceptor") {
                 acceptSocksLoop()
             }
             workerThreads.add(tSocks)
         } catch (e: Throwable) {
-            Log.e(TAG, "Failed to bind SOCKS5 server on port $socksPort", e)
+            SafeLog.e(TAG, "Failed to bind SOCKS5 server on port $socksPort", e)
         }
 
         try {
             udpRelaySocket = DatagramSocket(InetSocketAddress("127.0.0.1", socksPort + 1))
             workerThreads.add(thread(name = "Ygg-UDP-Relay") { udpRelayLoop() })
-            Log.i(TAG, "Yggdrasil UDP relay bound on 127.0.0.1:${socksPort + 1}")
+            SafeLog.i(TAG, "Yggdrasil UDP relay bound on 127.0.0.1:${socksPort + 1}")
         } catch (e: Throwable) {
-            Log.e(TAG, "Failed to bind Yggdrasil UDP relay", e)
+            SafeLog.e(TAG, "Failed to bind Yggdrasil UDP relay", e)
         }
 
         // 2. Start Mesh Packet Receiver
@@ -99,7 +99,7 @@ class YggdrasilUserSpaceStack(
         }
         workerThreads.add(tRecv)
 
-        Log.i(TAG, "Yggdrasil User-Space Proxy Stack started on 127.0.0.1:$socksPort")
+        SafeLog.i(TAG, "Yggdrasil User-Space Proxy Stack started on 127.0.0.1:$socksPort")
         runCatching {
             com.example.twopchat.AppLog.append(
                 GlobalApplication.getContext(),
@@ -130,7 +130,7 @@ class YggdrasilUserSpaceStack(
 
         workerThreads.forEach { it.interrupt() }
         workerThreads.clear()
-        Log.i(TAG, "Yggdrasil User-Space Proxy Stack stopped")
+        SafeLog.i(TAG, "Yggdrasil User-Space Proxy Stack stopped")
     }
 
     private fun acceptSocksLoop() {

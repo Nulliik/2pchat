@@ -1,5 +1,7 @@
 package com.example.twopchat.group.storage
 
+import com.example.twopchat.logging.SafeLog
+
 import android.content.ContentValues
 import android.content.Context
 import com.example.twopchat.security.*
@@ -205,7 +207,7 @@ class GroupDatabaseHelper(
             readableDatabase
         } catch (e: Exception) {
             if (e.message?.contains("file is not a database") == true || e.message?.contains("code 26") == true || e.message?.contains("corrupt") == true) {
-                android.util.Log.e("GroupDatabaseHelper", "Group database unreadable (key mismatch or corrupted). Recreating.", e)
+                SafeLog.e("GroupDatabaseHelper", "Group database unreadable (key mismatch or corrupted). Recreating.", e)
                 context.applicationContext.deleteDatabase(databaseName)
                 readableDatabase
             } else {
@@ -218,7 +220,7 @@ class GroupDatabaseHelper(
             writableDatabase
         } catch (e: Exception) {
             if (e.message?.contains("file is not a database") == true || e.message?.contains("code 26") == true || e.message?.contains("corrupt") == true) {
-                android.util.Log.e("GroupDatabaseHelper", "Group database unreadable (key mismatch or corrupted). Recreating.", e)
+                SafeLog.e("GroupDatabaseHelper", "Group database unreadable (key mismatch or corrupted). Recreating.", e)
                 context.applicationContext.deleteDatabase(databaseName)
                 writableDatabase
             } else {
@@ -2081,7 +2083,7 @@ class GroupDatabaseHelper(
                     if (cursor.moveToFirst()) cursor.getInt(0) else 0
                 }
                 if (captured <= 0) {
-                    android.util.Log.w("GroupDatabaseHelper", "admission cut is empty for group $groupId, rolling back commit")
+                    SafeLog.w("GroupDatabaseHelper", "admission cut is empty for group $groupId, rolling back commit")
                     return false
                 }
             }

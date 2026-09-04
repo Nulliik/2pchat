@@ -1,6 +1,6 @@
 package com.example.twopchat
 
-import android.util.Log
+import com.example.twopchat.logging.SafeLog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -28,11 +28,11 @@ object NativeBridge {
     var onFileProgressListener: ((peerFP: String, messageId: String, transferred: Long, total: Long, speedKbps: Double) -> Unit)? = null
 
     private fun logI(msg: String) {
-        runCatching { Log.i(TAG, msg) }
+        runCatching { SafeLog.i(TAG, msg) }
     }
 
     private fun logE(msg: String, error: Throwable? = null) {
-        runCatching { Log.e(TAG, msg, error) }
+        runCatching { SafeLog.e(TAG, msg, error) }
     }
 
     init {
@@ -62,7 +62,7 @@ object NativeBridge {
         try {
             nativeSetStorageDir(dir)
         } catch (e: Throwable) {
-            Log.e(TAG, "nativeSetStorageDir failed", e)
+            SafeLog.e(TAG, "nativeSetStorageDir failed", e)
         }
     }
 
@@ -76,7 +76,7 @@ object NativeBridge {
             nativeSetStorageDir(context.filesDir.absolutePath)
             nativeInit()
         } catch (e: Throwable) {
-            Log.e(TAG, "nativeInit failed", e)
+            SafeLog.e(TAG, "nativeInit failed", e)
             false
         }
     }
@@ -86,7 +86,7 @@ object NativeBridge {
         return try {
             nativeEcho(message) ?: ""
         } catch (e: Throwable) {
-            Log.e(TAG, "nativeEcho failed", e)
+            SafeLog.e(TAG, "nativeEcho failed", e)
             "Error: ${e.message}"
         }
     }
@@ -103,7 +103,7 @@ object NativeBridge {
         val jsonStr = try {
             nativeGetLocalIdentityJSON()
         } catch (e: Throwable) {
-            Log.e(TAG, "nativeGetLocalIdentityJSON failed", e)
+            SafeLog.e(TAG, "nativeGetLocalIdentityJSON failed", e)
             null
         } ?: return null
 
@@ -119,7 +119,7 @@ object NativeBridge {
             cachedLocalIdentity = identity
             identity
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to parse local identity JSON", e)
+            SafeLog.e(TAG, "Failed to parse local identity JSON", e)
             null
         }
     }
@@ -129,7 +129,7 @@ object NativeBridge {
         return try {
             nativeGetFingerprint(publicKey)
         } catch (e: Throwable) {
-            Log.e(TAG, "nativeGetFingerprint failed", e)
+            SafeLog.e(TAG, "nativeGetFingerprint failed", e)
             null
         }
     }
@@ -144,7 +144,7 @@ object NativeBridge {
         return try {
             nativeGetSafetyNumber(myPub, theirPub, myVerify ?: ByteArray(0), theirVerify ?: ByteArray(0))
         } catch (e: Throwable) {
-            Log.e(TAG, "nativeGetSafetyNumber failed", e)
+            SafeLog.e(TAG, "nativeGetSafetyNumber failed", e)
             null
         }
     }
@@ -156,7 +156,7 @@ object NativeBridge {
         return try {
             nativeStartListener(port)
         } catch (e: Throwable) {
-            Log.e(TAG, "nativeStartListener failed", e)
+            SafeLog.e(TAG, "nativeStartListener failed", e)
             false
         }
     }
@@ -166,7 +166,7 @@ object NativeBridge {
         return try {
             nativeStopListener()
         } catch (e: Throwable) {
-            Log.e(TAG, "nativeStopListener failed", e)
+            SafeLog.e(TAG, "nativeStopListener failed", e)
             false
         }
     }
@@ -176,7 +176,7 @@ object NativeBridge {
         return try {
             nativeConnectPeer(endpoint, expectedFingerprint)
         } catch (e: Throwable) {
-            Log.e(TAG, "nativeConnectPeer failed", e)
+            SafeLog.e(TAG, "nativeConnectPeer failed", e)
             false
         }
     }
@@ -186,7 +186,7 @@ object NativeBridge {
         return try {
             nativeUpdatePeerNameMapping(peerFingerprint, nickname)
         } catch (e: Throwable) {
-            Log.e(TAG, "nativeUpdatePeerNameMapping failed", e)
+            SafeLog.e(TAG, "nativeUpdatePeerNameMapping failed", e)
             false
         }
     }
@@ -196,7 +196,7 @@ object NativeBridge {
         return try {
             nativeSendMessage(peerFingerprint, text)
         } catch (e: Throwable) {
-            Log.e(TAG, "nativeSendMessage failed", e)
+            SafeLog.e(TAG, "nativeSendMessage failed", e)
             null
         }
     }
@@ -206,7 +206,7 @@ object NativeBridge {
         return try {
             nativeIsPeerOnline(peerFingerprint)
         } catch (e: Throwable) {
-            Log.e(TAG, "nativeIsPeerOnline failed", e)
+            SafeLog.e(TAG, "nativeIsPeerOnline failed", e)
             false
         }
     }
@@ -226,7 +226,7 @@ object NativeBridge {
         return try {
             nativeSendFile(peerFingerprint, filePath, messageId, fileName, caption, emoji, albumId, albumIndex, albumCount)
         } catch (e: Throwable) {
-            Log.e(TAG, "nativeSendFile failed", e)
+            SafeLog.e(TAG, "nativeSendFile failed", e)
             null
         }
     }
@@ -236,7 +236,7 @@ object NativeBridge {
         return try {
             nativeCancelFile(messageId)
         } catch (e: Throwable) {
-            Log.e(TAG, "nativeCancelFile failed", e)
+            SafeLog.e(TAG, "nativeCancelFile failed", e)
             false
         }
     }
@@ -246,7 +246,7 @@ object NativeBridge {
         try {
             nativeSetTorProxy(enabled, proxyAddr)
         } catch (e: Throwable) {
-            Log.e(TAG, "nativeSetTorProxy failed", e)
+            SafeLog.e(TAG, "nativeSetTorProxy failed", e)
         }
     }
 
@@ -254,9 +254,9 @@ object NativeBridge {
         if (!isLoaded) return
         try {
             nativeSetYggdrasilConfig(mode, proxyAddr)
-            Log.i(TAG, "Updated Go core Yggdrasil mode=$mode proxy=$proxyAddr")
+            SafeLog.i(TAG, "Updated Go core Yggdrasil mode=$mode proxy=$proxyAddr")
         } catch (e: Throwable) {
-            Log.e(TAG, "nativeSetYggdrasilConfig failed", e)
+            SafeLog.e(TAG, "nativeSetYggdrasilConfig failed", e)
         }
     }
 
@@ -264,9 +264,10 @@ object NativeBridge {
         if (!isLoaded) return
         try {
             nativeSetOnionAddress(address)
-            Log.i(TAG, "Stored local Tor onion address in Go Core: $address")
+            SafeLog.i(TAG, "Stored local Tor onion address in Go Core (len=${address.length})")
+            SafeLog.d(TAG, "Stored local Tor onion address in Go Core: $address")
         } catch (e: Throwable) {
-            Log.e(TAG, "nativeSetOnionAddress failed", e)
+            SafeLog.e(TAG, "nativeSetOnionAddress failed", e)
         }
     }
 
@@ -275,7 +276,7 @@ object NativeBridge {
         return try {
             nativeGetOnionAddress()
         } catch (e: Throwable) {
-            Log.e(TAG, "nativeGetOnionAddress failed", e)
+            SafeLog.e(TAG, "nativeGetOnionAddress failed", e)
             null
         }
     }
@@ -293,7 +294,7 @@ object NativeBridge {
             val hashesJson = JSONArray(infoHashes).toString()
             nativeStartDiscovery(trackersJson, hashesJson, listenPort)
         } catch (e: Throwable) {
-            Log.e(TAG, "nativeStartDiscovery failed", e)
+            SafeLog.e(TAG, "nativeStartDiscovery failed", e)
             false
         }
     }
@@ -303,7 +304,7 @@ object NativeBridge {
         return try {
             nativeStopDiscovery()
         } catch (e: Throwable) {
-            Log.e(TAG, "nativeStopDiscovery failed", e)
+            SafeLog.e(TAG, "nativeStopDiscovery failed", e)
             false
         }
     }
@@ -313,7 +314,7 @@ object NativeBridge {
         return try {
             nativeResetStaleEndpointCooldowns()
         } catch (e: Throwable) {
-            Log.e(TAG, "nativeResetStaleEndpointCooldowns failed", e)
+            SafeLog.e(TAG, "nativeResetStaleEndpointCooldowns failed", e)
             false
         }
     }
@@ -324,7 +325,7 @@ object NativeBridge {
             val trackersJson = org.json.JSONArray(trackers).toString()
             nativeUpdateTrackers(trackersJson)
         } catch (e: Throwable) {
-            Log.e(TAG, "nativeUpdateTrackers failed", e)
+            SafeLog.e(TAG, "nativeUpdateTrackers failed", e)
             false
         }
     }
@@ -335,7 +336,7 @@ object NativeBridge {
         return try {
             nativeReloadIdentity()
         } catch (e: Throwable) {
-            Log.e(TAG, "nativeReloadIdentity failed", e)
+            SafeLog.e(TAG, "nativeReloadIdentity failed", e)
             false
         }
     }
@@ -345,7 +346,7 @@ object NativeBridge {
         return try {
             nativeAnnounceSelf(infoHashHex, port)
         } catch (e: Throwable) {
-            Log.e(TAG, "nativeAnnounceSelf failed", e)
+            SafeLog.e(TAG, "nativeAnnounceSelf failed", e)
             false
         }
     }
@@ -356,7 +357,7 @@ object NativeBridge {
             val endpointsJson = JSONArray(endpoints).toString()
             nativeProbePeer(endpointsJson, expectedFingerprint)
         } catch (e: Throwable) {
-            Log.e(TAG, "nativeProbePeer failed", e)
+            SafeLog.e(TAG, "nativeProbePeer failed", e)
             false
         }
     }
@@ -366,7 +367,7 @@ object NativeBridge {
         return try {
             nativeOnNetworkChanged()
         } catch (e: Throwable) {
-            Log.e(TAG, "nativeOnNetworkChanged failed", e)
+            SafeLog.e(TAG, "nativeOnNetworkChanged failed", e)
             false
         }
     }
@@ -378,7 +379,7 @@ object NativeBridge {
         return try {
             nativeGetLocalSigningPublicKey() ?: ""
         } catch (e: Throwable) {
-            Log.e(TAG, "nativeGetLocalSigningPublicKey failed", e)
+            SafeLog.e(TAG, "nativeGetLocalSigningPublicKey failed", e)
             ""
         }
     }
@@ -388,7 +389,7 @@ object NativeBridge {
         return try {
             nativeSignGroupPayload(canonicalPayload) ?: ""
         } catch (e: Throwable) {
-            Log.e(TAG, "nativeSignGroupPayload failed", e)
+            SafeLog.e(TAG, "nativeSignGroupPayload failed", e)
             ""
         }
     }
@@ -400,7 +401,7 @@ object NativeBridge {
         return try {
             nativeVerifyGroupPayload(verificationKeyBase64, canonicalPayload, signatureBase64)
         } catch (e: Throwable) {
-            Log.e(TAG, "nativeVerifyGroupPayload failed", e)
+            SafeLog.e(TAG, "nativeVerifyGroupPayload failed", e)
             false
         }
     }
@@ -412,7 +413,7 @@ object NativeBridge {
             val obj = JSONObject(jsonStr)
             Pair(obj.getString("nonce"), obj.getString("ciphertext"))
         } catch (e: Throwable) {
-            Log.e(TAG, "nativeGroupEncrypt failed", e)
+            SafeLog.e(TAG, "nativeGroupEncrypt failed", e)
             null
         }
     }
@@ -422,7 +423,7 @@ object NativeBridge {
         return try {
             nativeGroupDecrypt(epochSecret, authenticatedData, nonceBase64, ciphertextBase64)
         } catch (e: Throwable) {
-            Log.e(TAG, "nativeGroupDecrypt failed", e)
+            SafeLog.e(TAG, "nativeGroupDecrypt failed", e)
             null
         }
     }
@@ -433,60 +434,62 @@ object NativeBridge {
 
     @JvmStatic
     fun onPeerConnected(peerFP: String, endpoint: String) {
-        Log.i(TAG, "[P2P] Peer connected: $peerFP @ $endpoint")
+        SafeLog.i(TAG, "[P2P] Peer connected: ${SafeLog.fp(peerFP)}")
+        SafeLog.d(TAG, "[P2P] Peer connected: ${SafeLog.fp(peerFP)} @ $endpoint")
         bridgeScope.launch {
             try {
                 onPeerConnectedListener?.invoke(peerFP, endpoint)
             } catch (e: Throwable) {
-                Log.e(TAG, "Error in onPeerConnectedListener", e)
+                SafeLog.e(TAG, "Error in onPeerConnectedListener", e)
             }
         }
     }
 
     @JvmStatic
     fun onPeerDisconnected(peerFP: String, reason: String) {
-        Log.i(TAG, "[P2P] Peer disconnected: $peerFP, reason: $reason")
+        SafeLog.i(TAG, "[P2P] Peer disconnected: ${SafeLog.fp(peerFP)}, reason: $reason")
         bridgeScope.launch {
             try {
                 onPeerDisconnectedListener?.invoke(peerFP, reason)
             } catch (e: Throwable) {
-                Log.e(TAG, "Error in onPeerDisconnectedListener", e)
+                SafeLog.e(TAG, "Error in onPeerDisconnectedListener", e)
             }
         }
     }
 
     @JvmStatic
     fun onMessageReceived(peerFP: String, payload: ByteArray, messageID: String) {
-        Log.d(TAG, "[P2P] Message received from $peerFP, ID: $messageID (${payload.size} bytes)")
+        SafeLog.d(TAG, "[P2P] Message received from ${SafeLog.fp(peerFP)}, ID: $messageID (${payload.size} bytes)")
         bridgeScope.launch {
             try {
                 onMessageReceivedListener?.invoke(peerFP, payload, messageID)
             } catch (e: Throwable) {
-                Log.e(TAG, "Error in onMessageReceivedListener", e)
+                SafeLog.e(TAG, "Error in onMessageReceivedListener", e)
             }
         }
     }
 
     @JvmStatic
     fun onError(code: Int, message: String) {
-        Log.e(TAG, "[P2P] Native error ($code): $message")
+        SafeLog.e(TAG, "[P2P] Native error ($code): $message")
         bridgeScope.launch {
             try {
                 onErrorListener?.invoke(code, message)
             } catch (e: Throwable) {
-                Log.e(TAG, "Error in onErrorListener", e)
+                SafeLog.e(TAG, "Error in onErrorListener", e)
             }
         }
     }
 
     @JvmStatic
     fun onPeerDiscovered(infoHashHex: String, endpoint: String, source: String) {
-        Log.i(TAG, "[P2P-Discovery] Discovered peer for $infoHashHex @ $endpoint (source: $source)")
+        SafeLog.i(TAG, "[P2P-Discovery] Discovered peer (source: $source)")
+        SafeLog.d(TAG, "[P2P-Discovery] Discovered peer for ${SafeLog.fp(infoHashHex)} @ $endpoint (source: $source)")
         bridgeScope.launch {
             try {
                 onPeerDiscoveredListener?.invoke(infoHashHex, endpoint, source)
             } catch (e: Throwable) {
-                Log.e(TAG, "Error in onPeerDiscoveredListener", e)
+                SafeLog.e(TAG, "Error in onPeerDiscoveredListener", e)
             }
         }
     }
@@ -541,7 +544,7 @@ object NativeBridge {
         val cleanDetail = detail.replace(Regex("[\\r\\n]+"), " ").take(160)
         val summary = "announce=$result, peers=${peerCount.coerceAtLeast(0)}, announce_rtt=${elapsedMs.coerceAtLeast(0)}ms" +
             cleanDetail.takeIf { it.isNotBlank() }?.let { ", detail=$it" }.orEmpty()
-        if (success) Log.i(TAG, "[TRACKER] $trackerUrl $summary") else Log.w(TAG, "[TRACKER] $trackerUrl $summary")
+        if (success) SafeLog.i(TAG, "[TRACKER] $trackerUrl $summary") else SafeLog.w(TAG, "[TRACKER] $trackerUrl $summary")
         bridgeScope.launch {
             val context = runCatching { com.example.twopchat.yggdrasil.GlobalApplication.appContext }.getOrNull()
             if (context != null) {
@@ -558,12 +561,12 @@ object NativeBridge {
 
     @JvmStatic
     fun onFileProgress(peerFP: String, messageID: String, transferred: Long, total: Long, speedKbps: Double) {
-        Log.d(TAG, "[P2P-File] Progress for $messageID: $transferred / $total bytes ($speedKbps kbps)")
+        SafeLog.d(TAG, "[P2P-File] Progress for $messageID: $transferred / $total bytes ($speedKbps kbps)")
         bridgeScope.launch {
             try {
                 onFileProgressListener?.invoke(peerFP, messageID, transferred, total, speedKbps)
             } catch (e: Throwable) {
-                Log.e(TAG, "Error in onFileProgressListener", e)
+                SafeLog.e(TAG, "Error in onFileProgressListener", e)
             }
         }
     }
@@ -573,7 +576,7 @@ object NativeBridge {
         return try {
             nativeTriggerNatTraversal()
         } catch (e: Throwable) {
-            Log.e(TAG, "nativeTriggerNatTraversal failed", e)
+            SafeLog.e(TAG, "nativeTriggerNatTraversal failed", e)
             false
         }
     }
@@ -584,7 +587,7 @@ object NativeBridge {
         return try {
             nativeRefreshNatDiagnostics()
         } catch (e: Throwable) {
-            Log.e(TAG, "nativeRefreshNatDiagnostics failed", e)
+            SafeLog.e(TAG, "nativeRefreshNatDiagnostics failed", e)
             false
         }
     }
@@ -602,7 +605,7 @@ object NativeBridge {
             }
             map
         } catch (e: Throwable) {
-            Log.e(TAG, "Failed to parse NAT diagnostics JSON", e)
+            SafeLog.e(TAG, "Failed to parse NAT diagnostics JSON", e)
             emptyMap()
         }
     }
@@ -612,7 +615,7 @@ object NativeBridge {
         return try {
             nativeGetLocalSeedMnemonic()
         } catch (e: Throwable) {
-            Log.e(TAG, "nativeGetLocalSeedMnemonic failed", e)
+            SafeLog.e(TAG, "nativeGetLocalSeedMnemonic failed", e)
             null
         }
     }
@@ -623,7 +626,7 @@ object NativeBridge {
         return try {
             nativeRestoreFromMnemonic(nickname, mnemonic, aboutMe)
         } catch (e: Throwable) {
-            Log.e(TAG, "nativeRestoreFromMnemonic failed", e)
+            SafeLog.e(TAG, "nativeRestoreFromMnemonic failed", e)
             false
         }
     }
@@ -634,7 +637,7 @@ object NativeBridge {
         return try {
             nativeSetNickname(nickname)
         } catch (e: Throwable) {
-            Log.e(TAG, "nativeSetNickname failed", e)
+            SafeLog.e(TAG, "nativeSetNickname failed", e)
             false
         }
     }
@@ -644,7 +647,7 @@ object NativeBridge {
         return try {
             nativeSendMessageBinary(peerFingerprint, buffer, offset, length)
         } catch (e: Throwable) {
-            Log.e(TAG, "nativeSendMessageBinary failed", e)
+            SafeLog.e(TAG, "nativeSendMessageBinary failed", e)
             null
         }
     }
@@ -654,7 +657,7 @@ object NativeBridge {
         return try {
             nativeSendRawBytes(peerFingerprint, payload)
         } catch (e: Throwable) {
-            Log.e(TAG, "nativeSendRawBytes failed", e)
+            SafeLog.e(TAG, "nativeSendRawBytes failed", e)
             null
         }
     }

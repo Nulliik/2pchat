@@ -2,7 +2,7 @@ package com.example.twopchat.tor
 
 import android.content.Context
 import android.util.Base64
-import android.util.Log
+import com.example.twopchat.logging.SafeLog
 import com.example.twopchat.AppLog
 import com.example.twopchat.NativeBridge
 import com.example.twopchat.relay.P2PMessageRelay
@@ -468,7 +468,8 @@ object TorManager {
             _onionAddress.value = hostname
             P2PPreferences.setTorOnionHostname(context, hostname)
             NativeBridge.setOnionAddress(hostname)
-            Log.i(TAG, "[TOR] Onion service v3 active: $hostname")
+            SafeLog.i(TAG, "[TOR] Onion service v3 active (len=${hostname.length})")
+            SafeLog.d(TAG, "[TOR] Onion service v3 active: $hostname")
         }
         return hostname
     }
@@ -496,16 +497,17 @@ object TorManager {
             try {
                 NativeBridge.setOnionAddress(hostname)
             } catch (_: Throwable) {}
-            Log.i(TAG, "[TOR] Onion service v3 active (with retry): $hostname")
+            SafeLog.i(TAG, "[TOR] Onion service v3 active (with retry, len=${hostname.length})")
+            SafeLog.d(TAG, "[TOR] Onion service v3 active (with retry): $hostname")
         } else {
-            Log.w(TAG, "[TOR] Timed out waiting for Hidden Service hostname in ${hiddenServiceDir.absolutePath}")
+            SafeLog.w(TAG, "[TOR] Timed out waiting for Hidden Service hostname in ${hiddenServiceDir.absolutePath}")
         }
         hostname
     }
 
     suspend fun rotateOnionAddress(context: Context): String? = withContext(Dispatchers.IO) {
         val appContext = context.applicationContext
-        Log.i(TAG, "[TOR] Initiating Tor Onion Address Rotation")
+        SafeLog.i(TAG, "[TOR] Initiating Tor Onion Address Rotation")
 
         // 1. Stop current Tor process cleanly
         stopTor()
@@ -515,7 +517,7 @@ object TorManager {
         val hsDir = File(appTorDir, "hidden_service_v3")
         if (hsDir.exists()) {
             hsDir.deleteRecursively()
-            Log.i(TAG, "[TOR] Removed previous hidden_service_v3 keys and hostname")
+            SafeLog.i(TAG, "[TOR] Removed previous hidden_service_v3 keys and hostname")
         }
         P2PPreferences.setTorOnionHostname(appContext, "")
         _onionAddress.value = null
@@ -533,11 +535,12 @@ object TorManager {
         )
 
         if (newHostname != null) {
-            Log.i(TAG, "[TOR] Onion Address Rotation SUCCEEDED: $newHostname")
+            SafeLog.i(TAG, "[TOR] Onion Address Rotation SUCCEEDED (len=${newHostname.length})")
+            SafeLog.d(TAG, "[TOR] Onion Address Rotation SUCCEEDED: $newHostname")
             // 5. Broadcast signed onion update to trusted contacts
             P2PMessageRelay.broadcastOnionAddressUpdate(appContext, newHostname)
         } else {
-            Log.e(TAG, "[TOR] Onion Address Rotation FAILED to generate hostname within timeout")
+            SafeLog.e(TAG, "[TOR] Onion Address Rotation FAILED to generate hostname within timeout")
         }
 
         newHostname
@@ -638,7 +641,7 @@ object TorManager {
                     reader.readLine()
                 }
             }
-            Log.i(TAG, "Sent SIGNAL HALT to stale Tor daemon on ControlPort $controlPort")
+            SafeLog.i(TAG, "Sent SIGNAL HALT to stale Tor daemon on ControlPort $controlPort")
         } catch (_: Throwable) {}
     }
 
@@ -662,7 +665,7 @@ object TorManager {
             val appTorDir = File(context.filesDir, "app_tor")
             val cookieFile = File(appTorDir, "control_auth_cookie")
             if (!cookieFile.exists()) {
-                Log.w(TAG, "ControlPort auth cookie not found")
+                SafeLog.w(TAG, "ControlPort auth cookie not found")
                 _circuitStatus.value = "[🛡️ Вход] ➔ [🔄 Средн] ➔ [🌍 Выход (Обновлен)]"
                 return@withContext true
             }
@@ -677,7 +680,7 @@ object TorManager {
                 writer.flush()
                 val authResponse = reader.readLine()
                 if (authResponse == null || !authResponse.startsWith("250")) {
-                    Log.w(TAG, "ControlPort AUTHENTICATE failed: $authResponse")
+                    SafeLog.w(TAG, "ControlPort AUTHENTICATE failed: $authResponse")
                     return@withContext false
                 }
 
@@ -685,7 +688,7 @@ object TorManager {
                 writer.flush()
                 val signalResponse = reader.readLine()
                 if (signalResponse == null || !signalResponse.startsWith("250")) {
-                    Log.w(TAG, "ControlPort SIGNAL NEWNYM failed: $signalResponse")
+                    SafeLog.w(TAG, "ControlPort SIGNAL NEWNYM failed: $signalResponse")
                     return@withContext false
                 }
 
@@ -706,11 +709,11 @@ object TorManager {
                 }
 
                 _circuitStatus.value = "[🛡️ Вход] ➔ [🔄 Средн] ➔ [🌍 Выход (Обновлен)]"
-                Log.i(TAG, "[TOR] Successfully renewed Tor identity (SIGNAL NEWNYM)")
+                SafeLog.i(TAG, "[TOR] Successfully renewed Tor identity (SIGNAL NEWNYM)")
                 return@withContext true
             }
         } catch (exc: Exception) {
-            Log.w(TAG, "Failed to send SIGNAL NEWNYM to ControlPort (${exc.javaClass.simpleName})")
+            SafeLog.w(TAG, "Failed to send SIGNAL NEWNYM to ControlPort (${exc.javaClass.simpleName})")
             _circuitStatus.value = "[🛡️ Вход] ➔ [🔄 Средн] ➔ [🌍 Выход (Обновлен)]"
             return@withContext true
         } finally {
@@ -728,13 +731,13 @@ object TorManager {
         ProxyConfig.updateNetworkProxy(context)
         P2PMessageRelay.refreshAnnouncement(context)
         P2PMessageRelay.triggerImmediateReconnect(context)
-        Log.i(TAG, "[TOR] Tor disabled. Successfully fell back to Direct/Yggdrasil connection.")
+        SafeLog.i(TAG, "[TOR] Tor disabled. Successfully fell back to Direct/Yggdrasil connection.")
     }
 
     fun rotateBridge(context: Context) {
         bootstrapRetryCount++
         if (bootstrapRetryCount >= MAX_BOOTSTRAP_RETRIES) {
-            Log.w(TAG, "[TOR] Failed to bootstrap after $bootstrapRetryCount attempts. Disabling Tor and falling back to Direct/Yggdrasil mode.")
+            SafeLog.w(TAG, "[TOR] Failed to bootstrap after $bootstrapRetryCount attempts. Disabling Tor and falling back to Direct/Yggdrasil mode.")
             disableTorAndFallback(context)
             return
         }
@@ -743,13 +746,13 @@ object TorManager {
         val currentTransport = P2PPreferences.torTransport(context)
         _isRotatingBridge.value = true
         val effectiveBridges = if (customBridges.isNotEmpty()) {
-            Log.i(TAG, "[TOR] Bootstrap stalled (attempt $bootstrapRetryCount/$MAX_BOOTSTRAP_RETRIES). Rotating custom bridges order...")
+            SafeLog.i(TAG, "[TOR] Bootstrap stalled (attempt $bootstrapRetryCount/$MAX_BOOTSTRAP_RETRIES). Rotating custom bridges order...")
             val rotated = if (customBridges.size > 1) customBridges.drop(1) + customBridges.take(1) else customBridges
             P2PPreferences.setTorBridgeLines(context, rotated)
             rotated
         } else {
             val nextTransport = TorBridgeCatalog.rotateToNextTransport(currentTransport)
-            Log.w(TAG, "[TOR] Bootstrap stalled at <= 45% (attempt $bootstrapRetryCount/$MAX_BOOTSTRAP_RETRIES). Switching transport from $currentTransport to $nextTransport...")
+            SafeLog.w(TAG, "[TOR] Bootstrap stalled at <= 45% (attempt $bootstrapRetryCount/$MAX_BOOTSTRAP_RETRIES). Switching transport from $currentTransport to $nextTransport...")
             P2PPreferences.setTorTransport(context, nextTransport)
 
             val nextBridge = TorBridgeCatalog.rotateNextBridge(nextTransport)
@@ -762,14 +765,14 @@ object TorManager {
                 TorTransport.OBFS4 -> "obfs4"
                 TorTransport.AUTO -> "Auto"
             }
-            Log.i(TAG, "[TOR] Trying $transportLabel bridge...")
+            SafeLog.i(TAG, "[TOR] Trying $transportLabel bridge...")
             selectedBridges
         }
         stopTor()
         scope.launch {
             val freed = waitForPortsFree(listOf(effectiveSocksPort, effectiveControlPort), timeoutMs = 3000L)
             if (!freed) {
-                Log.w(TAG, "[TOR] Ports $effectiveSocksPort/$effectiveControlPort not freed after stopTor() within timeout, proceeding to startTor anyway.")
+                SafeLog.w(TAG, "[TOR] Ports $effectiveSocksPort/$effectiveControlPort not freed after stopTor() within timeout, proceeding to startTor anyway.")
             }
             _isRotatingBridge.value = false
             startTor(context, effectiveBridges, isUserInitiated = false)
@@ -787,7 +790,7 @@ object TorManager {
         }
 
         if (_isTorRunning.value || _isTorConnecting.value) {
-            Log.d(TAG, "Tor is already running or connecting")
+            SafeLog.d(TAG, "Tor is already running or connecting")
             return
         }
 
@@ -805,7 +808,7 @@ object TorManager {
                 .putBoolean(P2PPreferences.TOR_ENABLED, false)
                 .apply()
             ProxyConfig.updateNetworkProxy(context)
-            Log.w(TAG, "Rejected invalid Tor bridge configuration (${bridgeConfiguration.error.name})")
+            SafeLog.w(TAG, "Rejected invalid Tor bridge configuration (${bridgeConfiguration.error.name})")
             return
         }
 
@@ -895,7 +898,7 @@ object TorManager {
                 if (!waitForPortsFree(listOf(socksPort, controlPort), timeoutMs = 1500L)) {
                     socksPort = findFreePort(DEFAULT_SOCKS_PORT, 5)
                     controlPort = findFreePort(DEFAULT_CONTROL_PORT, 5)
-                    Log.i(TAG, "Default ports busy; dynamically selected Tor ports: socks=$socksPort, control=$controlPort")
+                    SafeLog.i(TAG, "Default ports busy; dynamically selected Tor ports: socks=$socksPort, control=$controlPort")
                 }
             }
             effectiveSocksPort = socksPort
@@ -923,7 +926,7 @@ object TorManager {
             // private to the app and intentionally excludes user-added CAs.
             val systemCaBundle = writeSystemCaBundle(appTorDir)
 
-            Log.i(
+            SafeLog.i(
                 TAG,
                 "Initialized embedded Tor configuration (Bridges active: ${bridgeConfiguration.bridges.isNotEmpty()}, Ports: socks=$effectiveSocksPort, control=$effectiveControlPort)"
             )
@@ -944,7 +947,7 @@ object TorManager {
                 terminateProcess(startedProcess)
                 return
             }
-            Log.i(TAG, "Started embedded Tor process")
+            SafeLog.i(TAG, "Started embedded Tor process")
 
             logReaderJob = scope.launch {
                 try {
@@ -954,22 +957,22 @@ object TorManager {
                     startedProcess.inputStream.bufferedReader().useLines { lines ->
                         lines.forEach { line ->
                             if (!runGate.isCurrent(runId)) return@forEach
-                            Log.d(TAG, "[TorNative] $line")
+                            SafeLog.d(TAG, "[TorNative] $line")
                             appendTorLog(context, line)
                             parseBootstrapProgress(line)?.let { progress ->
                                 _bootstrapProgress.value = progress
-                                Log.i(TAG, "Tor bootstrap progress: $progress%")
+                                SafeLog.i(TAG, "Tor bootstrap progress: $progress%")
                             }
                             classifyBootstrapFailureHint(line)?.let { category ->
                                 if (failureHint.getAndSet(category) != category) {
-                                    Log.w(TAG, "Tor bootstrap warning category: $category")
+                                    SafeLog.w(TAG, "Tor bootstrap warning category: $category")
                                 }
                             }
                         }
                     }
                 } catch (exc: Exception) {
                     if (runGate.isCurrent(runId)) {
-                        Log.w(TAG, "Tor log reader stopped (${exc.javaClass.simpleName})")
+                        SafeLog.w(TAG, "Tor log reader stopped (${exc.javaClass.simpleName})")
                     }
                 }
             }
@@ -1008,16 +1011,16 @@ object TorManager {
                         _isSlowBootstrap.value = true
                     }
                     if (duration > 30000L && !slowWarningLogged) {
-                        Log.w(TAG, "[TOR] Tor bootstrap slow at $currentProg% (${duration / 1000}s), waiting or signaling new circuit...")
+                        SafeLog.w(TAG, "[TOR] Tor bootstrap slow at $currentProg% (${duration / 1000}s), waiting or signaling new circuit...")
                         slowWarningLogged = true
                     }
                     if (duration > 30000L && !circuitSignalSent) {
                         circuitSignalSent = true
-                        Log.i(TAG, "[TOR] Bootstrap slow at $currentProg% (${duration / 1000}s). Signaling Tor for circuit renewal (SIGNAL NEWNYM)...")
+                        SafeLog.i(TAG, "[TOR] Bootstrap slow at $currentProg% (${duration / 1000}s). Signaling Tor for circuit renewal (SIGNAL NEWNYM)...")
                         scope.launch { renewTorIdentity(context) }
                     }
                     if (shouldRotateOnBootstrapStall(currentProg, duration)) {
-                        Log.w(TAG, "[TOR] Bootstrap stalled at $currentProg% for ${duration / 1000}s. Triggering automatic bridge rotation...")
+                        SafeLog.w(TAG, "[TOR] Bootstrap stalled at $currentProg% for ${duration / 1000}s. Triggering automatic bridge rotation...")
                         rotateBridge(context)
                         return
                     }
@@ -1031,11 +1034,12 @@ object TorManager {
             if (isBootstrapReady(portReady, _bootstrapProgress.value) || (portReady && _bootstrapProgress.value >= 75)) {
                 bootstrapRetryCount = 0
                 if (!markRunning(runId)) return
-                Log.i(TAG, "SOCKS5 listener is ready and Tor bootstrapped to ${_bootstrapProgress.value}%")
+                SafeLog.i(TAG, "SOCKS5 listener is ready and Tor bootstrapped to ${_bootstrapProgress.value}%")
                 readAndPublishOnionAddressWithRetry(context, hsDir)
                 val onion = getOnionAddress(context)
                 if (onion != null) {
-                    Log.i(TAG, "Tor Onion service active: $onion")
+                    SafeLog.i(TAG, "Tor Onion service active (len=${onion.length})")
+                    SafeLog.d(TAG, "Tor Onion service active: $onion")
                 }
                 if (!enableTorProxy(context, runId)) return
 
@@ -1055,22 +1059,22 @@ object TorManager {
                 failureHint.get() != null -> "BOOTSTRAP_TIMEOUT_${failureHint.get()}"
                 else -> "BOOTSTRAP_TIMEOUT_FALLBACK_DIRECT"
             }
-            Log.w(TAG, "[TOR] Tor bootstrap attempt failed or timed out after ${bootstrapTimeoutMs / 1000}s ($reason).")
+            SafeLog.w(TAG, "[TOR] Tor bootstrap attempt failed or timed out after ${bootstrapTimeoutMs / 1000}s ($reason).")
             recordFailure(runId, reason)
 
             if (bootstrapRetryCount < MAX_BOOTSTRAP_RETRIES - 1) {
-                Log.w(TAG, "[TOR] Retrying bootstrap with bridge rotation (${bootstrapRetryCount + 1}/$MAX_BOOTSTRAP_RETRIES)...")
+                SafeLog.w(TAG, "[TOR] Retrying bootstrap with bridge rotation (${bootstrapRetryCount + 1}/$MAX_BOOTSTRAP_RETRIES)...")
                 rotateBridge(context)
             } else {
-                Log.w(TAG, "[TOR] Failed to bootstrap after $MAX_BOOTSTRAP_RETRIES attempts. Automatically falling back to Direct/Yggdrasil mode.")
+                SafeLog.w(TAG, "[TOR] Failed to bootstrap after $MAX_BOOTSTRAP_RETRIES attempts. Automatically falling back to Direct/Yggdrasil mode.")
                 disableTorAndFallback(context)
             }
         } catch (exc: CancellationException) {
-            Log.i(TAG, "Tor run cancelled")
+            SafeLog.i(TAG, "Tor run cancelled")
             throw exc
         } catch (exc: Exception) {
             if (runGate.isCurrent(runId)) {
-                Log.e(TAG, "Failed to start embedded Tor (${exc.javaClass.simpleName})")
+                SafeLog.e(TAG, "Failed to start embedded Tor (${exc.javaClass.simpleName})")
                 recordFailure(runId, "START_FAILED")
                 disableTorProxy(context, runId)
             }
@@ -1128,10 +1132,10 @@ object TorManager {
                 bundle.writeText(pem.toString())
                 bundle.setReadable(false, false)
                 bundle.setReadable(true, true)
-                Log.i(TAG, "Prepared Android system CA bundle ($certificateCount roots)")
+                SafeLog.i(TAG, "Prepared Android system CA bundle ($certificateCount roots)")
             }
         } catch (exception: Exception) {
-            Log.w(TAG, "Could not prepare Android system CA bundle", exception)
+            SafeLog.w(TAG, "Could not prepare Android system CA bundle", exception)
             null
         }
     }
@@ -1159,7 +1163,7 @@ object TorManager {
         _isTorRunning.value = false
         _isTorConnecting.value = false
         _isSlowBootstrap.value = false
-        Log.w(TAG, "Embedded Tor failure category: $reason")
+        SafeLog.w(TAG, "Embedded Tor failure category: $reason")
         return true
     }
 
@@ -1198,7 +1202,7 @@ object TorManager {
             }
             success
         } catch (exception: Exception) {
-            Log.e(TAG, "Unable to apply effective proxy configuration", exception)
+            SafeLog.e(TAG, "Unable to apply effective proxy configuration", exception)
             false
         }
     }
@@ -1224,10 +1228,10 @@ object TorManager {
                 if (process.isAlive) {
                     process.destroyForcibly()
                 }
-                Log.i(TAG, "Stopped embedded Tor process")
+                SafeLog.i(TAG, "Stopped embedded Tor process")
             }
         } catch (exc: Exception) {
-            Log.e(TAG, "Error stopping embedded Tor (${exc.javaClass.simpleName})")
+            SafeLog.e(TAG, "Error stopping embedded Tor (${exc.javaClass.simpleName})")
         }
     }
 
@@ -1257,17 +1261,17 @@ object TorManager {
         try {
             android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND)
         } catch (e: Exception) {
-            Log.w(TAG, "Failed to set calling thread priority to BACKGROUND", e)
+            SafeLog.w(TAG, "Failed to set calling thread priority to BACKGROUND", e)
         }
         if (process == null) return
         try {
             val pid = getProcessPid(process)
             if (pid > 0) {
                 android.os.Process.setThreadPriority(pid, android.os.Process.THREAD_PRIORITY_BACKGROUND)
-                Log.i(TAG, "Applied THREAD_PRIORITY_BACKGROUND to Tor process (PID: $pid)")
+                SafeLog.i(TAG, "Applied THREAD_PRIORITY_BACKGROUND to Tor process (PID: $pid)")
             }
         } catch (e: Exception) {
-            Log.w(TAG, "Could not apply background priority to Tor process", e)
+            SafeLog.w(TAG, "Could not apply background priority to Tor process", e)
         }
     }
 

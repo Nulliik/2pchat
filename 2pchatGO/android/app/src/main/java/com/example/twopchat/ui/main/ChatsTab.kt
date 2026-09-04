@@ -1,5 +1,7 @@
 package com.example.twopchat.ui.main
 
+import com.example.twopchat.logging.SafeLog
+
 import android.widget.Toast
 import android.content.Intent
 import android.content.Context
@@ -460,7 +462,7 @@ fun ChatsTab(
                                                 }
                                                 P2PMessageRelay.triggerImmediateReconnect(context).join()
                                             } catch (error: Exception) {
-                                                android.util.Log.e("ChatsTab", "Unable to refresh connections", error)
+                                                SafeLog.e("ChatsTab", "Unable to refresh connections", error)
                                                 refreshSucceeded = false
                                             } finally {
                                                 isRefreshingAll = false

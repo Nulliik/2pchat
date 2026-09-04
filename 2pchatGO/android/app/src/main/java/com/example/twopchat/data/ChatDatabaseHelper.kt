@@ -6,7 +6,7 @@ import net.zetetic.database.sqlcipher.SQLiteOpenHelper
 import android.content.ContentValues
 import com.example.twopchat.security.*
 import com.example.twopchat.ui.chat.Message
-import android.util.Log
+import com.example.twopchat.logging.SafeLog
 import com.example.twopchat.ui.chat.MessageDeliveryStatus
 
 data class StoredAttachmentRecord(
@@ -92,7 +92,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
                         try {
                             helper.close()
                         } catch (e: Exception) {
-                            Log.e(TAG, "Failed to close database connection", e)
+                            SafeLog.e(TAG, "Failed to close database connection", e)
                         }
                     }
                     activeHelpers.clear()
@@ -109,7 +109,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
         try {
             setWriteAheadLoggingEnabled(true)
         } catch (e: Exception) {
-            Log.w(TAG, "Failed to setWriteAheadLoggingEnabled on helper", e)
+            SafeLog.w(TAG, "Failed to setWriteAheadLoggingEnabled on helper", e)
         }
         synchronized(activeHelpers) {
             activeHelpers.add(this)
@@ -121,7 +121,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
         try {
             safeReadableDatabase
         } catch (e: Exception) {
-            Log.w(TAG, "Database warmup failed", e)
+            SafeLog.w(TAG, "Database warmup failed", e)
         }
     }
 
@@ -141,7 +141,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
                 writableDatabase
             } catch (e: android.database.sqlite.SQLiteException) {
                 if (e.message?.contains("file is not a database") == true || e.message?.contains("code 26") == true) {
-                    Log.e(TAG, "Chat database unreadable (key mismatch or corrupted). Recreating.", e)
+                    SafeLog.e(TAG, "Chat database unreadable (key mismatch or corrupted). Recreating.", e)
                     context.deleteDatabase(DATABASE_NAME)
                     writableDatabase
                 } else {
@@ -166,7 +166,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
                 readableDatabase
             } catch (e: android.database.sqlite.SQLiteException) {
                 if (e.message?.contains("file is not a database") == true || e.message?.contains("code 26") == true) {
-                    Log.e(TAG, "Chat database unreadable (key mismatch or corrupted). Recreating.", e)
+                    SafeLog.e(TAG, "Chat database unreadable (key mismatch or corrupted). Recreating.", e)
                     context.deleteDatabase(DATABASE_NAME)
                     readableDatabase
                 } else {
@@ -180,7 +180,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
         try {
             db.enableWriteAheadLogging()
         } catch (e: Exception) {
-            Log.w(TAG, "Could not enable Write-Ahead Logging (WAL) in onConfigure", e)
+            SafeLog.w(TAG, "Could not enable Write-Ahead Logging (WAL) in onConfigure", e)
         }
         DatabaseTuning.applyOptimizations(db)
     }
@@ -216,7 +216,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
                    OR $KEY_MESSAGE_TEXT LIKE '{"type":"status"%'
             """.trimIndent())
         } catch (e: Exception) {
-            Log.w(TAG, "Failed to purge leaked control messages from SQLite", e)
+            SafeLog.w(TAG, "Failed to purge leaked control messages from SQLite", e)
         }
     }
 
@@ -253,14 +253,14 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
                 db.execSQL("ALTER TABLE $TABLE_MESSAGES ADD COLUMN $KEY_REPLY_TO_TEXT TEXT")
                 db.execSQL("ALTER TABLE $TABLE_MESSAGES ADD COLUMN $KEY_REPLY_TO_NAME TEXT")
             } catch (e: Exception) {
-                Log.e(TAG, "Legacy reply-column migration failed", e)
+                SafeLog.e(TAG, "Legacy reply-column migration failed", e)
             }
         }
         if (oldVersion < 3) {
             try {
                 db.execSQL("ALTER TABLE $TABLE_MESSAGES ADD COLUMN $KEY_STATUS TEXT")
             } catch (e: Exception) {
-                Log.e(TAG, "Legacy status-column migration failed", e)
+                SafeLog.e(TAG, "Legacy status-column migration failed", e)
             }
         }
         if (oldVersion < 4) {
@@ -319,7 +319,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
             try {
                 db.execSQL("ALTER TABLE $TABLE_MESSAGES ADD COLUMN $KEY_REACTIONS TEXT")
             } catch (e: Exception) {
-                Log.e(TAG, "Legacy reactions-column migration failed", e)
+                SafeLog.e(TAG, "Legacy reactions-column migration failed", e)
             }
         }
         if (oldVersion < 7) {
@@ -839,7 +839,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
                 db.endTransaction()
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to mark messages as read for $peerName", e)
+            SafeLog.e(TAG, "Failed to mark messages as read for $peerName", e)
         }
         return messageIds
     }
@@ -857,7 +857,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
             val db = this.safeWritableDatabase
             db.delete(TABLE_MESSAGES, "$KEY_ID = ?", arrayOf(id))
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to delete message $id", e)
+            SafeLog.e(TAG, "Failed to delete message $id", e)
         }
     }
 
@@ -878,7 +878,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
             }
             db.update(TABLE_MESSAGES, values, "$KEY_ID = ?", arrayOf(id))
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to update status for $id", e)
+            SafeLog.e(TAG, "Failed to update status for $id", e)
         }
     }
 
@@ -913,7 +913,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
             }
             db.setTransactionSuccessful()
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to batch update message statuses", e)
+            SafeLog.e(TAG, "Failed to batch update message statuses", e)
         } finally {
             db.endTransaction()
         }
@@ -927,7 +927,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
             }
             db.update(TABLE_MESSAGES, values, "$KEY_ID = ?", arrayOf(id))
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to update reactions for $id", e)
+            SafeLog.e(TAG, "Failed to update reactions for $id", e)
         }
     }
 
@@ -977,7 +977,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
             val rows = db.update(TABLE_MESSAGES, values, "$KEY_ID = ? AND $KEY_PEER_NAME = ? AND $KEY_IS_ME = 0", arrayOf(id, peerName))
             return rows > 0
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to update text for $id for peer $peerName", e)
+            SafeLog.e(TAG, "Failed to update text for $id for peer $peerName", e)
             return false
         }
     }
@@ -999,7 +999,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
             val rows = db.delete(TABLE_MESSAGES, "$KEY_ID = ? AND $KEY_PEER_NAME = ? AND $KEY_IS_ME = 0", arrayOf(id, peerName))
             return rows > 0
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to delete message $id for peer $peerName", e)
+            SafeLog.e(TAG, "Failed to delete message $id for peer $peerName", e)
             return false
         }
     }
@@ -1022,7 +1022,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
             }
             db.update(TABLE_MESSAGES, values, "$KEY_ID = ?", arrayOf(id))
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to update text for $id", e)
+            SafeLog.e(TAG, "Failed to update text for $id", e)
         }
     }
 
@@ -1073,7 +1073,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
                 arrayOf(control.peerName, control.peerName)
             )
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to trim pending_controls for ${control.peerName}", e)
+            SafeLog.e(TAG, "Failed to trim pending_controls for ${control.peerName}", e)
         }
     }
 
@@ -1289,7 +1289,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
             db.delete(TABLE_PEERS, where, names.toTypedArray())
             names.forEach { com.example.twopchat.ui.chat.state.ChatHistoryCache.remove(it) }
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to delete peer from database", e)
+            SafeLog.e(TAG, "Failed to delete peer from database", e)
         }
     }
 
@@ -1306,7 +1306,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
                 }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to query chat peer names from database messages", e)
+            SafeLog.e(TAG, "Failed to query chat peer names from database messages", e)
         }
         return result
     }
@@ -1360,7 +1360,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
                     "ON $TABLE_MESSAGES($KEY_PEER_NAME, $KEY_SENT_AT_MS DESC, $KEY_ID DESC)"
             )
         } catch (e: Exception) {
-            Log.w(TAG, "Failed to create composite message indices", e)
+            SafeLog.w(TAG, "Failed to create composite message indices", e)
         }
     }
 
@@ -1392,7 +1392,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
             check(dbFile.delete()) { "Could not replace legacy plaintext database" }
             check(tempFile.renameTo(dbFile)) { "Could not install encrypted database" }
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to migrate plaintext database", e)
+            SafeLog.e(TAG, "Failed to migrate plaintext database", e)
         } finally {
             SecurityUtils.zeroize(pass)
             try {

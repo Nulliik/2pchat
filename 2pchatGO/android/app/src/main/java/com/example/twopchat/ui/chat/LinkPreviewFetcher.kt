@@ -1,5 +1,7 @@
 package com.example.twopchat.ui.chat
 
+import com.example.twopchat.logging.SafeLog
+
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -132,7 +134,7 @@ object LinkPreviewFetcher {
             val finalConnection = connection ?: throw Exception("Failed to open connection")
 
             if (responseCode !in 200..299) {
-                android.util.Log.e("LinkPreview", "Failed response code $responseCode for $currentUrl")
+                SafeLog.e("LinkPreview", "Failed response code $responseCode for $currentUrl")
                 val fallbackHost = extractHost(targetUrl)
                 val fallback = LinkPreviewMetadata(url = targetUrl, siteName = fallbackHost)
                 cache.put(targetUrl, fallback)
@@ -141,7 +143,7 @@ object LinkPreviewFetcher {
 
             val contentType = finalConnection.contentType ?: ""
             if (!contentType.contains("text/html", ignoreCase = true) && !contentType.contains("xhtml", ignoreCase = true)) {
-                android.util.Log.e("LinkPreview", "Non-HTML content type: $contentType for $currentUrl")
+                SafeLog.e("LinkPreview", "Non-HTML content type: $contentType for $currentUrl")
                 val fallbackHost = extractHost(targetUrl)
                 val fallback = LinkPreviewMetadata(url = targetUrl, siteName = fallbackHost)
                 cache.put(targetUrl, fallback)
@@ -198,7 +200,7 @@ object LinkPreviewFetcher {
             cache.put(targetUrl, result)
             result
         } catch (e: Exception) {
-            android.util.Log.e("LinkPreview", "Error fetching preview for $targetUrl", e)
+            SafeLog.e("LinkPreview", "Error fetching preview for $targetUrl", e)
             val fallbackHost = extractHost(targetUrl)
             val fallback = LinkPreviewMetadata(url = targetUrl, siteName = fallbackHost)
             cache.put(targetUrl, fallback)

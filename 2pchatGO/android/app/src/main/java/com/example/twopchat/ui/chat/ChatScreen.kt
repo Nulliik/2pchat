@@ -1,5 +1,7 @@
 package com.example.twopchat.ui.chat
 
+import com.example.twopchat.logging.SafeLog
+
 import android.Manifest
 import android.content.pm.PackageManager
 import android.widget.Toast
@@ -132,7 +134,7 @@ fun ChatScreen(
             try {
                 operation()
             } catch (error: Exception) {
-                android.util.Log.e("ChatScreen", "Background database operation failed", error)
+                SafeLog.e("ChatScreen", "Background database operation failed", error)
             }
         }
     }
@@ -538,7 +540,7 @@ fun ChatScreen(
                             offset = 0,
                         )
                     } catch (e: Exception) {
-                        android.util.Log.e("ChatScreen", "Failed to load messages for $peerName", e)
+                        SafeLog.e("ChatScreen", "Failed to load messages for $peerName", e)
                         emptyList()
                     }
                 }
@@ -593,7 +595,7 @@ fun ChatScreen(
                     try {
                         db.saveMessages(peerName, localDefaults)
                     } catch (e: Exception) {
-                        android.util.Log.e("ChatScreen", "Failed to persist local defaults", e)
+                        SafeLog.e("ChatScreen", "Failed to persist local defaults", e)
                     }
                 }
                 loadedPersistedMessageCount = localDefaults.size
@@ -602,7 +604,7 @@ fun ChatScreen(
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: Exception) {
-            android.util.Log.e("ChatScreen", "Unexpected error during chat history load for $peerName", e)
+            SafeLog.e("ChatScreen", "Unexpected error during chat history load for $peerName", e)
         } finally {
             isFastHistoryLoaded = true
             isHistoryLoading = false
@@ -625,7 +627,7 @@ fun ChatScreen(
                         offset = loadedPersistedMessageCount,
                     )
                 } catch (e: Exception) {
-                    android.util.Log.e("ChatScreen", "Failed to load older page for $peerName", e)
+                    SafeLog.e("ChatScreen", "Failed to load older page for $peerName", e)
                     emptyList()
                 }
             }
@@ -672,7 +674,7 @@ fun ChatScreen(
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: Exception) {
-            android.util.Log.e("ChatScreen", "Failed to load older history page for $peerName", e)
+            SafeLog.e("ChatScreen", "Failed to load older history page for $peerName", e)
             false
         } finally {
             isLoadingOlderHistory = false

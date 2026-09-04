@@ -4,7 +4,7 @@ import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import com.example.twopchat.config.P2PPreferences
 import android.util.Base64
-import android.util.Log
+import com.example.twopchat.logging.SafeLog
 import android.util.LruCache
 import java.security.KeyStore
 import javax.crypto.Cipher
@@ -27,7 +27,7 @@ object SecureStorage {
             key()
             getOrGenerateDbPassphrase(context)
         } catch (e: Exception) {
-            Log.w("SecureStorage", "Failed to prewarm keystore", e)
+            SafeLog.w("SecureStorage", "Failed to prewarm keystore", e)
         }
     }
 
@@ -122,7 +122,7 @@ object SecureStorage {
                 stringDecryptionCache.put(value, result)
                 result
             } catch (e: Exception) {
-                Log.w("SecureStorage", "Failed to decrypt string: ${e.message}")
+                SafeLog.w("SecureStorage", "Failed to decrypt string: ${e.message}")
                 value
             }
         }
@@ -143,7 +143,7 @@ object SecureStorage {
         return try {
             newStringCipher().encrypt(value)
         } catch (e: Exception) {
-            Log.e("SecureStorage", "Failed to encrypt string value, using raw fallback", e)
+            SafeLog.e("SecureStorage", "Failed to encrypt string value, using raw fallback", e)
             value
         }
     }
@@ -156,7 +156,7 @@ object SecureStorage {
         return try {
             newStringCipher().decrypt(value)
         } catch (e: Exception) {
-            Log.e("SecureStorage", "Failed to decrypt string value", e)
+            SafeLog.e("SecureStorage", "Failed to decrypt string value", e)
             value
         }
     }
@@ -170,7 +170,7 @@ object SecureStorage {
             cipher.init(Cipher.ENCRYPT_MODE, key())
             byteArrayOf(BINARY_VERSION) + cipher.iv + cipher.doFinal(value)
         } catch (e: Exception) {
-            Log.e("SecureStorage", "Failed to encrypt binary value", e)
+            SafeLog.e("SecureStorage", "Failed to encrypt binary value", e)
             value
         }
     }
@@ -182,7 +182,7 @@ object SecureStorage {
             cipher.init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, value, 1, 12))
             cipher.doFinal(value, 13, value.size - 13)
         } catch (e: Exception) {
-            Log.e("SecureStorage", "Failed to decrypt binary value", e)
+            SafeLog.e("SecureStorage", "Failed to decrypt binary value", e)
             value
         }
     }
@@ -211,7 +211,7 @@ object SecureStorage {
                         SecurityUtils.zeroize(packed)
                         return plainBytes
                     } catch (e: Exception) {
-                        Log.e("SecureStorage", "Failed to decrypt existing db passphrase; generating fresh", e)
+                        SafeLog.e("SecureStorage", "Failed to decrypt existing db passphrase; generating fresh", e)
                     }
                 }
             } else {

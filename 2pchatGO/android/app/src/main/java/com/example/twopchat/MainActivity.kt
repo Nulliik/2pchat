@@ -1,5 +1,7 @@
 package com.example.twopchat
 
+import com.example.twopchat.logging.SafeLog
+
 import android.os.Bundle
 import com.example.twopchat.config.*
 import com.example.twopchat.relay.*
@@ -147,7 +149,7 @@ class MainActivity : ComponentActivity() {
                 )
                 P2PMessageRelay.triggerImmediateReconnect(appContext)
             }.onFailure {
-                android.util.Log.w("MainActivity", "Could not start P2PRelayService on resume", it)
+                SafeLog.w("MainActivity", "Could not start P2PRelayService on resume", it)
             }
         }
         if (
@@ -166,7 +168,7 @@ class MainActivity : ComponentActivity() {
                     },
                 )
             }.onFailure {
-                android.util.Log.w("MainActivity", "Could not heal Yggdrasil on resume", it)
+                SafeLog.w("MainActivity", "Could not heal Yggdrasil on resume", it)
             }
         }
         com.example.twopchat.security.TemporaryCacheSanitizer.sanitizeTempCache(appContext)
@@ -223,7 +225,7 @@ class MainActivity : ComponentActivity() {
                     )
                 }
             } catch (e: Exception) {
-                android.util.Log.e("MainActivity", "Error initializing Go native core or database in background", e)
+                SafeLog.e("MainActivity", "Error initializing Go native core or database in background", e)
             }
         }
 
@@ -442,7 +444,7 @@ class MainActivity : ComponentActivity() {
                                     },
                                     onDuressTriggered = {
                                         if (!AccountLifecycle.deleteAccount(applicationContext)) {
-                                            android.util.Log.e(
+                                            SafeLog.e(
                                                 "MainActivity",
                                                 "Duress wipe aborted because the P2P runtime did not stop cleanly",
                                             )
@@ -452,7 +454,7 @@ class MainActivity : ComponentActivity() {
                                         try {
                                             setAppIconAlias("MainActivityAliasDefault")
                                         } catch (e: Exception) {
-                                            android.util.Log.e("MainActivity", "Failed to reset icon on duress", e)
+                                            SafeLog.e("MainActivity", "Failed to reset icon on duress", e)
                                         }
                                         isDarkTheme = true
                                         accentScheme = "mint"
@@ -542,7 +544,7 @@ class MainActivity : ComponentActivity() {
                     PackageManager.DONT_KILL_APP
                 )
             } catch (e: Exception) {
-                android.util.Log.e("MainActivity", "Failed to toggle alias $alias", e)
+                SafeLog.e("MainActivity", "Failed to toggle alias $alias", e)
             }
         }
     }

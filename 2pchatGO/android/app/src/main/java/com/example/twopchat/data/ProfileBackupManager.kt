@@ -2,7 +2,7 @@ package com.example.twopchat.data
 
 import android.content.Context
 import android.net.Uri
-import android.util.Log
+import com.example.twopchat.logging.SafeLog
 import com.example.twopchat.NativeBridge
 import com.example.twopchat.config.P2PPreferences
 import org.json.JSONObject
@@ -75,10 +75,10 @@ object ProfileBackupManager {
                     addFileToZip(zip, avatarFile, "profile_avatar.jpg")
                 }
             }
-            Log.i(TAG, "Profile and cryptographic keys exported successfully (fp: $fingerprint)")
+            SafeLog.i(TAG, "Profile and cryptographic keys exported successfully (fp: ${SafeLog.fp(fingerprint)})")
             true
         } catch (e: Throwable) {
-            Log.e(TAG, "Failed to export profile backup", e)
+            SafeLog.e(TAG, "Failed to export profile backup", e)
             false
         }
     }
@@ -118,7 +118,7 @@ object ProfileBackupManager {
                                     out.write(buffer, 0, count)
                                 }
                             }
-                            Log.i(TAG, "Restored $name (${targetFile.length()} bytes)")
+                            SafeLog.i(TAG, "Restored $name (${targetFile.length()} bytes)")
                         }
                     }
                     zip.closeEntry()
@@ -138,14 +138,14 @@ object ProfileBackupManager {
             val activeIdentity = NativeBridge.getLocalIdentity()
             val activeFingerprint = activeIdentity?.fingerprint
 
-            Log.i(TAG, "Backup import complete. Active identity fingerprint: $activeFingerprint")
+            SafeLog.i(TAG, "Backup import complete. Active identity fingerprint: ${SafeLog.fp(activeFingerprint)}")
             return BackupImportResult(
                 success = true,
                 restoredNickname = restoredNickname,
                 restoredFingerprint = activeFingerprint ?: restoredFingerprint,
             )
         } catch (e: Throwable) {
-            Log.e(TAG, "Failed to import profile backup", e)
+            SafeLog.e(TAG, "Failed to import profile backup", e)
             return BackupImportResult(
                 success = false,
                 errorMessage = e.message ?: "Failed to read backup archive",

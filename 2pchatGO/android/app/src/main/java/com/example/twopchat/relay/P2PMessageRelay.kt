@@ -3,7 +3,7 @@
 
 package com.example.twopchat.relay
 
-import android.util.Log
+import com.example.twopchat.logging.SafeLog
 import com.example.twopchat.AppLog
 import com.example.twopchat.NativeBridge
 import com.example.twopchat.config.*
@@ -61,7 +61,7 @@ object P2PMessageRelay {
     private val startStopLock = Any()
     private val identityLock = Any()
     private val relayExceptionHandler = kotlinx.coroutines.CoroutineExceptionHandler { _, throwable ->
-        Log.e("P2PMessageRelay", "Uncaught exception in relay scope", throwable)
+        SafeLog.e("P2PMessageRelay", "Uncaught exception in relay scope", throwable)
     }
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO + relayExceptionHandler)
     private val relayScope = CoroutineScope(SupervisorJob() + Dispatchers.IO.limitedParallelism(4) + relayExceptionHandler)
@@ -747,7 +747,7 @@ object P2PMessageRelay {
                         }
                         processIncomingPersistenceBatch(batch)
                     } catch (e: Exception) {
-                        Log.e(TAG, "Error processing incoming persistence batch", e)
+                        SafeLog.e(TAG, "Error processing incoming persistence batch", e)
                     }
                 }
             }
@@ -1235,17 +1235,17 @@ object P2PMessageRelay {
     }
 
     internal fun log(context: Context, message: String, level: String = "INFO", error: Throwable? = null) {
-        val fullMsg = if (error != null) "$message: ${Log.getStackTraceString(error)}" else message
+        val fullMsg = if (error != null) "$message: ${SafeLog.getStackTraceString(error)}" else message
         if (level == "ERROR") {
-            Log.e(TAG, fullMsg)
+            SafeLog.e(TAG, fullMsg)
         } else {
-            Log.i(TAG, fullMsg)
+            SafeLog.i(TAG, fullMsg)
         }
         try {
             val timestamp = checkNotNull(logTimestampFormatter.get()).format(Date())
             AppLog.append(context, "$timestamp [KOTLIN_$level] $TAG: $fullMsg\n")
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to append diagnostic log", e)
+            SafeLog.e(TAG, "Failed to append diagnostic log", e)
         }
     }
 
@@ -2630,7 +2630,7 @@ object P2PMessageRelay {
         // Trigger bridge shutdown/cleanup
         relayScope.launch {
             if (!getBridge().shutdownAllSessions()) {
-                Log.e(TAG, "P2P runtime did not stop cleanly")
+                SafeLog.e(TAG, "P2P runtime did not stop cleanly")
             }
         }
     }
@@ -3414,7 +3414,7 @@ object P2PMessageRelay {
 
     fun loadPersistedAvatars(context: Context) {
         avatarCache.loadPersisted(context) { error ->
-            Log.e(TAG, "Error loading persisted avatars", error)
+            SafeLog.e(TAG, "Error loading persisted avatars", error)
         }
     }
 }

@@ -8,7 +8,7 @@ import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.ParcelFileDescriptor
 import android.system.OsConstants
-import android.util.Log
+import com.example.twopchat.logging.SafeLog
 import androidx.core.app.ServiceCompat
 import com.example.twopchat.config.*
 import com.example.twopchat.yggdrasil.YggStateReceiver.Companion.YGG_STATE_INTENT
@@ -45,13 +45,13 @@ open class PacketTunnelProvider: VpnService() {
             internal set
 
         private fun yggLog(context: Context?, message: String, level: String = "INFO", error: Throwable? = null) {
-            val fullMsg = if (error != null) "$message: ${Log.getStackTraceString(error)}" else message
+            val fullMsg = if (error != null) "$message: ${SafeLog.getStackTraceString(error)}" else message
             if (error != null || level == "ERROR") {
-                Log.e(TAG, fullMsg)
+                SafeLog.e(TAG, fullMsg)
             } else if (level == "WARN") {
-                Log.w(TAG, fullMsg)
+                SafeLog.w(TAG, fullMsg)
             } else {
-                Log.i(TAG, fullMsg)
+                SafeLog.i(TAG, fullMsg)
             }
             if (context != null) {
                 try {
@@ -111,7 +111,7 @@ open class PacketTunnelProvider: VpnService() {
                 startForeground(SERVICE_NOTIFICATION_ID, notification)
             }
         } catch (e: Exception) {
-            Log.w(TAG, "Failed to startForeground in onCreate", e)
+            SafeLog.w(TAG, "Failed to startForeground in onCreate", e)
         }
     }
 
@@ -125,7 +125,7 @@ open class PacketTunnelProvider: VpnService() {
     }
 
     override fun onRevoke() {
-        Log.i(TAG, "VPN permission revoked by system or another VPN connected -> transitioning Yggdrasil to Proxy mode so it coexists with the user's VPN")
+        SafeLog.i(TAG, "VPN permission revoked by system or another VPN connected -> transitioning Yggdrasil to Proxy mode so it coexists with the user's VPN")
         isTunnelActive = false
         stop(stopService = true)
         // Automatically switch to Proxy mode so the user does not lose Yggdrasil mesh connectivity when their external VPN connects
@@ -138,33 +138,33 @@ open class PacketTunnelProvider: VpnService() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent == null) {
-            Log.d(TAG, "Intent is null")
+            SafeLog.d(TAG, "Intent is null")
             return START_NOT_STICKY
         }
         val preferences = yggdrasilPrefs(this)
         val enabled = preferences.getBoolean(PREF_KEY_ENABLED, false)
         return when (intent.action ?: ACTION_STOP) {
             ACTION_STOP -> {
-                Log.d(TAG, "Stopping...")
+                SafeLog.d(TAG, "Stopping...")
                 preferences.edit().putBoolean(PREF_KEY_ENABLED, false).apply()
                 stop(); START_NOT_STICKY
             }
             ACTION_START -> {
-                Log.d(TAG, "Starting explicitly...")
+                SafeLog.d(TAG, "Starting explicitly...")
                 if (!enabled) {
                     preferences.edit().putBoolean(PREF_KEY_ENABLED, true).apply()
                 }
                 if (started.get() && isTunnelHealthy()) {
-                    Log.d(TAG, "Tunnel already started and healthy; skipping redundant start")
+                    SafeLog.d(TAG, "Tunnel already started and healthy; skipping redundant start")
                 } else {
                     start()
                 }
                 START_STICKY
             }
             ACTION_CONNECT -> {
-                Log.d(TAG, "Connecting...")
+                SafeLog.d(TAG, "Connecting...")
                 if (!enabled) {
-                    Log.d(TAG, "Yggdrasil is disabled in settings; ignoring ACTION_CONNECT")
+                    SafeLog.d(TAG, "Yggdrasil is disabled in settings; ignoring ACTION_CONNECT")
                     stop(stopService = true)
                     return START_NOT_STICKY
                 }
@@ -172,7 +172,7 @@ open class PacketTunnelProvider: VpnService() {
                     connect()
                 } else {
                     if (started.get()) {
-                        Log.w(TAG, "Tunnel reports started but its workers are dead; rebuilding it")
+                        SafeLog.w(TAG, "Tunnel reports started but its workers are dead; rebuilding it")
                         stop(stopService = false)
                     }
                     start()
@@ -180,7 +180,7 @@ open class PacketTunnelProvider: VpnService() {
                 START_STICKY
             }
             ACTION_REGENERATE_KEYS -> {
-                Log.i(TAG, "Regenerating Yggdrasil node keys...")
+                SafeLog.i(TAG, "Regenerating Yggdrasil node keys...")
                 val restart = started.get() || enabled
                 if (started.get()) {
                     stop(stopService = false)
@@ -193,7 +193,7 @@ open class PacketTunnelProvider: VpnService() {
                 START_STICKY
             }
             ACTION_RELOAD_PEERS -> {
-                Log.i(TAG, "Applying updated Yggdrasil peer configuration...")
+                SafeLog.i(TAG, "Applying updated Yggdrasil peer configuration...")
                 val restart = started.get() || enabled
                 if (started.get()) {
                     stop(stopService = false)
@@ -208,7 +208,7 @@ open class PacketTunnelProvider: VpnService() {
                 }
             }
             ACTION_TOGGLE -> {
-                Log.d(TAG, "Toggling...")
+                SafeLog.d(TAG, "Toggling...")
                 if (started.get()) {
                     stop(); START_NOT_STICKY
                 } else {
@@ -217,10 +217,10 @@ open class PacketTunnelProvider: VpnService() {
             }
             else -> {
                 if (!enabled) {
-                    Log.d(TAG, "Service is disabled")
+                    SafeLog.d(TAG, "Service is disabled")
                     return START_NOT_STICKY
                 }
-                Log.d(TAG, "Starting...")
+                SafeLog.d(TAG, "Starting...")
                 start(); START_STICKY
             }
         }
@@ -237,7 +237,7 @@ open class PacketTunnelProvider: VpnService() {
             // A native/config/VPN setup failure used to leave `started=true`.
             // Every later reconnect was then ignored as an already running
             // tunnel even though no usable TUN workers existed.
-            Log.e(TAG, "Unable to start Yggdrasil tunnel", error)
+            SafeLog.e(TAG, "Unable to start Yggdrasil tunnel", error)
             stop(stopService = false)
         }
     }
@@ -247,7 +247,7 @@ open class PacketTunnelProvider: VpnService() {
         // or after it revoked a previous grant. Avoid starting native Yggdrasil
         // when Builder.establish() cannot create its TUN descriptor.
         if (VpnService.prepare(this) != null) {
-            Log.w(TAG, "VPN consent is missing; Yggdrasil tunnel was not started")
+            SafeLog.w(TAG, "VPN consent is missing; Yggdrasil tunnel was not started")
             updateRuntimeState("", STATE_DISABLED)
             stop(stopService = true)
             return
@@ -266,7 +266,7 @@ open class PacketTunnelProvider: VpnService() {
                 startForeground(SERVICE_NOTIFICATION_ID, notification)
             }
         } catch (e: Throwable) {
-            Log.w(TAG, "Failed to startForeground in startTunnel with specialUse, falling back", e)
+            SafeLog.w(TAG, "Failed to startForeground in startTunnel with specialUse, falling back", e)
             try {
                 startForeground(SERVICE_NOTIFICATION_ID, notification)
             } catch (_: Throwable) {}
@@ -280,7 +280,7 @@ open class PacketTunnelProvider: VpnService() {
                 acquire()
             }
         } catch (e: Throwable) {
-            Log.w(TAG, "Could not acquire MulticastLock", e)
+            SafeLog.w(TAG, "Could not acquire MulticastLock", e)
             null
         }
 
@@ -288,7 +288,7 @@ open class PacketTunnelProvider: VpnService() {
         try {
             ygg.startJSON(config.getJSONByteArray())
         } catch (e: Throwable) {
-            Log.e(TAG, "Failed to execute startJSON on native Yggdrasil", e)
+            SafeLog.e(TAG, "Failed to execute startJSON on native Yggdrasil", e)
             updateRuntimeState("", STATE_DISABLED)
             stop(stopService = true)
             return
@@ -386,7 +386,7 @@ open class PacketTunnelProvider: VpnService() {
         if (wasStarted) {
             yggdrasil?.let { ygg ->
                 runCatching { ygg.stop() }
-                    .onFailure { Log.w(TAG, "Unable to stop native Yggdrasil cleanly", it) }
+                    .onFailure { SafeLog.w(TAG, "Unable to stop native Yggdrasil cleanly", it) }
             }
         }
 
@@ -464,7 +464,7 @@ open class PacketTunnelProvider: VpnService() {
         val probeStartedAt = System.currentTimeMillis()
         updates@ while (started.get()) {
             if (readerThread?.isAlive != true || writerThread?.isAlive != true) {
-                Log.w(TAG, "Tunnel packet worker stopped unexpectedly; rebuilding it")
+                SafeLog.w(TAG, "Tunnel packet worker stopped unexpectedly; rebuilding it")
                 if (started.get()) {
                     stop(stopService = false)
                     try { Thread.sleep(500L) } catch (_: InterruptedException) {}
@@ -548,11 +548,11 @@ open class PacketTunnelProvider: VpnService() {
             val writerStream = writerStream
             val writerThread = writerThread
             if (writerThread == null || writerStream == null) {
-                Log.i(TAG, "Write thread or stream is null")
+                SafeLog.i(TAG, "Write thread or stream is null")
                 break@writes
             }
             if (Thread.currentThread().isInterrupted || !writerStream.fd.valid()) {
-                Log.i(TAG, "Write thread interrupted or file descriptor is invalid")
+                SafeLog.i(TAG, "Write thread interrupted or file descriptor is invalid")
                 break@writes
             }
             val ygg = yggdrasil ?: break@writes
@@ -562,7 +562,7 @@ open class PacketTunnelProvider: VpnService() {
                     writerStream.write(buf, 0, len.toInt())
                 }
             } catch (e: Exception) {
-                Log.i(TAG, "Error in write: $e")
+                SafeLog.i(TAG, "Error in write: $e")
                 if (e.toString().contains("ENOBUFS")) {
                     continue
                 }
@@ -579,11 +579,11 @@ open class PacketTunnelProvider: VpnService() {
             val readerStream = readerStream
             val readerThread = readerThread
             if (readerThread == null || readerStream == null) {
-                Log.i(TAG, "Read thread or stream is null")
+                SafeLog.i(TAG, "Read thread or stream is null")
                 break@reads
             }
             if (Thread.currentThread().isInterrupted || !readerStream.fd.valid()) {
-                Log.i(TAG, "Read thread interrupted or file descriptor is invalid")
+                SafeLog.i(TAG, "Read thread interrupted or file descriptor is invalid")
                 break@reads
             }
             val ygg = yggdrasil ?: break@reads
@@ -592,7 +592,7 @@ open class PacketTunnelProvider: VpnService() {
                 if (n <= 0) break@reads
                 ygg.sendBuffer(b, n.toLong())
             } catch (e: Exception) {
-                Log.i(TAG, "Error in sendBuffer: $e")
+                SafeLog.i(TAG, "Error in sendBuffer: $e")
                 break@reads
             }
         }
@@ -629,7 +629,7 @@ open class PacketTunnelProvider: VpnService() {
             }
             editor.apply()
         } catch (e: Exception) {
-            Log.w(TAG, "Failed to persist Yggdrasil runtime state", e)
+            SafeLog.w(TAG, "Failed to persist Yggdrasil runtime state", e)
         }
     }
 }

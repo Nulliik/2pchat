@@ -5,7 +5,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Matrix
 import android.media.ExifInterface
-import android.util.Log
+import com.example.twopchat.logging.SafeLog
 import java.io.File
 import java.io.FileOutputStream
 import java.io.OutputStream
@@ -56,7 +56,7 @@ object ImageSanitizer {
                 else -> 0
             }
         } catch (e: Exception) {
-            Log.w(TAG, "Failed to read EXIF orientation for $filePath: ${e.message}")
+            SafeLog.w(TAG, "Failed to read EXIF orientation for $filePath: ${e.message}")
             0
         }
     }
@@ -264,7 +264,7 @@ object ImageSanitizer {
 
             tempFile
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to sanitize image EXIF metadata for $sourcePath", e)
+            SafeLog.e(TAG, "Failed to sanitize image EXIF metadata for $sourcePath", e)
             tempFile?.let {
                 try { it.delete() } catch (_: Exception) {}
             }

@@ -1,8 +1,7 @@
 package com.example.twopchat.bridge
 
 import android.content.Context
-import android.util.Log
-
+import com.example.twopchat.logging.SafeLog
 /**
  * Provider for the high-performance Native Go P2P Core (lib2pcore.so).
  */
@@ -18,7 +17,7 @@ object P2PBridgeProvider {
         if (existing != null) {
             return existing
         }
-        Log.i(TAG, "⚡ Initializing Native Go Core (NativeBridgeImpl / lib2pcore.so)")
+        SafeLog.i(TAG, "⚡ Initializing Native Go Core (NativeBridgeImpl / lib2pcore.so)")
         val bridge = NativeBridgeImpl()
         cachedBridge = bridge
         return bridge

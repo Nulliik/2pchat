@@ -1,7 +1,7 @@
 package com.example.twopchat.relay
 
 import android.content.Context
-import android.util.Log
+import com.example.twopchat.logging.SafeLog
 import com.example.twopchat.AppLog
 import com.example.twopchat.config.P2PPreferences
 import com.example.twopchat.bridge.BridgeMessageListener
@@ -40,8 +40,9 @@ internal class BridgeEventDispatcher(
         scope.launch(Dispatchers.Default) {
             try {
                 val context = com.example.twopchat.yggdrasil.GlobalApplication.appContext
-                Log.i(TAG, "Session established with $peerName ($fingerprint) via $transport at $endpoint")
-                AppLog.append(context, "Session established with $peerName @ $endpoint\n")
+                SafeLog.i(TAG, "Session established with ${SafeLog.fp(fingerprint)} via $transport")
+                SafeLog.d(TAG, "Session established with ${SafeLog.fp(fingerprint)} via $transport @ $endpoint")
+                AppLog.append(context, "Session established with ${SafeLog.fp(fingerprint)} via $transport\n")
 
                 val connTransport = com.example.twopchat.relay.canonicalConnectionTransport(transport, endpoint) ?: transport
                 presenceManager.publishPeerOnline(peerName, connTransport) {
@@ -56,7 +57,7 @@ internal class BridgeEventDispatcher(
 
                 onSessionEstablishedHook?.invoke(peerName, fingerprint, endpoint)
             } catch (e: Throwable) {
-                Log.e(TAG, "Error in onSessionEstablished", e)
+                SafeLog.e(TAG, "Error in onSessionEstablished", e)
             }
         }
         return true
@@ -65,14 +66,14 @@ internal class BridgeEventDispatcher(
     override fun onSessionClosed(peerName: String, fingerprint: String) {
         scope.launch(Dispatchers.Default) {
             try {
-                Log.i(TAG, "Session closed with $peerName ($fingerprint)")
+                SafeLog.i(TAG, "Session closed with ${SafeLog.fp(fingerprint)}")
                 presenceManager.clearPeerPresenceImmediately(peerName)
                 if (fingerprint.isNotBlank() && fingerprint != peerName) {
                     presenceManager.clearPeerPresenceImmediately(fingerprint)
                 }
                 onSessionClosedHook?.invoke(peerName, fingerprint)
             } catch (e: Throwable) {
-                Log.e(TAG, "Error in onSessionClosed", e)
+                SafeLog.e(TAG, "Error in onSessionClosed", e)
             }
         }
     }
@@ -80,10 +81,10 @@ internal class BridgeEventDispatcher(
     override fun onPeerDiscovered(infoHash: String, endpoint: String, source: String) {
         scope.launch(Dispatchers.Default) {
             try {
-                Log.d(TAG, "Discovered peer for $infoHash @ $endpoint (source: $source)")
+                SafeLog.d(TAG, "Discovered peer (source: $source)")
                 onPeerDiscoveredHook?.invoke(infoHash, endpoint, source)
             } catch (e: Throwable) {
-                Log.e(TAG, "Error in onPeerDiscovered", e)
+                SafeLog.e(TAG, "Error in onPeerDiscovered", e)
             }
         }
     }
@@ -118,7 +119,7 @@ internal class BridgeEventDispatcher(
                 if (P2PPreferences.isPeerBlocked(context, resolvedSender) ||
                     P2PPreferences.isPeerBlocked(context, sender)
                 ) {
-                    Log.i(TAG, "Ignored message from blocked peer: $resolvedSender")
+                    SafeLog.i(TAG, "Ignored message from blocked peer: $resolvedSender")
                     return@launch
                 }
 
@@ -151,7 +152,7 @@ internal class BridgeEventDispatcher(
                     }
                 )
             } catch (e: Throwable) {
-                Log.e(TAG, "Error processing incoming message", e)
+                SafeLog.e(TAG, "Error processing incoming message", e)
             }
         }
     }

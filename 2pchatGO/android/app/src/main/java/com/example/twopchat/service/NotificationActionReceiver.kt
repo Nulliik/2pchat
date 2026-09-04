@@ -8,7 +8,7 @@ import com.example.twopchat.relay.P2PMessageRelay
 import com.example.twopchat.config.*
 import com.example.twopchat.security.*
 import android.content.Intent
-import android.util.Log
+import com.example.twopchat.logging.SafeLog
 import androidx.core.content.ContextCompat
 import androidx.core.app.RemoteInput
 import com.example.twopchat.data.ChatDatabaseHelper
@@ -46,7 +46,7 @@ class NotificationActionReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
         if (!isIntentPackageValid(intent, context.packageName)) {
-            Log.w(TAG, "Rejected broadcast intent with untrusted or missing package target: ${intent.`package`}")
+            SafeLog.w(TAG, "Rejected broadcast intent with untrusted or missing package target: ${intent.`package`}")
             return
         }
         val action = intent.action ?: return
@@ -76,7 +76,7 @@ class NotificationActionReceiver : BroadcastReceiver() {
                     }
                 } catch (error: Exception) {
                     if (error is kotlinx.coroutines.CancellationException) throw error
-                    Log.e(TAG, "Group notification action failed for $groupId", error)
+                    SafeLog.e(TAG, "Group notification action failed for $groupId", error)
                 } finally {
                     pendingResult.finish()
                 }
@@ -97,7 +97,7 @@ class NotificationActionReceiver : BroadcastReceiver() {
                 val hasPeerRecord = prefs.contains(P2PPreferences.peerFingerprint(sender)) ||
                     prefs.contains(P2PPreferences.lastEndpoint(sender))
                 if (sender !in activeChats && !hasPeerRecord) {
-                    Log.w(TAG, "Rejected notification action for unverified sender: $sender")
+                    SafeLog.w(TAG, "Rejected notification action for unverified sender: $sender")
                     return@launch
                 }
 
@@ -121,7 +121,7 @@ class NotificationActionReceiver : BroadcastReceiver() {
                 }
             } catch (error: Exception) {
                 if (error is kotlinx.coroutines.CancellationException) throw error
-                Log.e(TAG, "Notification action failed for $sender", error)
+                SafeLog.e(TAG, "Notification action failed for $sender", error)
             } finally {
                 pendingResult.finish()
             }
@@ -156,7 +156,7 @@ class NotificationActionReceiver : BroadcastReceiver() {
         } catch (error: Exception) {
             // A notification action normally has a background-start exemption. If an
             // OEM denies it, the already-running relay can still flush the durable queue.
-            Log.w(TAG, "Could not request relay service start", error)
+            SafeLog.w(TAG, "Could not request relay service start", error)
         }
     }
 
@@ -196,7 +196,7 @@ class NotificationActionReceiver : BroadcastReceiver() {
                 .apply()
             MessageNotificationService.clearHistory(context, sender)
         } catch (error: Exception) {
-            Log.e(TAG, "Failed to mark messages as read for $sender", error)
+            SafeLog.e(TAG, "Failed to mark messages as read for $sender", error)
         }
     }
 }

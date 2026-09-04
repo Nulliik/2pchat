@@ -5,7 +5,7 @@ import android.graphics.BitmapFactory
 import android.net.Uri
 import android.provider.OpenableColumns
 import android.util.Base64
-import android.util.Log
+import com.example.twopchat.logging.SafeLog
 import com.example.twopchat.relay.P2PMessageRelay
 import com.example.twopchat.config.P2PPreferences
 import com.example.twopchat.bridge.P2PBridgeProvider
@@ -140,7 +140,7 @@ object GroupChatCoordinator {
 
     private fun newRuntimeScope(): CoroutineScope {
         val handler = kotlinx.coroutines.CoroutineExceptionHandler { _, throwable ->
-            Log.e(TAG, "Uncaught exception in group runtime scope", throwable)
+            SafeLog.e(TAG, "Uncaught exception in group runtime scope", throwable)
         }
         val dispatcher = Dispatchers.IO.limitedParallelism(4)
         return CoroutineScope(SupervisorJob() + dispatcher + handler)
@@ -226,14 +226,14 @@ object GroupChatCoordinator {
                     reconcileDurableState()
                 }
                     .onSuccess { recoveryNeeded.set(false) }
-                    .onFailure { Log.w(TAG, "Group recovery failed: ${it.message}") }
+                    .onFailure { SafeLog.w(TAG, "Group recovery failed: ${it.message}") }
                 refreshCreateState()
                 refreshPendingInvites()
                 refreshAllGroups()
                 flushDueOutbox()
                 flushDeclinedInviteResponses()
             } catch (e: Exception) {
-                Log.e(TAG, "Failed during group coordinator startup initialization", e)
+                SafeLog.e(TAG, "Failed during group coordinator startup initialization", e)
             }
         }
     }
@@ -464,7 +464,7 @@ object GroupChatCoordinator {
             val member = db().getMember(groupId, local.deviceId)
             val role = parseRole(member?.role ?: "")
             if (role != GroupRole.OWNER && role != GroupRole.ADMINISTRATOR) {
-                Log.w(TAG, "Refusing to update wallpaper: local user is not OWNER or ADMIN")
+                SafeLog.w(TAG, "Refusing to update wallpaper: local user is not OWNER or ADMIN")
                 return@launch
             }
             val (persistedPath, wallpaperData) = if (wallpaperUri != null) {
@@ -767,7 +767,7 @@ object GroupChatCoordinator {
                 refreshGroup(groupId)
             } catch (error: Throwable) {
                 if (error is kotlinx.coroutines.CancellationException) throw error
-                Log.e(TAG, "Failed to clear group history for $groupId", error)
+                SafeLog.e(TAG, "Failed to clear group history for $groupId", error)
             }
         }
     }
@@ -937,7 +937,7 @@ object GroupChatCoordinator {
                     ?: return@withLock
                 val lineage = currentOwnerLineage(group)
                 if (lineage.certificates.size >= GroupOwnerLineage.MAX_TRANSITIONS) {
-                    Log.w(TAG, "Owner lineage limit reached for $groupId")
+                    SafeLog.w(TAG, "Owner lineage limit reached for $groupId")
                     return@withLock
                 }
                 val unsigned = GroupOwnerTransitionCertificate(
@@ -1022,7 +1022,7 @@ object GroupChatCoordinator {
             activeGroupChats.remove(groupId)
             timelineLimits.remove(groupId)
             lastReadReceiptTargets.remove(groupId)
-            Log.i(TAG, "Queued durable leave proposal ${proposal.eventId} for $groupId")
+            SafeLog.i(TAG, "Queued durable leave proposal ${proposal.eventId} for $groupId")
             refreshAllGroups()
         }
     }
@@ -1085,7 +1085,7 @@ object GroupChatCoordinator {
         scope.launch {
             runCatching { processIncoming(senderPeerName, json) }
                 .onFailure { error ->
-                    Log.w(TAG, "Rejected group frame from $senderPeerName: ${error.message}")
+                    SafeLog.w(TAG, "Rejected group frame from $senderPeerName: ${error.message}")
                 }
         }
         return true
@@ -1190,7 +1190,7 @@ object GroupChatCoordinator {
         if (recoveryNeeded.get()) {
             runCatching { reconcileDurableState() }
                 .onSuccess { recoveryNeeded.set(false) }
-                .onFailure { Log.w(TAG, "Deferred group recovery failed: ${it.message}") }
+                .onFailure { SafeLog.w(TAG, "Deferred group recovery failed: ${it.message}") }
         }
         flushDeclinedInviteResponses()
         var flushed = flushDueOutbox()
@@ -1292,7 +1292,7 @@ object GroupChatCoordinator {
                         val event = GroupWireProtocol.parseEvent(json)
                         enqueueEventForRecipients(group, event, json)
                     }.onFailure {
-                        Log.w(TAG, "Could not recover local group event: ${it.message}")
+                        SafeLog.w(TAG, "Could not recover local group event: ${it.message}")
                     }
                 }
 
@@ -1360,7 +1360,7 @@ object GroupChatCoordinator {
                     GroupControlFrames.inviteResponseToJson(response),
                 )
             }.onFailure {
-                Log.w(TAG, "Could not retry declined group invite: ${it.message}")
+                SafeLog.w(TAG, "Could not retry declined group invite: ${it.message}")
             }
         }
         return attempted
@@ -2243,7 +2243,7 @@ object GroupChatCoordinator {
         require(event.expiresAtMs == 0L || event.expiresAtMs >= now)
         val epochKey = db().getEpochKey(group.groupId, event.epoch)
             ?: run {
-                Log.i(TAG, "Buffering out-of-order group event ${event.eventId} (epoch ${event.epoch}) in group ${group.groupId} waiting for epoch key")
+                SafeLog.i(TAG, "Buffering out-of-order group event ${event.eventId} (epoch ${event.epoch}) in group ${group.groupId} waiting for epoch key")
                 bufferPendingGroupEvent(group.groupId, senderPeerName, json, event)
                 val author = db().getMember(group.groupId, event.authorDeviceId)
                 if (author != null) {
@@ -2529,7 +2529,7 @@ object GroupChatCoordinator {
         require(keyPackage.verify())
         val control = db().getEvent(group.groupId, keyPackage.controlHead)
         if (control == null) {
-            Log.i(
+            SafeLog.i(
                 TAG,
                 "Buffering out-of-order key package for group ${group.groupId} epoch ${keyPackage.epoch} waiting for control event ${keyPackage.controlHead}",
             )
@@ -2643,7 +2643,7 @@ object GroupChatCoordinator {
                 val control = db().getEvent(groupId, item.keyPackage.controlHead) ?: return@runCatching
                 applyKeyPackageWithControl(group, sender, item.senderPeerName, item.keyPackage, control)
             }.onFailure { error ->
-                Log.w(TAG, "Failed applying drained key package for group $groupId, epoch ${item.keyPackage.epoch}: ${error.message}")
+                SafeLog.w(TAG, "Failed applying drained key package for group $groupId, epoch ${item.keyPackage.epoch}: ${error.message}")
             }
         }
     }
@@ -2667,7 +2667,7 @@ object GroupChatCoordinator {
             runCatching {
                 receiveEvent(item.senderPeerName, item.json, acknowledge = true)
             }.onFailure { error ->
-                Log.w(TAG, "Failed applying drained group event ${item.event.eventId} for epoch $epoch: ${error.message}")
+                SafeLog.w(TAG, "Failed applying drained group event ${item.event.eventId} for epoch $epoch: ${error.message}")
             }
         }
     }
@@ -3881,7 +3881,7 @@ object GroupChatCoordinator {
             updatedAtMs = event.hlcPhysicalMs,
         )
         if (!applied) {
-            Log.w(TAG, "Control head race rejected ${event.eventId}")
+            SafeLog.w(TAG, "Control head race rejected ${event.eventId}")
         }
     }
 
@@ -3913,7 +3913,7 @@ object GroupChatCoordinator {
                     !memberWasActiveAt(author, wire.epoch) ||
                     !validatePolicy(current, author, wire, payload)
                 ) {
-                    Log.w(TAG, "Quarantined unauthorized control child ${wire.eventId}")
+                    SafeLog.w(TAG, "Quarantined unauthorized control child ${wire.eventId}")
                     continue
                 }
                 applySerializedControl(current, wire, payload)
@@ -4271,7 +4271,7 @@ object GroupChatCoordinator {
                     it.peerName.isBlank()
             }
         ) {
-            Log.w(TAG, "Cannot build a complete roster snapshot for $groupId")
+            SafeLog.w(TAG, "Cannot build a complete roster snapshot for $groupId")
             return
         }
         val pages = roster.chunked(GroupControlFrames.MAX_ROSTER_MEMBERS_PER_PAGE)
@@ -5033,7 +5033,7 @@ object GroupChatCoordinator {
             avatarFile.writeBytes(bytes)
             avatarFile.absolutePath
         }.getOrElse { error ->
-            Log.w(TAG, "Rejected invalid group avatar for ${invite.groupId}: ${error.message}")
+            SafeLog.w(TAG, "Rejected invalid group avatar for ${invite.groupId}: ${error.message}")
             avatarFile.takeIf(File::exists)?.absolutePath
         }
     }
@@ -5059,7 +5059,7 @@ object GroupChatCoordinator {
                 .apply()
             wallpaperFile.absolutePath
         }.getOrElse { error ->
-            Log.w(TAG, "Rejected invalid group wallpaper for ${invite.groupId}: ${error.message}")
+            SafeLog.w(TAG, "Rejected invalid group wallpaper for ${invite.groupId}: ${error.message}")
             wallpaperFile.takeIf(File::exists)?.absolutePath
         }
     }
@@ -5719,7 +5719,7 @@ object GroupChatCoordinator {
                 mimeType = if (effectiveFile != destination) "image/jpeg" else inferredMime,
             )
         }.onFailure {
-            Log.w(TAG, "Could not stage group attachment: ${it.message}")
+            SafeLog.w(TAG, "Could not stage group attachment: ${it.message}")
         }.getOrNull()
     }
 
@@ -5784,7 +5784,7 @@ object GroupChatCoordinator {
             )
             true
         }.onFailure {
-            Log.w(TAG, "Could not assemble attachment $eventId: ${it.message}")
+            SafeLog.w(TAG, "Could not assemble attachment $eventId: ${it.message}")
         }.getOrDefault(false)
     }
 

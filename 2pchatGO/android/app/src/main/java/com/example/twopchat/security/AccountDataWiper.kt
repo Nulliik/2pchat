@@ -1,7 +1,7 @@
 package com.example.twopchat.security
 
 import android.content.Context
-import android.util.Log
+import com.example.twopchat.logging.SafeLog
 import com.example.twopchat.relay.MessageNotificationService
 import com.example.twopchat.config.P2PPreferences
 import com.example.twopchat.data.ChatDatabaseHelper
@@ -103,9 +103,9 @@ internal fun runAccountDataWipe(
     steps: List<Pair<String, () -> Boolean>>,
     onFailure: (String, Exception?) -> Unit = { name, error ->
         if (error == null) {
-            Log.e("AccountDataWiper", "Account wipe step failed: $name")
+            SafeLog.e("AccountDataWiper", "Account wipe step failed: $name")
         } else {
-            Log.e("AccountDataWiper", "Account wipe step failed: $name", error)
+            SafeLog.e("AccountDataWiper", "Account wipe step failed: $name", error)
         }
     },
 ): Boolean {

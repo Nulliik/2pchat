@@ -1,5 +1,7 @@
 package com.example.twopchat.ui.onboarding
 
+import com.example.twopchat.logging.SafeLog
+
 import android.app.Activity
 import android.content.Intent
 import android.graphics.Bitmap
@@ -65,7 +67,7 @@ fun OnboardingScreen(
             try {
                 com.example.twopchat.yggdrasil.YggdrasilCoordinator.start(context)
             } catch (error: Exception) {
-                android.util.Log.e("OnboardingScreen", "Unable to start Yggdrasil service", error)
+                SafeLog.e("OnboardingScreen", "Unable to start Yggdrasil service", error)
                 sharedPrefs.edit().putBoolean("settings_yggdrasil", false).apply()
             }
         }
@@ -168,7 +170,7 @@ fun OnboardingScreen(
                             try {
                                 vpnPermissionLauncher.launch(vpnPrepareIntent)
                             } catch (e: Exception) {
-                                android.util.Log.e("OnboardingScreen", "Failed to launch VPN permission intent", e)
+                                SafeLog.e("OnboardingScreen", "Failed to launch VPN permission intent", e)
                                 startYggdrasilAndComplete(enableYggdrasil = false)
                             }
                         } else {
