@@ -72,7 +72,7 @@ private val defaultTrackerUrls = mapOf(
     "Cyberia UDP" to "udp://tracker.cyberia.is:6969/announce",
     "Qu.Ax UDP" to "udp://tracker.qu.ax:6969/announce",
     "Bittor UDP" to "udp://tracker.bittor.pw:1337/announce",
-    "Explodie UDP" to "udp://explodie.org:6969/announce",
+    "Torrent EU UDP" to "udp://tracker.torrent.eu.org:451/announce",
     "Filemail UDP" to "udp://tracker.filemail.com:6969/announce",
     "Dler UDP" to "udp://tracker2.dler.org:80/announce",
     "Nyacat HTTPS" to "https://tr.nyacat.pw:443/announce",

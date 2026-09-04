@@ -51,7 +51,7 @@ object TrackerPreferences {
         ),
         BuiltInTracker("Qu.Ax UDP", "udp://tracker.qu.ax:6969/announce", "udp"),
         BuiltInTracker("Bittor UDP", "udp://tracker.bittor.pw:1337/announce", "udp"),
-        BuiltInTracker("Explodie UDP", "udp://explodie.org:6969/announce", "udp"),
+        BuiltInTracker("Torrent EU UDP", "udp://tracker.torrent.eu.org:451/announce", "udp"),
         BuiltInTracker("Open Stealth UDP", "udp://open.stealth.si:80/announce", "udp"),
         BuiltInTracker("Dler UDP", "udp://tracker2.dler.org:80/announce", "udp"),
         BuiltInTracker("Cyberia UDP", "udp://tracker.cyberia.is:6969/announce", "udp"),
