@@ -57,7 +57,9 @@ open class PacketTunnelProvider: VpnService() {
                 try {
                     val timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss,SSS", Locale.getDefault()).format(Date())
                     com.example.twopchat.AppLog.append(context, "$timestamp [KOTLIN_$level] [YGGDRASIL] $TAG: $fullMsg\n")
-                } catch (_: Exception) {}
+                } catch (e: Exception) {
+                    SafeLog.d(TAG, "Failed appending log to AppLog: ${e.javaClass.simpleName}")
+                }
             }
         }
 
@@ -269,7 +271,9 @@ open class PacketTunnelProvider: VpnService() {
             SafeLog.w(TAG, "Failed to startForeground in startTunnel with specialUse, falling back", e)
             try {
                 startForeground(SERVICE_NOTIFICATION_ID, notification)
-            } catch (_: Throwable) {}
+            } catch (fallbackEx: Exception) {
+                SafeLog.e(TAG, "Failed startForeground fallback in startTunnel", fallbackEx)
+            }
         }
 
         // Acquire multicast lock
@@ -335,7 +339,10 @@ open class PacketTunnelProvider: VpnService() {
                 yggLog(applicationContext, "builder.establish() threw on attempt $attempt/3", "WARN", e)
             }
             yggLog(applicationContext, "VPN establish returned null on attempt $attempt/3, waiting for kernel FD release...", "WARN")
-            try { Thread.sleep(350L) } catch (_: InterruptedException) {}
+            try { Thread.sleep(350L) } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+                // intentionally ignored: retry delay before re-attempting establish()
+            }
         }
         parcel = establishedParcel
         val parcel = parcel
@@ -467,7 +474,10 @@ open class PacketTunnelProvider: VpnService() {
                 SafeLog.w(TAG, "Tunnel packet worker stopped unexpectedly; rebuilding it")
                 if (started.get()) {
                     stop(stopService = false)
-                    try { Thread.sleep(500L) } catch (_: InterruptedException) {}
+                    try { Thread.sleep(500L) } catch (_: InterruptedException) {
+                        Thread.currentThread().interrupt()
+                        // intentionally ignored: backoff before restarting packet worker
+                    }
                     start()
                 }
                 return

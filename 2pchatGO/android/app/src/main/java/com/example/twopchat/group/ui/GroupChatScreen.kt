@@ -558,7 +558,11 @@ fun GroupChatScreen(
                         context.contentResolver.takePersistableUriPermission(
                             uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
                         )
-                    } catch (_: Exception) {}
+                    } catch (_: SecurityException) {
+                        // intentionally ignored: URI does not grant persistable permissions
+                    } catch (e: Exception) {
+                        com.example.twopchat.logging.SafeLog.d("GroupChatScreen", "takePersistableUriPermission failed: ${e.javaClass.simpleName}")
+                    }
 
                     var fileName = "media_$index"
                     val mimeType = context.contentResolver.getType(uri).orEmpty()
@@ -570,7 +574,9 @@ fun GroupChatScreen(
                                 if (!queried.isNullOrBlank()) fileName = queried
                             }
                         }
-                    } catch (_: Exception) {}
+                    } catch (e: Exception) {
+                        com.example.twopchat.logging.SafeLog.d("GroupChatScreen", "Failed querying media displayName: ${e.javaClass.simpleName}")
+                    }
 
                     val detectedType = VoiceMessageSupport.attachmentType(fileName, mimeType)
                     val defaultExt = when (detectedType) {

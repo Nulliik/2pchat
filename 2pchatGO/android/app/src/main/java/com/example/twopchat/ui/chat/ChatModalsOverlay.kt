@@ -299,7 +299,9 @@ internal fun ChatModalsOverlay(
                                 FileOutputStream(fpFile).use { out ->
                                     bitmap.compress(Bitmap.CompressFormat.JPEG, 85, out)
                                 }
-                            } catch (_: Exception) {}
+                            } catch (e: Exception) {
+                                com.example.twopchat.logging.SafeLog.d("ChatModalsOverlay", "Failed writing duplicate wallpaper for fp alias: ${e.javaClass.simpleName}")
+                            }
                         }
                         com.example.twopchat.config.P2PPreferences.setDirectWallpaper(context, peerName, targetFile.absolutePath, dimming, isBlur)
                         onWallpaperUpdated(targetFile.absolutePath, dimming, isBlur)

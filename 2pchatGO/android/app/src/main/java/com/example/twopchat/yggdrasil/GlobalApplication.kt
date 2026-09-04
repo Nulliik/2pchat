@@ -39,7 +39,9 @@ class GlobalApplication: Application(), YggStateReceiver.StateReceiver {
                         .penaltyLog()
                         .build()
                 )
-            } catch (_: Throwable) {}
+            } catch (_: Throwable) {
+                // intentionally ignored: StrictMode initialization in unit tests or unsupported Android runtime
+            }
         }
 
         val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
@@ -52,7 +54,9 @@ class GlobalApplication: Application(), YggStateReceiver.StateReceiver {
                     applicationContext,
                     "[FATAL_CRASH] Thread: ${thread.name}\n$sw\n"
                 )
-            } catch (_: Throwable) {}
+            } catch (_: Throwable) {
+                // intentionally ignored: prevent secondary crash in uncaught exception handler
+            }
             defaultHandler?.uncaughtException(thread, throwable)
         }
 

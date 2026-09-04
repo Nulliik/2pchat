@@ -62,7 +62,9 @@ object P2PPreferences {
                     socket.bind(java.net.InetSocketAddress(java.net.InetAddress.getByName(host), preferredPort))
                     return socket.localPort
                 }
-            } catch (_: Throwable) {}
+            } catch (_: java.io.IOException) {
+                // intentionally ignored: preferred port in use, fallback to ephemeral port
+            }
         }
         // Ask operating system for an available ephemeral port
         try {
@@ -71,7 +73,9 @@ object P2PPreferences {
                 socket.bind(java.net.InetSocketAddress(java.net.InetAddress.getByName(host), 0))
                 return socket.localPort
             }
-        } catch (_: Throwable) {}
+        } catch (_: java.io.IOException) {
+            // intentionally ignored: fallback to default port if ephemeral probe fails
+        }
         return if (preferredPort > 0) preferredPort else DEFAULT_YGGDRASIL_PROXY_PORT
     }
 
@@ -1086,7 +1090,9 @@ object P2PPreferences {
                     result.add(clean)
                 }
             }
-        } catch (_: Exception) {}
+        } catch (e: Exception) {
+            SafeLog.w("P2PPreferences", "Failed reading chat peer names from database", e)
+        }
 
         return result
     }

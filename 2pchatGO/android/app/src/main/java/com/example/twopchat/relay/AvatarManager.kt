@@ -32,7 +32,10 @@ internal class AvatarManager(
             ioScope.launch {
                 try {
                     sharedAvatarCache.savePersisted(context, toKey, bitmap)
-                } catch (_: Throwable) {}
+                } catch (e: Exception) {
+                    if (e is kotlinx.coroutines.CancellationException) throw e
+                    com.example.twopchat.logging.SafeLog.w("AvatarManager", "Failed to persist avatar for alias $toKey", e)
+                }
             }
         }
     }

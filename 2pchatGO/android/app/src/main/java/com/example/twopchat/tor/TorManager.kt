@@ -492,11 +492,17 @@ object TorManager {
             if (context != null) {
                 try {
                     P2PPreferences.setTorOnionHostname(context, hostname)
-                } catch (_: Exception) {}
+                } catch (e: Exception) {
+                    SafeLog.w(TAG, "Failed saving Tor onion hostname in preferences", e)
+                }
             }
             try {
                 NativeBridge.setOnionAddress(hostname)
-            } catch (_: Throwable) {}
+            } catch (e: Exception) {
+                SafeLog.w(TAG, "Failed setting onion address on NativeBridge", e)
+            } catch (_: Throwable) {
+                // intentionally ignored: native bridge library may not be loaded in unit tests
+            }
             SafeLog.i(TAG, "[TOR] Onion service v3 active (with retry, len=${hostname.length})")
             SafeLog.d(TAG, "[TOR] Onion service v3 active (with retry): $hostname")
         } else {
@@ -554,7 +560,9 @@ object TorManager {
                     socket.connect(java.net.InetSocketAddress("127.0.0.1", socksPort), 400)
                     return@withContext true
                 }
-            } catch (_: Exception) {}
+            } catch (_: java.io.IOException) {
+                // intentionally ignored: socks port not yet ready, will retry until timeout
+            }
             delay(150)
         }
         false
@@ -568,7 +576,7 @@ object TorManager {
                 return false
             }
         } catch (_: Exception) {
-            // Not accepting connections, continue to bind check
+            // intentionally ignored: not accepting connections, continue to bind check
         }
 
         // 2. Check if ServerSocket can bind exclusively (without SO_REUSEADDR)
@@ -642,7 +650,9 @@ object TorManager {
                 }
             }
             SafeLog.i(TAG, "Sent SIGNAL HALT to stale Tor daemon on ControlPort $controlPort")
-        } catch (_: Throwable) {}
+        } catch (e: Exception) {
+            SafeLog.d(TAG, "No response from stale Tor control port $effectiveControlPort: ${e.javaClass.simpleName}")
+        }
     }
 
     suspend fun waitForPortsFree(
@@ -887,7 +897,11 @@ object TorManager {
             hsDir.setExecutable(true, true)
             try {
                 android.system.Os.chmod(hsDir.absolutePath, 448 /* 0700 */)
-            } catch (_: Throwable) {}
+            } catch (e: Exception) {
+                SafeLog.d(TAG, "Os.chmod failed: ${e.javaClass.simpleName}")
+            } catch (_: Throwable) {
+                // intentionally ignored: android.system.Os may not be mocked in pure JVM tests
+            }
 
             // Check ports and free stale instances before generating torrc
             var socksPort = DEFAULT_SOCKS_PORT
@@ -952,7 +966,9 @@ object TorManager {
             logReaderJob = scope.launch {
                 try {
                     android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND)
-                } catch (_: Exception) {}
+                } catch (e: Exception) {
+                    SafeLog.d(TAG, "Failed setting logReaderJob thread priority: ${e.javaClass.simpleName}")
+                }
                 try {
                     startedProcess.inputStream.bufferedReader().useLines { lines ->
                         lines.forEach { line ->
@@ -1281,7 +1297,9 @@ object TorManager {
                 try {
                     val pidMethod = process.javaClass.getMethod("pid")
                     return (pidMethod.invoke(process) as Long).toInt()
-                } catch (_: NoSuchMethodException) {}
+                } catch (_: NoSuchMethodException) {
+                    // intentionally ignored: Process.pid() unavailable on this JVM runtime, fallback to reflection field
+                }
             }
             val pidField = process.javaClass.getDeclaredField("pid")
             pidField.isAccessible = true

@@ -51,7 +51,9 @@ internal class ChatsViewModel(
                     if (messages.isNotEmpty()) {
                         com.example.twopchat.ui.chat.state.ChatHistoryCache.put(peer, messages)
                     }
-                } catch (_: Exception) {}
+                } catch (e: Exception) {
+                    com.example.twopchat.logging.SafeLog.d("ChatsViewModel", "Prefetching history for $peer failed: ${e.javaClass.simpleName}")
+                }
             }
         }
     }

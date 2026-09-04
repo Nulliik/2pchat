@@ -240,10 +240,13 @@ fun rememberVideoThumbnail(filePath: String?, targetWidth: Int = 400, targetHeig
                         try {
                             retriever.setDataSource(targetFile.absolutePath)
                             extractVideoThumbnail(retriever, targetWidth, targetHeight)
-                        } catch (_: Exception) {
+                        } catch (e: Exception) {
+                            com.example.twopchat.logging.SafeLog.d("ChatMedia", "Failed extracting video thumbnail from file: ${e.javaClass.simpleName}")
                             null
                         } finally {
-                            try { retriever.release() } catch (_: Exception) {}
+                            try { retriever.release() } catch (e: Exception) {
+                                com.example.twopchat.logging.SafeLog.d("ChatMedia", "MediaMetadataRetriever release failed: ${e.javaClass.simpleName}")
+                            }
                         }
                     }
                 } else if (cleanPath.startsWith("content://")) {
@@ -252,10 +255,13 @@ fun rememberVideoThumbnail(filePath: String?, targetWidth: Int = 400, targetHeig
                         try {
                             retriever.setDataSource(context, android.net.Uri.parse(cleanPath))
                             extractVideoThumbnail(retriever, targetWidth, targetHeight)
-                        } catch (_: Exception) {
+                        } catch (e: Exception) {
+                            com.example.twopchat.logging.SafeLog.d("ChatMedia", "Failed extracting video thumbnail from uri: ${e.javaClass.simpleName}")
                             null
                         } finally {
-                            try { retriever.release() } catch (_: Exception) {}
+                            try { retriever.release() } catch (e: Exception) {
+                                com.example.twopchat.logging.SafeLog.d("ChatMedia", "MediaMetadataRetriever release failed: ${e.javaClass.simpleName}")
+                            }
                         }
                     }
                 } else {

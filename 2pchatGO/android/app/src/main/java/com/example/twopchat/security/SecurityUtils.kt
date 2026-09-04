@@ -125,7 +125,7 @@ object SecurityUtils {
             try {
                 sharedPrefs.edit().putString(prefKey, SecureStorage.encrypt(storedValue)).apply()
             } catch (_: Exception) {
-                // Verification remains valid if a best-effort migration write fails.
+                // intentionally ignored: verification remains valid if a best-effort migration write fails
             }
         }
         return true

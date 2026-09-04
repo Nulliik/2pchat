@@ -186,7 +186,13 @@ object LinkPreviewFetcher {
                 try {
                     val baseUri = URI(currentUrl)
                     imageUrl = baseUri.resolve(imageUrl).toString()
-                } catch (_: Exception) {}
+                } catch (_: java.net.URISyntaxException) {
+                    // intentionally ignored: invalid relative image URL syntax
+                } catch (_: IllegalArgumentException) {
+                    // intentionally ignored: invalid URI format
+                } catch (e: Exception) {
+                    SafeLog.d("LinkPreview", "Failed resolving relative image URL: ${e.javaClass.simpleName}")
+                }
             }
             if (!imageUrl.isNullOrBlank() && !isSafeHttpUrl(imageUrl)) imageUrl = null
 
@@ -208,7 +214,9 @@ object LinkPreviewFetcher {
         } finally {
             try {
                 connection?.disconnect()
-            } catch (_: Exception) {}
+            } catch (e: Exception) {
+                SafeLog.d("LinkPreview", "HttpURLConnection disconnect failed: ${e.javaClass.simpleName}")
+            }
         }
     }
 

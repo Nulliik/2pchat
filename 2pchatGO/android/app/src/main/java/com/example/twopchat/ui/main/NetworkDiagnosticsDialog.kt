@@ -289,7 +289,9 @@ private suspend fun runConnectionDiagnosticsTest(context: Context): ConnectionSw
     // 2. Active NAT, STUN & UPnP Diagnostics (via Go Core JNI)
     try {
         NativeBridge.refreshNatDiagnostics()
-    } catch (_: Exception) {}
+    } catch (e: Exception) {
+        com.example.twopchat.logging.SafeLog.d("NetworkDiagnostics", "refreshNatDiagnostics failed: ${e.javaClass.simpleName}")
+    }
     val nat = NativeBridge.getNatDiagnostics()
     val natType = nat["nat_type"]?.takeIf { it.isNotBlank() } ?: "UNKNOWN"
     val upnpMapped = nat["upnp_mapped"] == "true"
@@ -370,7 +372,9 @@ private suspend fun runConnectionDiagnosticsTest(context: Context): ConnectionSw
     try {
         val logFile = File(File(context.filesDir, "config"), "app.log")
         logFile.appendText("\n" + resultLog)
-    } catch (_: Exception) {}
+    } catch (e: Exception) {
+        com.example.twopchat.logging.SafeLog.d("NetworkDiagnostics", "Failed appending sweep result to app.log: ${e.javaClass.simpleName}")
+    }
 
     ConnectionSweepResult(
         timestamp = timeStr,

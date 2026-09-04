@@ -2055,7 +2055,11 @@ internal fun LinkPreviewCard(
                 try {
                     val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(previewData.url))
                     context.startActivity(intent)
-                } catch (_: Exception) {}
+                } catch (_: android.content.ActivityNotFoundException) {
+                    // intentionally ignored: no application available to handle ACTION_VIEW intent
+                } catch (e: Exception) {
+                    com.example.twopchat.logging.SafeLog.w("ChatMessageBubble", "Failed opening link preview URL", e)
+                }
             }
             .padding(10.dp)
     ) {

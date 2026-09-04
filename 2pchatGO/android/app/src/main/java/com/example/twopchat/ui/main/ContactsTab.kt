@@ -1895,13 +1895,19 @@ private fun CameraQrScannerOverlay(
             isScanned.set(true)
             try {
                 cameraProviderInstance?.unbindAll()
-            } catch (_: Throwable) {}
+            } catch (e: Exception) {
+                com.example.twopchat.logging.SafeLog.d("ContactsTab", "Camera unbindAll failed: ${e.javaClass.simpleName}")
+            }
             try {
                 analysisExecutor.shutdown()
-            } catch (_: Throwable) {}
+            } catch (e: Exception) {
+                com.example.twopchat.logging.SafeLog.d("ContactsTab", "analysisExecutor shutdown failed: ${e.javaClass.simpleName}")
+            }
             try {
                 liveBarcodeScanner.close()
-            } catch (_: Throwable) {}
+            } catch (e: Exception) {
+                com.example.twopchat.logging.SafeLog.d("ContactsTab", "liveBarcodeScanner close failed: ${e.javaClass.simpleName}")
+            }
         }
     }
 
@@ -1917,7 +1923,9 @@ private fun CameraQrScannerOverlay(
                         if (!qrText.isNullOrBlank() && !isScanned.getAndSet(true)) {
                             try {
                                 haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
-                            } catch (_: Throwable) {}
+                            } catch (_: Exception) {
+                                // intentionally ignored: haptic feedback may fail on unsupported hardware
+                            }
                             onQrScanned(qrText)
                         } else {
                             var zxingSuccess = false
@@ -1940,10 +1948,14 @@ private fun CameraQrScannerOverlay(
                                     zxingSuccess = true
                                     try {
                                         haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
-                                    } catch (_: Throwable) {}
+                                    } catch (_: Exception) {
+                                        // intentionally ignored: haptic feedback may fail on unsupported hardware
+                                    }
                                     onQrScanned(result.text)
                                 }
-                            } catch (_: Throwable) {}
+                            } catch (e: Exception) {
+                                com.example.twopchat.logging.SafeLog.d("ContactsTab", "ZXing fallback QR decode failed: ${e.javaClass.simpleName}")
+                            }
                             if (!zxingSuccess) {
                                 Toast.makeText(
                                     context,
@@ -2023,7 +2035,9 @@ private fun CameraQrScannerOverlay(
                                                         mainExecutor.execute {
                                                             try {
                                                                 haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
-                                                            } catch (_: Throwable) {}
+                                                            } catch (_: Exception) {
+                                                                // intentionally ignored: haptic feedback failure is harmless
+                                                            }
                                                             onQrScanned(rawValue)
                                                         }
                                                         break
@@ -2033,15 +2047,20 @@ private fun CameraQrScannerOverlay(
                                             .addOnCompleteListener {
                                                 try {
                                                     imageProxy.close()
-                                                } catch (_: Throwable) {}
+                                                } catch (e: Exception) {
+                                                    com.example.twopchat.logging.SafeLog.d("CameraQrScanner", "imageProxy.close failed: ${e.javaClass.simpleName}")
+                                                }
                                             }
                                     } else {
                                         imageProxy.close()
                                     }
-                                } catch (_: Throwable) {
+                                } catch (e: Exception) {
+                                    com.example.twopchat.logging.SafeLog.w("CameraQrScanner", "ImageAnalysis frame processing failed", e)
                                     try {
                                         imageProxy.close()
-                                    } catch (_: Throwable) {}
+                                    } catch (ce: Exception) {
+                                        com.example.twopchat.logging.SafeLog.d("CameraQrScanner", "imageProxy.close fallback failed: ${ce.javaClass.simpleName}")
+                                    }
                                 }
                             }
 

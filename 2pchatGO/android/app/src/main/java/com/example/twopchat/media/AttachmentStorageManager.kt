@@ -248,7 +248,9 @@ object AttachmentStorageManager {
                 if (file.isFile && isFileInsideAnyRoot(file, roots)) {
                     com.example.twopchat.security.TemporaryCacheSanitizer.shredFile(file)
                 }
-            } catch (_: Throwable) {}
+            } catch (e: Exception) {
+                com.example.twopchat.logging.SafeLog.d("AttachmentStorageManager", "Failed to shred attachment file: ${e.javaClass.simpleName}")
+            }
         }
     }
 }

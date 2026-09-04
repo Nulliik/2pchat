@@ -9,6 +9,7 @@ import androidx.core.content.ContextCompat
 import com.example.twopchat.NativeBridge
 import com.example.twopchat.config.P2PPreferences
 import com.example.twopchat.config.P2PPreferences.YggdrasilMode
+import com.example.twopchat.logging.SafeLog
 
 object YggdrasilCoordinator {
     private const val TAG = "YggdrasilCoordinator"
@@ -38,7 +39,11 @@ object YggdrasilCoordinator {
                     try {
                         ContextCompat.startForegroundService(context, intent)
                     } catch (e: Exception) {
-                        try { context.startService(intent) } catch (_: Exception) {}
+                        try {
+                            context.startService(intent)
+                        } catch (fallbackEx: Exception) {
+                            SafeLog.w(TAG, "Failed fallback startService for YggdrasilProxyService: ${fallbackEx.javaClass.simpleName}")
+                        }
                     }
                 }, delayMs)
             }
@@ -53,7 +58,11 @@ object YggdrasilCoordinator {
                     try {
                         ContextCompat.startForegroundService(context, intent)
                     } catch (e: Exception) {
-                        try { context.startService(intent) } catch (_: Exception) {}
+                        try {
+                            context.startService(intent)
+                        } catch (fallbackEx: Exception) {
+                            SafeLog.w(TAG, "Failed fallback startService for PacketTunnelProvider: ${fallbackEx.javaClass.simpleName}")
+                        }
                     }
                 }, STOP_SETTLE_MS)
             }
@@ -72,7 +81,9 @@ object YggdrasilCoordinator {
         // stopService is explicitly allowed and invokes the service teardown.
         try {
             context.stopService(Intent(context, YggdrasilProxyService::class.java))
-        } catch (_: Exception) {}
+        } catch (e: Exception) {
+            SafeLog.d(TAG, "stopService YggdrasilProxyService failed: ${e.javaClass.simpleName}")
+        }
     }
 
     fun stopVpn(context: Context) {
@@ -83,7 +94,11 @@ object YggdrasilCoordinator {
             try {
                 ContextCompat.startForegroundService(context, intent)
             } catch (_: Exception) {
-                try { context.stopService(intent) } catch (_: Exception) {}
+                try {
+                    context.stopService(intent)
+                } catch (e: Exception) {
+                    SafeLog.d(TAG, "stopService PacketTunnelProvider failed: ${e.javaClass.simpleName}")
+                }
             }
         }
     }

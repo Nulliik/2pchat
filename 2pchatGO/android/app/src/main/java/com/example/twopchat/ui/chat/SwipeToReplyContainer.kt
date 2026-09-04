@@ -77,7 +77,9 @@ fun SwipeToReplyContainer(
                         if (sharedPrefs.getBoolean("settings_haptic_feedback", true)) {
                             try {
                                 hapticFeedback.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
-                            } catch (_: Exception) {}
+                            } catch (_: Exception) {
+                                // intentionally ignored: haptic feedback may not be supported by hardware or platform
+                            }
                         }
                         hasTriggeredHapticForSwipe = true
                     } else if (!crossed && hasTriggeredHapticForSwipe) {

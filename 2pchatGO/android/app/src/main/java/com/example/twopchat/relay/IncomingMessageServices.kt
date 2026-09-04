@@ -267,7 +267,9 @@ internal class MessageNotificationService {
                         }
                     }
                 }
-            } catch (_: Exception) {}
+            } catch (e: Exception) {
+                com.example.twopchat.logging.SafeLog.d("IncomingMessageServices", "Failed loading custom avatar icon for notification: ${e.javaClass.simpleName}")
+            }
 
             // 3. Fallback: Draw a crisp circular avatar bitmap with sender's initial letter & brand color
             val sizePx = 144

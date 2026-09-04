@@ -105,12 +105,14 @@ internal object FileTransferPreview {
             Base64.encodeToString(bytes, Base64.NO_WRAP)
                 .takeIf { it.length <= MAX_ENCODED_CHARS }
                 .orEmpty()
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            com.example.twopchat.logging.SafeLog.d("FileTransferPreview", "Failed to generate video preview: ${e.javaClass.simpleName}")
             ""
         } finally {
             try {
                 retriever.release()
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                com.example.twopchat.logging.SafeLog.d("FileTransferPreview", "MediaMetadataRetriever release failed: ${e.javaClass.simpleName}")
             }
             scaled?.takeIf { it !== frame && !it.isRecycled }?.recycle()
             frame?.takeIf { !it.isRecycled }?.recycle()

@@ -56,7 +56,9 @@ class YggdrasilProxyService : Service() {
                 try {
                     val timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss,SSS", Locale.getDefault()).format(Date())
                     com.example.twopchat.AppLog.append(context, "$timestamp [KOTLIN_$level] [YGGDRASIL] $TAG: $fullMsg\n")
-                } catch (_: Exception) {}
+                } catch (e: Exception) {
+                    SafeLog.d(TAG, "Failed appending log to AppLog: ${e.javaClass.simpleName}")
+                }
             }
         }
 
@@ -101,7 +103,9 @@ class YggdrasilProxyService : Service() {
             SafeLog.w(TAG, "Failed to startForeground with specialUse, fallback to regular startForeground", e)
             try {
                 startForeground(PROXY_NOTIFICATION_ID, notification)
-            } catch (_: Exception) {}
+            } catch (fallbackEx: Exception) {
+                SafeLog.e(TAG, "Failed regular startForeground fallback", fallbackEx)
+            }
         }
     }
 
@@ -225,7 +229,9 @@ class YggdrasilProxyService : Service() {
             SafeLog.w(TAG, "Failed to startForeground in startProxyEngine", e)
             try {
                 startForeground(PROXY_NOTIFICATION_ID, notification)
-            } catch (_: Throwable) {}
+            } catch (fallbackEx: Exception) {
+                SafeLog.e(TAG, "Failed startForeground fallback in startProxyEngine", fallbackEx)
+            }
         }
 
         // Acquire multicast lock
@@ -253,7 +259,10 @@ class YggdrasilProxyService : Service() {
         var address = ygg.addressString
         for (i in 1..10) {
             if (!address.isNullOrBlank()) break
-            try { Thread.sleep(100L) } catch (_: InterruptedException) {}
+            try { Thread.sleep(100L) } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+                // intentionally ignored: backoff while waiting for Yggdrasil address initialization
+            }
             address = ygg.addressString
         }
         if (address.isNullOrBlank()) {

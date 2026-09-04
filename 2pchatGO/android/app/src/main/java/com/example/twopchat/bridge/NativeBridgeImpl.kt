@@ -130,7 +130,9 @@ class NativeBridgeImpl(
                 if (Looper.myLooper() != null && Looper.myLooper() == Looper.getMainLooper()) {
                     SafeLog.w(TAG, "$op called on main thread", Throwable())
                 }
-            } catch (_: Throwable) {}
+            } catch (_: Throwable) {
+                // intentionally ignored: Looper check is debug-only and may fail in mock/unit test environments
+            }
         }
     }
 
@@ -140,7 +142,11 @@ class NativeBridgeImpl(
             val appContext = com.example.twopchat.yggdrasil.GlobalApplication.appContext
             val yggMode = P2PPreferences.getYggdrasilMode(appContext)
             NativeBridge.setYggdrasilConfig(yggMode.id, "127.0.0.1:${P2PPreferences.DEFAULT_YGGDRASIL_PROXY_PORT}")
-        } catch (_: Throwable) {}
+        } catch (e: Exception) {
+            SafeLog.d(TAG, "Yggdrasil config setup deferred: ${e.javaClass.simpleName}")
+        } catch (_: Throwable) {
+            // intentionally ignored: appContext uninitialized in pure JVM unit tests
+        }
         setupNativeCallbacks()
         loadPersistedPeerMappings()
     }
@@ -160,7 +166,11 @@ class NativeBridgeImpl(
                     }
                 }
             }
-        } catch (_: Throwable) {}
+        } catch (e: Exception) {
+            SafeLog.w(TAG, "loadPersistedPeerMappings failed", e)
+        } catch (_: Throwable) {
+            // intentionally ignored: appContext uninitialized in pure JVM unit tests
+        }
     }
 
     private fun resolvePeerName(fingerprint: String): String? {
@@ -349,7 +359,9 @@ class NativeBridgeImpl(
                             SafeLog.w(TAG, "[Security] Dropping spoofed $mtype packet claiming ${SafeLog.fp(claimedFP)} on session ${SafeLog.fp(peerFP)}")
                         }
                     }
-                } catch (_: Exception) {}
+                } catch (e: Exception) {
+                    SafeLog.w(TAG, "Failed parsing identity control frame for ${SafeLog.fp(peerFP)}: ${e.javaClass.simpleName}")
+                }
             }
             val senderName = resolvePeerName(peerFP) ?: peerNameMap[peerFP] ?: peerFP
             messageListener?.onMessageReceived(senderName, payloadStr)
@@ -817,7 +829,9 @@ class NativeBridgeImpl(
     override fun shutdown() {
         try {
             bridgeScope.cancel()
-        } catch (_: Throwable) {}
+        } catch (e: Exception) {
+            SafeLog.d(TAG, "bridgeScope cancellation failed: ${e.javaClass.simpleName}")
+        }
         shutdownAllSessions()
     }
 

@@ -306,7 +306,8 @@ class YggdrasilUserSpaceStack(
                 ack = session.seqRecv.get(),
                 flags = 0x11 // FIN | ACK
             )
-        } catch (_: Throwable) {
+        } catch (e: Exception) {
+            SafeLog.d(TAG, "Failed sending FIN packet: ${e.javaClass.simpleName}")
         } finally {
             runCatching { client.close() }
         }
@@ -594,7 +595,9 @@ class YggdrasilUserSpaceStack(
 
         try {
             ygg.sendBuffer(raw, totalLen.toLong())
-        } catch (_: Throwable) {}
+        } catch (e: Exception) {
+            SafeLog.w(TAG, "Failed sending TCP packet buffer to mesh: ${e.javaClass.simpleName}")
+        }
     }
 
     private fun sendUdpPacket(srcIp: ByteArray, dstIp: ByteArray, srcPort: Int, dstPort: Int, payload: ByteArray) {

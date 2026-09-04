@@ -241,7 +241,9 @@ fun ChatScreen(
         if (sharedPrefs.getBoolean("settings_haptic_feedback", true)) {
             try {
                 hapticFeedback.performHapticFeedback(type)
-            } catch (_: Exception) {}
+            } catch (_: Exception) {
+                // intentionally ignored: haptic feedback may not be supported by hardware or platform
+            }
         }
     }
     var pinnedMsgId by remember(peerName, isActive) { mutableStateOf(sharedPrefs.getString("pinned_msg_id_${peerName}", null)) }
@@ -584,7 +586,10 @@ fun ChatScreen(
                                             initialMessages[idx] = repaired
                                         }
                                     }
-                                } catch (_: Exception) {}
+                                } catch (e: Exception) {
+                                    if (e is kotlinx.coroutines.CancellationException) throw e
+                                    com.example.twopchat.logging.SafeLog.w("ChatScreen", "Failed updating repaired message in database", e)
+                                }
                             }
                         }
                     }
@@ -664,7 +669,10 @@ fun ChatScreen(
                                             initialMessages[idx] = repaired
                                         }
                                     }
-                                } catch (_: Exception) {}
+                                } catch (e: Exception) {
+                                    if (e is kotlinx.coroutines.CancellationException) throw e
+                                    com.example.twopchat.logging.SafeLog.w("ChatScreen", "Failed updating repaired older message in database", e)
+                                }
                             }
                         }
                     }
@@ -1306,7 +1314,11 @@ fun ChatScreen(
                         context.contentResolver.takePersistableUriPermission(
                             uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
                         )
-                    } catch (_: Exception) {}
+                    } catch (_: SecurityException) {
+                        // intentionally ignored: URI does not grant persistable permissions
+                    } catch (e: Exception) {
+                        com.example.twopchat.logging.SafeLog.d("ChatScreen", "takePersistableUriPermission failed: ${e.javaClass.simpleName}")
+                    }
 
                     var fileName = "media_$index"
                     var mimeType = context.contentResolver.getType(uri).orEmpty()
@@ -1318,7 +1330,9 @@ fun ChatScreen(
                                 if (!queried.isNullOrBlank()) fileName = queried
                             }
                         }
-                    } catch (_: Exception) {}
+                    } catch (e: Exception) {
+                        com.example.twopchat.logging.SafeLog.d("ChatScreen", "Failed querying media displayName: ${e.javaClass.simpleName}")
+                    }
 
                     fileName = VoiceMessageSupport.ensureMediaExtension(fileName, mimeType)
                     val detectedType = VoiceMessageSupport.attachmentType(fileName, mimeType)
@@ -2568,7 +2582,10 @@ fun ChatScreen(
                                                         if (idx in initialMessages.indices) {
                                                             initialMessages[idx] = outMsg.copy(status = "PENDING")
                                                         }
-                                                    } catch (_: Throwable) {}
+                                                    } catch (e: Exception) {
+                                                        if (e is kotlinx.coroutines.CancellationException) throw e
+                                                        com.example.twopchat.logging.SafeLog.d("ChatScreen", "Failed updating pending message UI state: ${e.javaClass.simpleName}")
+                                                    }
                                                 }
                                             }
                                         }

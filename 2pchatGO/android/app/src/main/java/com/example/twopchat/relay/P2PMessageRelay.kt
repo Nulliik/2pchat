@@ -453,7 +453,9 @@ object P2PMessageRelay {
         try {
             localPeerDiscovery?.stop()
             localPeerDiscovery = null
-        } catch (_: Throwable) {}
+        } catch (e: Exception) {
+            SafeLog.d(TAG, "Stopping localPeerDiscovery on screen off failed: ${e.javaClass.simpleName}")
+        }
     }
 
     fun onScreenOn(context: Context? = null) {
@@ -465,7 +467,9 @@ object P2PMessageRelay {
                 if (isRunning && P2PPreferences.isWifiDiscoveryEnabled(appContext)) {
                     startLocalDiscovery(appContext, listenerPort(appContext))
                 }
-            } catch (_: Throwable) {}
+            } catch (e: Exception) {
+                SafeLog.w(TAG, "Resuming localPeerDiscovery on screen on failed", e)
+            }
         }
     }
 
@@ -969,7 +973,9 @@ object P2PMessageRelay {
                     avatarCache.put(cleanNewName, av)
                     try {
                         avatarCache.savePersisted(context, cleanNewName, av)
-                    } catch (_: Throwable) {}
+                    } catch (e: Exception) {
+                        SafeLog.w(TAG, "Failed saving persisted avatar during peer rename", e)
+                    }
                 }
             }
         }
@@ -1028,7 +1034,9 @@ object P2PMessageRelay {
                     moveChatState(context, danglingName, cleanName)
                 }
             }
-        } catch (_: Throwable) {}
+        } catch (e: Exception) {
+            SafeLog.w(TAG, "Failed cleaning dangling chat states during nickname adoption", e)
+        }
     }
 
     internal fun moveChatState(
@@ -1115,7 +1123,9 @@ object P2PMessageRelay {
             if (oldWpFile.exists() && !newWpFile.exists()) {
                 oldWpFile.renameTo(newWpFile)
             }
-        } catch (_: Exception) {}
+        } catch (e: Exception) {
+            SafeLog.d(TAG, "Migrating chat wallpaper failed: ${e.javaClass.simpleName}")
+        }
 
         try {
             val db = ChatDatabaseHelper.getInstance(context)
@@ -1727,21 +1737,27 @@ object P2PMessageRelay {
                                             if (resolvedSender != sender) {
                                                 try {
                                                     File(dir, "wallpaper_$sender.jpg").writeBytes(bytes)
-                                                } catch (_: Exception) {}
+                                                } catch (e: Exception) {
+                                                    SafeLog.d(TAG, "Failed writing alias wallpaper for $sender: ${e.javaClass.simpleName}")
+                                                }
                                             }
 
                                             val baseSender = resolvedSender.substringBefore("#").substringBefore(" · ").trim()
                                             if (baseSender.isNotEmpty() && baseSender != resolvedSender) {
                                                 try {
                                                     File(dir, "wallpaper_$baseSender.jpg").writeBytes(bytes)
-                                                } catch (_: Exception) {}
+                                                } catch (e: Exception) {
+                                                    SafeLog.d(TAG, "Failed writing baseSender wallpaper: ${e.javaClass.simpleName}")
+                                                }
                                                 P2PPreferences.setDirectWallpaper(appContext, baseSender, destFile.absolutePath, dimming, isBlur)
                                             }
                                             val lowerSender = resolvedSender.lowercase()
                                             if (lowerSender != resolvedSender && lowerSender != baseSender) {
                                                 try {
                                                     File(dir, "wallpaper_$lowerSender.jpg").writeBytes(bytes)
-                                                } catch (_: Exception) {}
+                                                } catch (e: Exception) {
+                                                    SafeLog.d(TAG, "Failed writing lowercase alias wallpaper: ${e.javaClass.simpleName}")
+                                                }
                                             }
 
                                             P2PPreferences.setDirectWallpaper(appContext, resolvedSender, destFile.absolutePath, dimming, isBlur)
@@ -3261,7 +3277,10 @@ object P2PMessageRelay {
                         allTransfersOk = false
                         try {
                             db.updateMessageStatus(albumId, "PENDING")
-                        } catch (_: Throwable) {}
+                        } catch (e: Exception) {
+                            if (e is kotlinx.coroutines.CancellationException) throw e
+                            SafeLog.w(TAG, "Failed updating album status to PENDING in database", e)
+                        }
                         runOnMain { onAlbumStatusChanged("PENDING") }
                         break
                     }
@@ -3270,7 +3289,10 @@ object P2PMessageRelay {
                 if (allTransfersOk && !isMediaAlbumCancelled(albumId, albumGeneration)) {
                     try {
                         db.updateMessageStatus(albumId, "SENT")
-                    } catch (_: Throwable) {}
+                    } catch (e: Exception) {
+                        if (e is kotlinx.coroutines.CancellationException) throw e
+                        SafeLog.w(TAG, "Failed updating album status to SENT in database", e)
+                    }
                     runOnMain { onAlbumStatusChanged("SENT") }
                 }
             } finally {

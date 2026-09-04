@@ -266,7 +266,9 @@ object ImageSanitizer {
         } catch (e: Exception) {
             SafeLog.e(TAG, "Failed to sanitize image EXIF metadata for $sourcePath", e)
             tempFile?.let {
-                try { it.delete() } catch (_: Exception) {}
+                try { it.delete() } catch (e: Exception) {
+                    SafeLog.d(TAG, "Failed deleting temp sanitized file: ${e.javaClass.simpleName}")
+                }
             }
             null
         } finally {

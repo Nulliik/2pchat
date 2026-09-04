@@ -131,10 +131,14 @@ internal class LocalPeerDiscovery(
     @Synchronized
     fun stop() {
         discoveryListener?.let {
-            try { manager.stopServiceDiscovery(it) } catch (_: Exception) { }
+            try { manager.stopServiceDiscovery(it) } catch (e: Exception) {
+                SafeLog.d(TAG, "stopServiceDiscovery failed: ${e.javaClass.simpleName}")
+            }
         }
         registrationListener?.let {
-            try { manager.unregisterService(it) } catch (_: Exception) { }
+            try { manager.unregisterService(it) } catch (e: Exception) {
+                SafeLog.d(TAG, "unregisterService failed: ${e.javaClass.simpleName}")
+            }
         }
         discoveryListener = null
         registrationListener = null

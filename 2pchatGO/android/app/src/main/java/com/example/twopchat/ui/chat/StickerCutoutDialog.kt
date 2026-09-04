@@ -166,7 +166,11 @@ fun StickerCutoutDialog(
                         originalBitmap = argb.copy(Bitmap.Config.ARGB_8888, false)
                         currentBitmap = argb
                     }
-                } catch (_: Throwable) {
+                } catch (e: Exception) {
+                    if (e is kotlinx.coroutines.CancellationException) throw e
+                    com.example.twopchat.logging.SafeLog.w("StickerCutoutDialog", "Failed to decode sticker bitmap", e)
+                } catch (e: OutOfMemoryError) {
+                    com.example.twopchat.logging.SafeLog.w("StickerCutoutDialog", "OOM while decoding sticker bitmap", e)
                 } finally {
                     if (sourceUri != null) fileToDecode.delete()
                 }

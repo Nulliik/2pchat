@@ -130,7 +130,10 @@ internal class BridgeEventDispatcher(
                         if (GroupChatCoordinator.handleIncoming(context, resolvedSender, json)) {
                             return@launch
                         }
-                    } catch (_: Throwable) {}
+                    } catch (e: Exception) {
+                        if (e is kotlinx.coroutines.CancellationException) throw e
+                        SafeLog.d(TAG, "Not a valid group control frame from $resolvedSender: ${e.javaClass.simpleName}")
+                    }
                 }
 
                 incomingRouter.routeIncomingMessage(

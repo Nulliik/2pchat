@@ -88,7 +88,9 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
                     for (helper in activeHelpers) {
                         try {
                             helper.safeWritableDatabase.let { DatabaseTuning.optimizeDatabase(it) }
-                        } catch (_: Exception) {}
+                        } catch (e: Exception) {
+                            SafeLog.d(TAG, "Database optimization skipped prior to close: ${e.javaClass.simpleName}")
+                        }
                         try {
                             helper.close()
                         } catch (e: Exception) {
@@ -348,7 +350,11 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
         if (oldVersion < 13) {
             try {
                 db.execSQL("ALTER TABLE $TABLE_PEERS ADD COLUMN $KEY_ABOUT_ME TEXT")
-            } catch (_: Exception) {}
+            } catch (e: android.database.sqlite.SQLiteException) {
+                // intentionally ignored: column KEY_ABOUT_ME may already exist from previous migration
+            } catch (e: Exception) {
+                SafeLog.w(TAG, "Failed adding KEY_ABOUT_ME to $TABLE_PEERS", e)
+            }
         }
     }
 
@@ -1397,7 +1403,9 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
             SecurityUtils.zeroize(pass)
             try {
                 source?.close()
-            } catch (_: Exception) { }
+            } catch (e: Exception) {
+                SafeLog.d(TAG, "Failed closing plaintext database source during migration cleanup: ${e.javaClass.simpleName}")
+            }
             if (tempFile.exists()) tempFile.delete()
         }
     }
