@@ -162,10 +162,12 @@ class GroupAttachmentStoreInstrumentedTest {
             )
         }
         val corruptFile = File(localRoot, firstBlock.ciphertextCid)
+        val originalTimestamp = corruptFile.lastModified()
         val tampered = corruptFile.readBytes().also {
             it[it.lastIndex / 2] = (it[it.lastIndex / 2].toInt() xor 0x40).toByte()
         }
         corruptFile.writeBytes(tampered)
+        assertTrue(corruptFile.setLastModified(originalTimestamp))
 
         assertEquals(
             listOf(firstBlock.ciphertextCid),

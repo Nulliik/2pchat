@@ -88,7 +88,8 @@ android {
     compileSdk = 37
     ndkVersion = "26.3.11579264"
     defaultConfig {
-        applicationId = "com.example.twopchat.go"
+        applicationId = providers.gradleProperty("groupQaApplicationId")
+            .orElse("com.example.twopchat.go").get()
         minSdk = 24
         targetSdk = 36
         versionCode = 24

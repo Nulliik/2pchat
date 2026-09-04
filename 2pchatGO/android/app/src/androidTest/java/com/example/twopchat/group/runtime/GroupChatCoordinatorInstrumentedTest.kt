@@ -61,10 +61,9 @@ class GroupChatCoordinatorInstrumentedTest {
 
         val kpg = KeyPairGenerator.getInstance("Ed25519", "AndroidKeyStore")
         kpg.initialize(
-            KeyGenParameterSpec.Builder(
-                ownerKeyAlias,
-                KeyProperties.PURPOSE_SIGN or KeyProperties.PURPOSE_VERIFY,
-            ).setDigests(KeyProperties.DIGEST_NONE).build(),
+            KeyGenParameterSpec.Builder(ownerKeyAlias, KeyProperties.PURPOSE_SIGN or KeyProperties.PURPOSE_VERIFY)
+                .setAlgorithmParameterSpec(java.security.spec.ECGenParameterSpec("ed25519"))
+                .setDigests(KeyProperties.DIGEST_NONE).build(),
         )
         ownerKeyPair = kpg.generateKeyPair()
         val rawOwnerPublicKey = ownerKeyPair.public.encoded.takeLast(32).toByteArray()
@@ -93,6 +92,20 @@ class GroupChatCoordinatorInstrumentedTest {
             .edit()
             .remove(P2PPreferences.peerFingerprint(ownerPeerName))
             .commit()
+    }
+
+    @Test
+    fun independentAndroidSignaturesVerifyInGo() {
+        val payload = "interop"
+        val signature = signAsOwner(payload)
+        assertTrue("Go rejected independent Android signature", NativeBridge.verifyGroupPayload(ownerSigningKey, payload, signature))
+        assertFalse(NativeBridge.verifyGroupPayload(ownerSigningKey, "$payload!", signature))
+    }
+
+    @Test
+    fun unicodeSignaturesUseTheSameUtf8TranscriptAcrossCores() {
+        val payload = "Группа 👥 — 日本語"
+        assertTrue(NativeBridge.verifyGroupPayload(ownerSigningKey, payload, signAsOwner(payload)))
     }
 
     @Test

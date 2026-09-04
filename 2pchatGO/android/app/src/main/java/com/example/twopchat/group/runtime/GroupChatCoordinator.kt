@@ -101,6 +101,9 @@ import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -122,8 +125,8 @@ object GroupChatCoordinator {
     private const val TAG = "GroupChatCoordinator"
     private const val INVITE_LIFETIME_MS = 7L * 24L * 60L * 60L * 1_000L
     private const val MAX_CLOCK_SKEW_MS = 5L * 60L * 1_000L
-    private const val SMALL_GROUP_FANOUT = 128
-    private const val LARGE_GROUP_REPLICAS = 16
+    private const val SMALL_GROUP_FANOUT = 32
+    private const val LARGE_GROUP_REPLICAS = 3
     private const val TIMELINE_PAGE_SIZE = 200
     private const val MAX_TIMELINE_WINDOW = 100_000
     private const val SYNC_CURSOR_CHUNK_SIZE = 256
@@ -158,8 +161,13 @@ object GroupChatCoordinator {
     private val timelineLimits = ConcurrentHashMap<String, Int>()
     private val lastReadReceiptTargets = ConcurrentHashMap<String, String>()
     private val activeGroupChats = ConcurrentHashMap.newKeySet<String>()
-    private val syncRequestScopes = ConcurrentHashMap<String, List<String>>()
-    private val syncFailureCounts = ConcurrentHashMap<String, Int>()
+    private data class PendingSync(
+        val groupId: String,
+        val peerDeviceId: String,
+        val response: CompletableDeferred<GroupSyncBatch>,
+    )
+    private val pendingSyncRequests = ConcurrentHashMap<String, PendingSync>()
+    private val syncingGroups = ConcurrentHashMap.newKeySet<String>()
     private val startupScheduled = AtomicBoolean(false)
     private val recoveryNeeded = AtomicBoolean(true)
     private val attachmentManifests = ConcurrentHashMap<String, GroupAttachmentManifest>()
@@ -261,6 +269,9 @@ object GroupChatCoordinator {
             controlAncestorCache.clear()
             activeGroupChats.clear()
             lastReadReceiptTargets.clear()
+            pendingSyncRequests.clear()
+            syncingGroups.clear()
+            lastSyncRequestAtMs.clear()
             scope = newRuntimeScope()
         }
     }
@@ -1137,6 +1148,7 @@ object GroupChatCoordinator {
                             controlHead,
                             group.currentEpoch,
                             epochKey.keyMaterial,
+                            onlyRecipientDeviceId = member.deviceId,
                         )
                     }
                 }
@@ -1181,14 +1193,10 @@ object GroupChatCoordinator {
 
     suspend fun runAntiEntropy(): Int {
         runCatching { android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND) }
-        // Repair memberships whose transport identity changed while the app was
-        // running.  Waiting for a fresh connection event left already-connected
-        // participants stuck until they re-entered the group or restarted both
-        // peers.
-        val context = applicationContext ?: return 0
-        listActiveGroupMemberPeerNames(context)
-            .filter { P2PMessageRelay.peerSessionStates[it] == true }
-            .forEach { onPeerConnected(context, it) }
+        // Actual connection callbacks requeue delivery and replay epoch keys.
+        // Replaying them on every timer tick resets outbox backoff and sends
+        // acknowledged key packages again for every connected member.
+        if (applicationContext == null) return 0
         if (recoveryNeeded.get()) {
             runCatching { reconcileDurableState() }
                 .onSuccess { recoveryNeeded.set(false) }
@@ -1525,14 +1533,20 @@ object GroupChatCoordinator {
         val displayName = json.optString("display_name").take(160)
         val isTyping = json.optBoolean("is_typing", false)
         val group = db().getGroup(groupId) ?: return
-        requireTransportMember(groupId, senderPeerName)
+        val sender = requireTransportMember(groupId, senderPeerName)
+        require(sender.deviceId == deviceId) { "typing identity does not match transport sender" }
         val member = db().getMember(groupId, deviceId) ?: return
         if (!member.isParticipating() || deviceId == group.localDeviceId) return
 
         val memberName = member.displayName.ifBlank { displayName.ifBlank { senderPeerName } }
         val groupTyping = typingMembersByGroup.computeIfAbsent(groupId) { ConcurrentHashMap() }
         if (isTyping) {
-            groupTyping[memberName] = System.currentTimeMillis()
+            val receivedAt = System.currentTimeMillis()
+            groupTyping[memberName] = receivedAt
+            scope.launch {
+                delay(5_000L)
+                if (groupTyping.remove(memberName, receivedAt)) refreshGroup(groupId)
+            }
         } else {
             groupTyping.remove(memberName)
         }
@@ -2158,9 +2172,10 @@ object GroupChatCoordinator {
         senderPeerName: String,
         json: JSONObject,
         acknowledge: Boolean,
+        refreshUi: Boolean = true,
     ) = controlMutex.withLock {
         emitMutex.withLock {
-            receiveEventLocked(senderPeerName, json, acknowledge)
+            receiveEventLocked(senderPeerName, json, acknowledge, refreshUi)
         }
     }
 
@@ -2168,6 +2183,7 @@ object GroupChatCoordinator {
         senderPeerName: String,
         json: JSONObject,
         acknowledge: Boolean,
+        refreshUi: Boolean,
     ) {
         val event = GroupWireProtocol.parseEvent(json)
         val group = db().getGroup(event.groupId) ?: return
@@ -2406,9 +2422,9 @@ object GroupChatCoordinator {
                 }
             }
         }
-        refreshGroup(group.groupId)
+        if (refreshUi) refreshGroup(group.groupId)
         if (
-            inserted &&
+            refreshUi && inserted &&
             event.authorDeviceId != group.localDeviceId &&
             group.groupId in activeGroupChats &&
             event.kind in setOf(
@@ -2486,38 +2502,12 @@ object GroupChatCoordinator {
 
     private suspend fun receiveSyncBatch(senderPeerName: String, json: JSONObject) {
         val batch = GroupControlFrames.parseSyncBatch(json)
-        val group = db().getGroup(batch.groupId) ?: return
-        requireTransportMember(group.groupId, senderPeerName)
-        var failedEvents = 0
-        batch.events.forEach { eventJson ->
-            if (runCatching {
-                    receiveEvent(senderPeerName, eventJson, acknowledge = false)
-                }.isFailure
-            ) {
-                failedEvents++
-            }
-        }
-        val retryKey = "${group.groupId}\u0000$senderPeerName"
-        if (batch.hasMore || failedEvents > 0) {
-            val member = db().listMembers(group.groupId).firstOrNull { it.peerName == senderPeerName }
-            val authorIds = syncRequestScopes.remove(batch.requestId)
-            if (member != null && authorIds != null) {
-                val failures = if (failedEvents > 0) {
-                    syncFailureCounts.merge(retryKey, 1, Int::plus) ?: 1
-                } else {
-                    0
-                }
-                if (failures <= 5) {
-                    if (failedEvents > 0) {
-                        delay(retryPolicy.delayForAttempt(failures - 1, retryKey))
-                    }
-                    sendSyncRequestChunk(group, member, authorIds)
-                }
-            }
-        } else {
-            syncRequestScopes.remove(batch.requestId)
-            syncFailureCounts.remove(retryKey)
-        }
+        val pending = pendingSyncRequests[batch.requestId] ?: return
+        require(batch.groupId == pending.groupId)
+        val sender = requireTransportMember(batch.groupId, senderPeerName)
+        require(sender.deviceId == pending.peerDeviceId)
+        require(batch.events.all { it.optString("group_id") == batch.groupId })
+        pending.response.complete(batch)
     }
 
     private suspend fun receiveKeyPackage(senderPeerName: String, json: JSONObject) {
@@ -4051,12 +4041,6 @@ object GroupChatCoordinator {
                     memberWasActiveAt(it, event.epoch)
             }
         if (candidates.size <= SMALL_GROUP_FANOUT) return
-        val primaryReplica = ReplicaPlanner.selectReplicas(
-            event.authorDeviceId,
-            candidates.map { ReplicaCandidate(DeviceId(it.deviceId)) },
-            LARGE_GROUP_REPLICAS,
-        ).firstOrNull()?.value
-        if (primaryReplica != group.localDeviceId) return
         selectRecipients(
             group,
             event.authorDeviceId,
@@ -4088,18 +4072,21 @@ object GroupChatCoordinator {
             members.map { ReplicaCandidate(DeviceId(it.deviceId)) },
             LARGE_GROUP_REPLICAS,
         ).mapTo(hashSetOf()) { it.value }
-        // Connected peers get real-time delivery in addition to the durable HRW
-        // replica set; disconnected peers repair through anti-entropy.
+        val successors = GroupRelayPlanner.successors(
+            group.localDeviceId,
+            members.filter { P2PMessageRelay.peerSessionStates[it.peerName] == true }
+                .map { it.deviceId },
+        ).toSet()
+        // Every receiver forwards once along the ring. Unlike truncating the
+        // roster, this reaches members beyond the first fanout window.
         return buildList {
             addAll(members.filter { it.deviceId in selectedIds })
             addAll(
                 members.filter {
-                    it.deviceId !in selectedIds &&
-                        P2PMessageRelay.peerSessionStates[it.peerName] == true
+                    it.deviceId !in selectedIds && it.deviceId in successors
                 },
             )
         }.filter { it.deviceId != group.localDeviceId }
-            .take(SMALL_GROUP_FANOUT)
     }
 
     private fun enqueueEpochKeyPackages(
@@ -4107,6 +4094,7 @@ object GroupChatCoordinator {
         controlHead: String,
         epoch: Long,
         secret: ByteArray,
+        onlyRecipientDeviceId: String? = null,
     ) {
         val group = db().getGroup(groupId) ?: return
         val local = localIdentity()
@@ -4114,7 +4102,8 @@ object GroupChatCoordinator {
             .filter {
                 it.isParticipating() &&
                     it.deviceId != group.localDeviceId &&
-                    memberWasActiveAt(it, epoch)
+                    memberWasActiveAt(it, epoch) &&
+                    (onlyRecipientDeviceId == null || it.deviceId == onlyRecipientDeviceId)
             }
             .forEach { recipient ->
                 val unsigned = GroupEpochKeyPackage(
@@ -4368,61 +4357,100 @@ object GroupChatCoordinator {
     }
 
     private fun sendSyncRequests(group: StoredGroup, peer: StoredGroupMember, force: Boolean = false) {
-        if (!force) {
-            val key = "${group.groupId}:${peer.deviceId}"
-            val now = System.currentTimeMillis()
-            val last = lastSyncRequestAtMs[key] ?: 0L
-            if (now - last < SYNC_REQUEST_COOLDOWN_MS) {
-                SafeLog.d(TAG, "Skipping redundant sync request to ${peer.peerName} for group ${group.groupId} (cooldown: ${now - last}ms < ${SYNC_REQUEST_COOLDOWN_MS}ms)")
-                return
-            }
-            lastSyncRequestAtMs[key] = now
-            if (lastSyncRequestAtMs.size > 1024) {
-                val cutoff = now - (SYNC_REQUEST_COOLDOWN_MS * 2)
-                lastSyncRequestAtMs.entries.removeIf { it.value < cutoff }
+        if (!syncingGroups.add(group.groupId)) return
+        scope.launch {
+            try {
+                val now = System.currentTimeMillis()
+                val peers = (db().listMembers(group.groupId).filter {
+                    it.isParticipating() && it.deviceId != group.localDeviceId &&
+                        P2PMessageRelay.peerSessionStates[it.peerName] == true
+                } + peer).distinctBy { it.deviceId }
+                    .sortedWith(compareBy<StoredGroupMember> {
+                        lastSyncRequestAtMs["${group.groupId}:${it.deviceId}"] ?: 0L
+                    }.thenBy { if (it.deviceId == group.ownerDeviceId) 0 else 1 })
+                for (candidate in peers) {
+                    val key = "${group.groupId}:${candidate.deviceId}"
+                    if (!force && now - (lastSyncRequestAtMs[key] ?: 0L) < SYNC_REQUEST_COOLDOWN_MS) continue
+                    lastSyncRequestAtMs[key] = now
+                    val currentGroup = db().getGroup(group.groupId) ?: break
+                    val complete = try {
+                        syncFromPeer(currentGroup, candidate)
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (error: Exception) {
+                        SafeLog.w(TAG, "Group sync peer failed: ${error.message}")
+                        false
+                    }
+                    if (complete) break
+                }
+                lastSyncRequestAtMs.entries.removeIf { now - it.value > SYNC_REQUEST_COOLDOWN_MS * 2 }
+            } finally {
+                syncingGroups.remove(group.groupId)
             }
         }
-        db().listMembers(group.groupId)
-            .map { it.deviceId }
-            .sorted()
-            .chunked(SYNC_CURSOR_CHUNK_SIZE)
-            .forEach { authorIds -> sendSyncRequestChunk(group, peer, authorIds) }
     }
 
-    private fun sendSyncRequestChunk(
-        group: StoredGroup,
-        peer: StoredGroupMember,
-        authorIds: List<String>,
-    ) {
-        val cursors = authorIds.associateWith { authorDeviceId ->
-            val baseline = db().getSyncCursor(group.groupId, authorDeviceId)
-                ?.lastAuthorSeq
-                ?: 0L
-            db().contiguousAuthorSequence(
-                group.groupId,
-                authorDeviceId,
-                baseline,
-            )
-        }
-        val requestId = UUID.randomUUID().toString()
-        syncRequestScopes[requestId] = authorIds
-        if (syncRequestScopes.size > 1_024) {
-            syncRequestScopes.keys.take(syncRequestScopes.size - 1_024).forEach {
-                syncRequestScopes.remove(it)
+    private suspend fun syncFromPeer(group: StoredGroup, peer: StoredGroupMember): Boolean {
+        for (authorIds in db().listMembers(group.groupId).map { it.deviceId }.sorted().chunked(SYNC_CURSOR_CHUNK_SIZE)) {
+            var stalledPages = 0
+            while (true) {
+                val before = syncCursors(group.groupId, authorIds)
+                val batch = sendSyncRequestChunk(group, peer, before) ?: return false
+                var failures = 0
+                for (event in batch.events) {
+                    try {
+                        receiveEvent(peer.peerName, event, acknowledge = false, refreshUi = false)
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                        failures++
+                    }
+                }
+                if (batch.events.isNotEmpty()) {
+                    refreshGroup(group.groupId)
+                    if (group.groupId in activeGroupChats) markReadAndSendReceipt(group.groupId)
+                }
+                if (!batch.hasMore && failures == 0) break
+                stalledPages = if (syncCursors(group.groupId, authorIds) == before) stalledPages + 1 else 0
+                if (stalledPages >= 3) return false
+                if (failures > 0 || stalledPages > 0) delay(1_000L)
             }
         }
+        return true
+    }
+
+    private fun syncCursors(groupId: String, authorIds: List<String>): Map<String, Long> =
+        authorIds.associateWith { authorDeviceId ->
+            val baseline = db().getSyncCursor(groupId, authorDeviceId)?.lastAuthorSeq ?: 0L
+            db().contiguousAuthorSequence(groupId, authorDeviceId, baseline)
+        }
+
+    private suspend fun sendSyncRequestChunk(
+        group: StoredGroup,
+        peer: StoredGroupMember,
+        cursors: Map<String, Long>,
+    ): GroupSyncBatch? {
+        if (!ensurePinnedGroupRoute(peer)) return null
+        val requestId = UUID.randomUUID().toString()
+        val response = CompletableDeferred<GroupSyncBatch>()
+        pendingSyncRequests[requestId] = PendingSync(group.groupId, peer.deviceId, response)
         val request = GroupSyncRequest(
             requestId = requestId,
             groupId = group.groupId,
             requesterDeviceId = group.localDeviceId,
             cursors = cursors,
         )
-        if (!ensurePinnedGroupRoute(peer)) return
-        P2PMessageRelay.sendGroupFrame(
-            requireNotNull(applicationContext),
-            peer.peerName,
-            GroupControlFrames.syncRequestToJson(request),
-        )
+        return try {
+            P2PMessageRelay.sendGroupFrame(
+                requireNotNull(applicationContext), peer.peerName,
+                GroupControlFrames.syncRequestToJson(request),
+            )
+            // Allow high-latency Tor sessions, then try the next member.
+            withTimeoutOrNull(15_000L) { response.await() }
+        } finally {
+            pendingSyncRequests.remove(requestId)
+            response.cancel()
+        }
     }
 
     private suspend fun refreshAllGroups() {

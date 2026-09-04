@@ -22,6 +22,7 @@ class E2EControlReceiver : BroadcastReceiver() {
             val result = JSONObject().put("action", intent.action.orEmpty())
             try {
                 when (intent.action) {
+                    "com.example.twopchat.debug.GROUP" -> GroupE2EControl.execute(context, intent, result)
                     ACTION_PROVISION -> {
                         val nickname = intent.getStringExtra(EXTRA_NICKNAME)?.trim().orEmpty()
                         require(nickname.isNotBlank()) { "nickname is required" }

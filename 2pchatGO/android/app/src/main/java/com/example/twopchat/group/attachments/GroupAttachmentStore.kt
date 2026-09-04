@@ -126,7 +126,11 @@ class GroupAttachmentStore(
 ) {
     private data class VerifiedBlockStamp(
         val length: Long,
-        val lastModifiedMs: Long,
+        val inode: Long,
+        val modifiedSeconds: Long,
+        val modifiedNanos: Long,
+        val changedSeconds: Long,
+        val changedNanos: Long,
     )
 
     private val verifiedBlocks = ConcurrentHashMap<String, VerifiedBlockStamp>()
@@ -169,7 +173,7 @@ class GroupAttachmentStore(
                         if (!destination.exists()) error("failed to commit attachment block")
                     }
                 }
-                verifiedBlocks[cid] = destination.verifiedStamp()
+                destination.verifiedStamp()?.let { verifiedBlocks[cid] = it }
                 blocks += GroupAttachmentBlock(
                     index = index,
                     ciphertextCid = cid,
@@ -261,7 +265,7 @@ class GroupAttachmentStore(
                 cid
             } else {
                 val stamp = file.verifiedStamp()
-                if (verifiedBlocks[cid] == stamp || verifyBlockFile(cid, file, stamp)) {
+                if ((stamp != null && verifiedBlocks[cid] == stamp) || verifyBlockFile(cid, file, stamp)) {
                     null
                 } else {
                     cid
@@ -279,7 +283,7 @@ class GroupAttachmentStore(
             file.delete()
             return null
         }
-        verifiedBlocks[normalized] = file.verifiedStamp()
+        file.verifiedStamp()?.let { verifiedBlocks[normalized] = it }
         return bytes
     }
 
@@ -301,7 +305,7 @@ class GroupAttachmentStore(
             temporary.delete()
             check(destination.exists()) { "failed to commit replicated attachment block" }
         }
-        verifiedBlocks[normalized] = destination.verifiedStamp()
+        destination.verifiedStamp()?.let { verifiedBlocks[normalized] = it }
     }
 
     fun discard(manifest: GroupAttachmentManifest) {
@@ -314,7 +318,7 @@ class GroupAttachmentStore(
     private fun verifyBlockFile(
         cid: String,
         file: File,
-        stamp: VerifiedBlockStamp,
+        stamp: VerifiedBlockStamp?,
     ): Boolean {
         val valid = file.inputStream().use { input ->
             val digest = MessageDigest.getInstance("SHA-256")
@@ -327,7 +331,7 @@ class GroupAttachmentStore(
             digest.digest().hex() == cid
         }
         if (valid) {
-            verifiedBlocks[cid] = stamp
+            if (stamp != null) verifiedBlocks[cid] = stamp
         } else {
             verifiedBlocks.remove(cid)
             file.delete()
@@ -335,8 +339,19 @@ class GroupAttachmentStore(
         return valid
     }
 
-    private fun File.verifiedStamp(): VerifiedBlockStamp =
-        VerifiedBlockStamp(length(), lastModified())
+    private fun File.verifiedStamp(): VerifiedBlockStamp? {
+        // Millisecond mtime + length can miss an in-place rewrite. Include
+        // inode and nanosecond ctime; old Android versions rehash instead.
+        if (android.os.Build.VERSION.SDK_INT < 27) return null
+        return runCatching {
+            val stat = android.system.Os.stat(absolutePath)
+            VerifiedBlockStamp(
+                stat.st_size, stat.st_ino,
+                stat.st_mtim.tv_sec, stat.st_mtim.tv_nsec,
+                stat.st_ctim.tv_sec, stat.st_ctim.tv_nsec,
+            )
+        }.getOrNull()
+    }
 
     private fun blockFile(cid: String): File = File(rootDirectory, cid)
 }
