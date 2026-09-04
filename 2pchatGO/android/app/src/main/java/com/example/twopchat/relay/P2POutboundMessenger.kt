@@ -737,7 +737,7 @@ internal class P2POutboundMessenger(
         }
     }
 
-    private fun processPendingControls(
+    private suspend fun processPendingControls(
         context: Context,
         db: ChatDatabaseHelper,
         peerName: String,

@@ -28,6 +28,20 @@ class GlobalApplication: Application(), YggStateReceiver.StateReceiver {
         super.onCreate()
         appContext = applicationContext
 
+        if (com.example.twopchat.BuildConfig.DEBUG) {
+            try {
+                android.os.StrictMode.setThreadPolicy(
+                    android.os.StrictMode.ThreadPolicy.Builder()
+                        .detectNetwork()
+                        .detectDiskReads()
+                        .detectDiskWrites()
+                        .detectCustomSlowCalls()
+                        .penaltyLog()
+                        .build()
+                )
+            } catch (_: Throwable) {}
+        }
+
         val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
             try {

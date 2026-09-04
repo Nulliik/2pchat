@@ -30,8 +30,8 @@ interface IP2PBridge {
         force: Boolean = false,
         rendezvousCode: String? = null,
     ): Boolean
-    fun sendP2pMessage(peerName: String, endpoint: String, payload: String, expectedFingerprint: String?): Boolean
-    fun sendFile(
+    suspend fun sendP2pMessage(peerName: String, endpoint: String, payload: String, expectedFingerprint: String?): Boolean
+    suspend fun sendFile(
         peerName: String,
         endpoint: String,
         filePath: String,
@@ -43,6 +43,7 @@ interface IP2PBridge {
         albumIndex: Int = -1,
         albumCount: Int = 0,
     ): Boolean
+    suspend fun awaitPeerOnline(peerFP: String, timeoutMs: Long): Boolean = false
     fun cancelFile(peerName: String, messageId: String, expectedFingerprint: String? = null): Boolean
     fun reconnectPeerSession(peerName: String, endpoint: String, fingerprint: String?): Boolean
     fun closePeerSession(peerName: String, expectedFingerprint: String?): Boolean

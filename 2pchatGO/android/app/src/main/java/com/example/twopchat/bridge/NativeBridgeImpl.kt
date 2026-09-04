@@ -1,7 +1,9 @@
 package com.example.twopchat.bridge
 
 import android.content.Context
+import android.os.Looper
 import androidx.annotation.VisibleForTesting
+import com.example.twopchat.BuildConfig
 import com.example.twopchat.logging.SafeLog
 import com.example.twopchat.NativeBridge
 import com.example.twopchat.relay.P2PMessageRelay
@@ -14,6 +16,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentLinkedQueue
 import kotlin.coroutines.CoroutineContext
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -22,10 +25,13 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -52,6 +58,9 @@ class NativeBridgeImpl(
         const val MAX_FLUSH_ATTEMPTS = 5
         const val FLUSH_RETRY_DELAY_MS = 250L
         const val MAX_PENDING_PER_PEER = 500
+        const val CONNECT_WAIT_MSG_MS = 800L
+        const val CONNECT_WAIT_FILE_MS = 4_000L
+        const val CONNECT_WAIT_FILE_ONION_MS = 12_000L
     }
 
     private var messageListener: BridgeMessageListener? = null
@@ -72,6 +81,7 @@ class NativeBridgeImpl(
     private val pendingMessages = ConcurrentHashMap<String, ConcurrentLinkedQueue<PendingMessage>>()
     private val flushJobs = ConcurrentHashMap<String, Job>()
     private val flushMutexes = ConcurrentHashMap<String, Mutex>()
+    private val connectWaiters = ConcurrentHashMap<String, CompletableDeferred<Unit>>()
 
     @VisibleForTesting
     internal var sendNow: (peerFP: String, msg: PendingMessage) -> Boolean = { peerFP, msg ->
@@ -85,6 +95,44 @@ class NativeBridgeImpl(
 
     @VisibleForTesting
     internal var flushRetryDelayMs: Long = FLUSH_RETRY_DELAY_MS
+
+    @VisibleForTesting
+    internal fun signalPeerConnected(peerFP: String) {
+        connectWaiters.remove(peerFP)?.complete(Unit)
+        resolvePeerName(peerFP)?.let { connectWaiters.remove(it)?.complete(Unit) }
+    }
+
+    override suspend fun awaitPeerOnline(peerFP: String, timeoutMs: Long): Boolean {
+        if (peerFP.isBlank()) return false
+        if (isPeerOnlineForFlush(peerFP) || isPeerOnline(peerFP, null)) return true
+        val waiter = connectWaiters.getOrPut(peerFP) { CompletableDeferred() }
+        return try {
+            withTimeoutOrNull(timeoutMs) {
+                while (!waiter.isCompleted) {
+                    if (isPeerOnlineForFlush(peerFP) || isPeerOnline(peerFP, null)) return@withTimeoutOrNull true
+                    try {
+                        withTimeoutOrNull(200) { waiter.await() }
+                    } catch (e: CancellationException) {
+                        currentCoroutineContext().ensureActive()
+                        return@withTimeoutOrNull false
+                    }
+                }
+                !waiter.isCancelled
+            } ?: false
+        } finally {
+            connectWaiters.remove(peerFP, waiter)
+        }
+    }
+
+    private fun assertNotMainThreadInDebug(op: String) {
+        if (BuildConfig.DEBUG) {
+            try {
+                if (Looper.myLooper() != null && Looper.myLooper() == Looper.getMainLooper()) {
+                    SafeLog.w(TAG, "$op called on main thread", Throwable())
+                }
+            } catch (_: Throwable) {}
+        }
+    }
 
     init {
         NativeBridge.initialize()
@@ -118,43 +166,45 @@ class NativeBridgeImpl(
     private fun resolvePeerName(fingerprint: String): String? {
         if (fingerprint.isBlank()) return null
         peerNameMap[fingerprint]?.let { return it }
-        val appContext = com.example.twopchat.yggdrasil.GlobalApplication.appContext
-        var name = P2PPreferences.findPeerNameByFingerprint(appContext, fingerprint)
-        if (name.isNullOrBlank()) {
-            name = try {
-                com.example.twopchat.data.ChatDatabaseHelper.getInstance(appContext).getPeerNameByFingerprint(fingerprint)
-            } catch (_: Throwable) {
+        return try {
+            val appContext = com.example.twopchat.yggdrasil.GlobalApplication.appContext
+            var name = P2PPreferences.findPeerNameByFingerprint(appContext, fingerprint)
+            if (name.isNullOrBlank()) {
+                name = com.example.twopchat.data.ChatDatabaseHelper.getInstance(appContext).getPeerNameByFingerprint(fingerprint)
+            }
+            if (!name.isNullOrBlank()) {
+                peerNameMap[fingerprint] = name
+                nameToFpMap[name] = fingerprint
+                NativeBridge.updatePeerNameMapping(fingerprint, name)
+                name
+            } else {
                 null
             }
+        } catch (_: Throwable) {
+            null
         }
-        if (!name.isNullOrBlank()) {
-            peerNameMap[fingerprint] = name
-            nameToFpMap[name] = fingerprint
-            NativeBridge.updatePeerNameMapping(fingerprint, name)
-            return name
-        }
-        return null
     }
 
     private fun resolveFingerprint(peerName: String): String? {
         if (peerName.isBlank()) return null
         nameToFpMap[peerName]?.let { return it }
-        val appContext = com.example.twopchat.yggdrasil.GlobalApplication.appContext
-        var fp = P2PPreferences.prefs(appContext).getString(P2PPreferences.peerFingerprint(peerName), null)
-        if (fp.isNullOrBlank()) {
-            fp = try {
-                com.example.twopchat.data.ChatDatabaseHelper.getInstance(appContext).getPeerFingerprint(peerName)
-            } catch (_: Throwable) {
+        return try {
+            val appContext = com.example.twopchat.yggdrasil.GlobalApplication.appContext
+            var fp = P2PPreferences.prefs(appContext).getString(P2PPreferences.peerFingerprint(peerName), null)
+            if (fp.isNullOrBlank()) {
+                fp = com.example.twopchat.data.ChatDatabaseHelper.getInstance(appContext).getPeerFingerprint(peerName)
+            }
+            if (!fp.isNullOrBlank()) {
+                nameToFpMap[peerName] = fp
+                peerNameMap[fp] = peerName
+                NativeBridge.updatePeerNameMapping(fp, peerName)
+                fp
+            } else {
                 null
             }
+        } catch (_: Throwable) {
+            null
         }
-        if (!fp.isNullOrBlank()) {
-            nameToFpMap[peerName] = fp
-            peerNameMap[fp] = peerName
-            NativeBridge.updatePeerNameMapping(fp, peerName)
-            return fp
-        }
-        return null
     }
 
     private fun setupNativeCallbacks() {
@@ -196,6 +246,10 @@ class NativeBridgeImpl(
             flushPendingMessages(peerFP)
             if (resolvedName != peerFP) {
                 flushPendingMessages(resolvedName)
+            }
+            signalPeerConnected(peerFP)
+            if (resolvedName != peerFP) {
+                signalPeerConnected(resolvedName)
             }
         }
 
@@ -392,7 +446,8 @@ class NativeBridgeImpl(
         return true
     }
 
-    override fun sendP2pMessage(peerName: String, endpoint: String, payload: String, expectedFingerprint: String?): Boolean {
+    override suspend fun sendP2pMessage(peerName: String, endpoint: String, payload: String, expectedFingerprint: String?): Boolean = withContext(Dispatchers.IO) {
+        assertNotMainThreadInDebug("sendP2pMessage")
         val resolvedFP = expectedFingerprint?.takeIf { it.isNotBlank() }
             ?: resolveFingerprint(peerName)
             ?: nameToFpMap[peerName]
@@ -402,7 +457,7 @@ class NativeBridgeImpl(
         // 1. Attempt direct send through Go Core first. Go Core is the authoritative single source of truth for active sessions.
         val msgId = NativeBridge.sendMessage(target, payload)
         if (msgId != null) {
-            return true
+            return@withContext true
         }
 
         // 2. If Go Core has no active session, resolve endpoints and initiate connection
@@ -430,28 +485,20 @@ class NativeBridgeImpl(
                 NativeBridge.connectPeer(fullEndpoint, resolvedFP.orEmpty())
             }
 
-            // If a direct LAN/Wi-Fi endpoint is available, do a short fast-probe check (up to 800ms)
+            // If a direct LAN/Wi-Fi endpoint is available, do a short non-blocking event-driven wait (up to 800ms)
             if (hasDirect) {
-                val deadline = System.currentTimeMillis() + 800L
-                while (System.currentTimeMillis() < deadline) {
-                    if (isPeerOnline(peerName, resolvedFP)) {
-                        flushPendingMessages(resolvedFP ?: targetKey)
-                        return true
-                    }
-                    try {
-                        Thread.sleep(100L)
-                    } catch (_: InterruptedException) {
-                        break
-                    }
+                if (awaitPeerOnline(resolvedFP ?: targetKey, CONNECT_WAIT_MSG_MS)) {
+                    flushPendingMessages(resolvedFP ?: targetKey)
+                    return@withContext true
                 }
             }
 
             // Message is safely queued in pendingMessages and will be flushed upon handshake completion.
             // Returning true confirms successful dispatch to the delivery subsystem.
-            return true
+            return@withContext true
         }
 
-        return false
+        return@withContext false
     }
 
     fun enqueuePending(target: String, msg: PendingMessage) {
@@ -533,7 +580,7 @@ class NativeBridgeImpl(
         return queue.size
     }
 
-    override fun sendFile(
+    override suspend fun sendFile(
         peerName: String,
         endpoint: String,
         filePath: String,
@@ -544,7 +591,8 @@ class NativeBridgeImpl(
         albumId: String,
         albumIndex: Int,
         albumCount: Int,
-    ): Boolean {
+    ): Boolean = withContext(Dispatchers.IO) {
+        assertNotMainThreadInDebug("sendFile")
         val resolvedFP = expectedFingerprint?.takeIf { it.isNotBlank() }
             ?: resolveFingerprint(peerName)
             ?: nameToFpMap[peerName]
@@ -571,15 +619,8 @@ class NativeBridgeImpl(
                 NativeBridge.connectPeer(fullEndpoint, resolvedFP.orEmpty())
             }
 
-            val waitBudgetMs = if (hasOnion) 12_000L else 4_000L
-            val pollIntervalMs = 150L
-            val deadline = System.currentTimeMillis() + waitBudgetMs
-            while (System.currentTimeMillis() < deadline) {
-                if (isPeerOnline(peerName, resolvedFP)) {
-                    break
-                }
-                try { Thread.sleep(pollIntervalMs) } catch (_: InterruptedException) { break }
-            }
+            val waitBudgetMs = if (hasOnion) CONNECT_WAIT_FILE_ONION_MS else CONNECT_WAIT_FILE_MS
+            awaitPeerOnline(resolvedFP ?: target, waitBudgetMs)
         }
 
         val fileName = File(filePath).name
@@ -595,7 +636,7 @@ class NativeBridgeImpl(
             albumIndex,
             albumCount,
         )
-        return resId != null
+        return@withContext resId != null
     }
 
     override fun updateTrackers(trackers: List<String>): Boolean {
@@ -761,6 +802,10 @@ class NativeBridgeImpl(
             job.cancel()
         }
         flushJobs.clear()
+        for (waiter in connectWaiters.values) {
+            waiter.cancel()
+        }
+        connectWaiters.clear()
         NativeBridge.stopDiscovery()
         NativeBridge.stopListener()
         onlinePeers.clear()
