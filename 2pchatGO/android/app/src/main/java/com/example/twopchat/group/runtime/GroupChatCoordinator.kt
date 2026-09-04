@@ -188,6 +188,8 @@ object GroupChatCoordinator {
     private val pendingEpochEvents = ConcurrentHashMap<String, MutableList<PendingGroupEventRecord>>()
     private val PENDING_BUFFER_TTL_MS = 5 * 60 * 1000L
     private val MAX_PENDING_BUFFER_PER_GROUP = 50
+    private val lastSyncRequestAtMs = ConcurrentHashMap<String, Long>()
+    private const val SYNC_REQUEST_COOLDOWN_MS = 5_000L
 
     private val _summaries = MutableStateFlow<List<GroupSummary>>(emptyList())
     val summaries: StateFlow<List<GroupSummary>> = _summaries.asStateFlow()
@@ -2243,7 +2245,7 @@ object GroupChatCoordinator {
         require(event.expiresAtMs == 0L || event.expiresAtMs >= now)
         val epochKey = db().getEpochKey(group.groupId, event.epoch)
             ?: run {
-                SafeLog.i(TAG, "Buffering out-of-order group event ${event.eventId} (epoch ${event.epoch}) in group ${group.groupId} waiting for epoch key")
+                SafeLog.d(TAG, "Buffering out-of-order group event ${event.eventId} (epoch ${event.epoch}) in group ${group.groupId} waiting for epoch key")
                 bufferPendingGroupEvent(group.groupId, senderPeerName, json, event)
                 val author = db().getMember(group.groupId, event.authorDeviceId)
                 if (author != null) {
@@ -2529,7 +2531,7 @@ object GroupChatCoordinator {
         require(keyPackage.verify())
         val control = db().getEvent(group.groupId, keyPackage.controlHead)
         if (control == null) {
-            SafeLog.i(
+            SafeLog.d(
                 TAG,
                 "Buffering out-of-order key package for group ${group.groupId} epoch ${keyPackage.epoch} waiting for control event ${keyPackage.controlHead}",
             )
@@ -4365,7 +4367,21 @@ object GroupChatCoordinator {
         )
     }
 
-    private fun sendSyncRequests(group: StoredGroup, peer: StoredGroupMember) {
+    private fun sendSyncRequests(group: StoredGroup, peer: StoredGroupMember, force: Boolean = false) {
+        if (!force) {
+            val key = "${group.groupId}:${peer.deviceId}"
+            val now = System.currentTimeMillis()
+            val last = lastSyncRequestAtMs[key] ?: 0L
+            if (now - last < SYNC_REQUEST_COOLDOWN_MS) {
+                SafeLog.d(TAG, "Skipping redundant sync request to ${peer.peerName} for group ${group.groupId} (cooldown: ${now - last}ms < ${SYNC_REQUEST_COOLDOWN_MS}ms)")
+                return
+            }
+            lastSyncRequestAtMs[key] = now
+            if (lastSyncRequestAtMs.size > 1024) {
+                val cutoff = now - (SYNC_REQUEST_COOLDOWN_MS * 2)
+                lastSyncRequestAtMs.entries.removeIf { it.value < cutoff }
+            }
+        }
         db().listMembers(group.groupId)
             .map { it.deviceId }
             .sorted()

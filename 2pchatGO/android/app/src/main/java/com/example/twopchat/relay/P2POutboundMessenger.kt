@@ -136,7 +136,7 @@ internal class P2POutboundMessenger(
             lock.withLock {
                 try {
                     val fingerprint = P2PPreferences.prefs(context).getString(P2PPreferences.peerFingerprint(peerName), null).orEmpty()
-                    log(context, "Sending secure message via active P2P bridge", "INFO", null)
+                    log(context, "Sending secure message via active P2P bridge", "DEBUG", null)
                     val success = getBridge(context).sendP2pMessage(peerName, endpoint, text, fingerprint)
                     if (success) {
                         peerFailureBackoffMs.remove(peerKey)
@@ -155,7 +155,7 @@ internal class P2POutboundMessenger(
                         val jitterFactor = java.util.concurrent.ThreadLocalRandom.current().nextDouble(0.85, 1.15)
                         peerFailureBackoffMs[peerKey] = (nextBackoff * jitterFactor).toLong()
                     }
-                    log(context, "Secure message send: ${if (success) "SUCCESS" else "FAILED"}", "INFO", null)
+                    log(context, "Secure message send: ${if (success) "SUCCESS" else "FAILED"}", if (success) "DEBUG" else "WARN", null)
                     postResult(onResult, success)
                 } catch (error: Exception) {
                     if (error is CancellationException) throw error

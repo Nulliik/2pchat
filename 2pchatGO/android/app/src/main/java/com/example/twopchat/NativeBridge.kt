@@ -483,7 +483,6 @@ object NativeBridge {
 
     @JvmStatic
     fun onPeerDiscovered(infoHashHex: String, endpoint: String, source: String) {
-        SafeLog.i(TAG, "[P2P-Discovery] Discovered peer (source: $source)")
         SafeLog.d(TAG, "[P2P-Discovery] Discovered peer for ${SafeLog.fp(infoHashHex)} @ $endpoint (source: $source)")
         bridgeScope.launch {
             try {

@@ -1366,7 +1366,7 @@ object P2PMessageRelay {
                 }
 
                 override fun onMessageReceived(sender: String, text: String) {
-                    log(appContext, "Incoming secure P2P message (${text.toByteArray().size} bytes)")
+                    log(appContext, "Incoming secure P2P message (${text.toByteArray().size} bytes)", "DEBUG")
                     val sharedPrefs = P2PPreferences.prefs(appContext)
                     var resolvedSender = sender
                     if (sender.length > 30 || !sender.all { it.isLetterOrDigit() || it == '_' }) {
