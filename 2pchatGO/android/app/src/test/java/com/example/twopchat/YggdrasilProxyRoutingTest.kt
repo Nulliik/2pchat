@@ -1,6 +1,7 @@
 package com.example.twopchat
 
 import com.example.twopchat.config.P2PPreferences
+import com.example.twopchat.yggdrasil.YggdrasilUserSpaceStack
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -141,5 +142,39 @@ class YggdrasilProxyRoutingTest {
         val vpnSocket = resolveYggdrasilTargetSocket("[200:abc::1]:50001", P2PPreferences.YggdrasilMode.VPN)
         assertEquals("200:abc::1", vpnSocket.hostString)
         assertEquals(50001, vpnSocket.port)
+    }
+
+    @Test
+    fun testTcpPayloadSegmentationForAvatarProfileShare() {
+        // The user's log exhibited session drops with 14,725-byte profile avatar payload:
+        // "Sending profile information to doggy (length: 14725)"
+        val largePayload = ByteArray(14725) { (it % 256).toByte() }
+
+        val segments = YggdrasilUserSpaceStack.segmentPayload(largePayload, YggdrasilUserSpaceStack.MAX_TCP_PAYLOAD)
+
+        // 14725 / 1200 = 12 full segments (12 * 1200 = 14400) + 1 remainder (325 bytes) = 13 segments
+        assertEquals(13, segments.size)
+
+        var totalBytes = 0
+        val reassembled = ByteArray(14725)
+
+        for (seg in segments) {
+            assertTrue("Segment size must be <= MAX_TCP_PAYLOAD (1200)", seg.size <= YggdrasilUserSpaceStack.MAX_TCP_PAYLOAD)
+            // IPv6 header (40) + TCP header (20) + payload (<= 1200) = total packet <= 1260 bytes <= 1280 Yggdrasil link MTU
+            val totalPacketLen = 40 + 20 + seg.size
+            assertTrue("Total IPv6 packet must not exceed Yggdrasil MTU (1280)", totalPacketLen <= 1280)
+
+            System.arraycopy(seg, 0, reassembled, totalBytes, seg.size)
+            totalBytes += seg.size
+        }
+
+        assertEquals(14725, totalBytes)
+        org.junit.Assert.assertArrayEquals(largePayload, reassembled)
+
+        // Test boundary cases
+        assertTrue(YggdrasilUserSpaceStack.segmentPayload(ByteArray(0)).isEmpty())
+        val singleSeg = YggdrasilUserSpaceStack.segmentPayload(ByteArray(500))
+        assertEquals(1, singleSeg.size)
+        assertEquals(500, singleSeg[0].size)
     }
 }

@@ -2511,16 +2511,16 @@ object P2PMessageRelay {
                     return true
                 }
 
-                override fun onSessionClosed(peerName: String, fingerprint: String) {
+                override fun onSessionClosed(peerName: String, fingerprint: String, reason: String) {
                     val resolvedPeerName = canonicalPeerName(appContext, peerName, fingerprint)
                     if (getBridge(appContext).isPeerOnline(resolvedPeerName, fingerprint)) {
-                        log(appContext, "Secure session closed but active connection still online for $resolvedPeerName")
+                        log(appContext, "Secure session closed but active connection still online for $resolvedPeerName (reason: $reason)")
                         return
                     }
-                    log(appContext, "Secure Double Ratchet session closed")
-                    clearPeerPresenceImmediately(resolvedPeerName)
+                    log(appContext, "Secure Double Ratchet session closed (peer: $resolvedPeerName, reason: $reason)")
+                    schedulePeerOffline(resolvedPeerName)
                     if (fingerprint.isNotBlank() && fingerprint != resolvedPeerName) {
-                        clearPeerPresenceImmediately(fingerprint)
+                        schedulePeerOffline(fingerprint)
                     }
                 }
 

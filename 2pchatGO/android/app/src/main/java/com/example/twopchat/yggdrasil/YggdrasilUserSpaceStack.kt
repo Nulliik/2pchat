@@ -60,6 +60,7 @@ class YggdrasilUserSpaceStack(
 
     private val activeSessions = ConcurrentHashMap<String, StreamSession>()
     private val pendingHandshakes = ConcurrentHashMap<String, java.util.concurrent.CompletableFuture<Boolean>>()
+    private val pendingInboundSessions = ConcurrentHashMap.newKeySet<String>()
     private val portCounter = AtomicInteger(40000)
     private data class UdpRelaySession(val client: InetSocketAddress)
     private val udpSessions = ConcurrentHashMap<Int, UdpRelaySession>()
@@ -125,6 +126,7 @@ class YggdrasilUserSpaceStack(
         activeSessions.clear()
         pendingHandshakes.values.forEach { it.complete(false) }
         pendingHandshakes.clear()
+        pendingInboundSessions.clear()
         udpSessions.clear()
         udpClientPorts.clear()
 
@@ -282,18 +284,23 @@ class YggdrasilUserSpaceStack(
                 val read = input.read(buf)
                 if (read <= 0) break
 
-                val chunk = buf.copyOf(read)
-                val currentSeq = session.seqSent.getAndAdd(read.toLong())
-                sendTcpPacket(
-                    srcIp = localIp,
-                    dstIp = targetIpBytes,
-                    srcPort = localPort,
-                    dstPort = targetPort,
-                    seq = currentSeq,
-                    ack = session.seqRecv.get(),
-                    flags = 0x18, // PSH | ACK
-                    payload = chunk
-                )
+                var offset = 0
+                while (offset < read) {
+                    val segLen = minOf(read - offset, MAX_TCP_PAYLOAD)
+                    val chunk = buf.copyOfRange(offset, offset + segLen)
+                    val currentSeq = session.seqSent.getAndAdd(segLen.toLong())
+                    sendTcpPacket(
+                        srcIp = localIp,
+                        dstIp = targetIpBytes,
+                        srcPort = localPort,
+                        dstPort = targetPort,
+                        seq = currentSeq,
+                        ack = session.seqRecv.get(),
+                        flags = 0x18, // PSH | ACK
+                        payload = chunk
+                    )
+                    offset += segLen
+                }
             }
 
             // Send FIN
@@ -456,8 +463,15 @@ class YggdrasilUserSpaceStack(
 
         // Inbound connection from mesh peer destined to local app port
         if (isSyn && !isAck) {
+            if (activeSessions.containsKey(sessionKeyInbound) || !pendingInboundSessions.add(sessionKeyInbound)) {
+                return
+            }
             thread(name = "Ygg-Inbound-Worker") {
-                handleInboundMeshConnection(srcIp, srcPort, dstPort, seq)
+                try {
+                    handleInboundMeshConnection(srcIp, srcPort, dstPort, seq)
+                } finally {
+                    pendingInboundSessions.remove(sessionKeyInbound)
+                }
             }
         }
     }
@@ -508,18 +522,23 @@ class YggdrasilUserSpaceStack(
                 val read = input.read(buf)
                 if (read <= 0) break
 
-                val chunk = buf.copyOf(read)
-                val currentSeq = session.seqSent.getAndAdd(read.toLong())
-                sendTcpPacket(
-                    srcIp = localIp,
-                    dstIp = srcIp,
-                    srcPort = dstPort,
-                    dstPort = srcPort,
-                    seq = currentSeq,
-                    ack = session.seqRecv.get(),
-                    flags = 0x18, // PSH | ACK
-                    payload = chunk
-                )
+                var offset = 0
+                while (offset < read) {
+                    val segLen = minOf(read - offset, MAX_TCP_PAYLOAD)
+                    val chunk = buf.copyOfRange(offset, offset + segLen)
+                    val currentSeq = session.seqSent.getAndAdd(segLen.toLong())
+                    sendTcpPacket(
+                        srcIp = localIp,
+                        dstIp = srcIp,
+                        srcPort = dstPort,
+                        dstPort = srcPort,
+                        seq = currentSeq,
+                        ack = session.seqRecv.get(),
+                        flags = 0x18, // PSH | ACK
+                        payload = chunk
+                    )
+                    offset += segLen
+                }
             }
 
             // Send FIN
@@ -544,6 +563,7 @@ class YggdrasilUserSpaceStack(
                 flags = 0x14 // RST | ACK
             )
         } finally {
+            pendingInboundSessions.remove(sessionKey)
             activeSessions.remove(sessionKey)
         }
     }
@@ -670,4 +690,27 @@ class YggdrasilUserSpaceStack(
 
     private fun isYggdrasilAddress(address: ByteArray): Boolean =
         address.size == 16 && (address[0].toInt() and 0xFF) in 0x02..0x03
+
+    companion object {
+        /**
+         * Maximum TCP segment payload size for Yggdrasil mesh link.
+         * Minimum IPv6 MTU is 1280 bytes.
+         * 40 bytes (IPv6 header) + 20 bytes (TCP header) + 1200 bytes (payload) = 1260 bytes <= 1280 MTU.
+         * Prevents dropping packets exceeding link MTU when sending avatars or large metadata frames.
+         */
+        const val MAX_TCP_PAYLOAD = 1200
+
+        fun segmentPayload(data: ByteArray, maxSegSize: Int = MAX_TCP_PAYLOAD): List<ByteArray> {
+            if (data.isEmpty()) return emptyList()
+            if (data.size <= maxSegSize) return listOf(data)
+            val segments = mutableListOf<ByteArray>()
+            var offset = 0
+            while (offset < data.size) {
+                val len = minOf(data.size - offset, maxSegSize)
+                segments.add(data.copyOfRange(offset, offset + len))
+                offset += len
+            }
+            return segments
+        }
+    }
 }

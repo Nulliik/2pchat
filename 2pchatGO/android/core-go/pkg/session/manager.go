@@ -305,6 +305,15 @@ func (m *Manager) handleIncomingConnection(conn net.Conn) {
 // ConnectPeer dials a remote peer endpoint and establishes an encrypted X3DH session.
 // Handles single endpoints as well as comma-separated candidate lists (e.g. LAN, IPv6, and .onion).
 func (m *Manager) ConnectPeer(endpoint, expectedFingerprint string) (*Session, error) {
+	if expectedFingerprint != "" {
+		m.mu.RLock()
+		existing, ok := m.sessions[expectedFingerprint]
+		m.mu.RUnlock()
+		if ok && existing != nil && existing.IsOnline() {
+			return existing, nil
+		}
+	}
+
 	rawEndpoints := strings.Split(endpoint, ",")
 	var candidates []string
 	hasTor := false

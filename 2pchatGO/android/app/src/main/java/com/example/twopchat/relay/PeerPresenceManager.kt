@@ -57,6 +57,16 @@ internal class PeerPresenceManager {
         }
     }
 
+    fun schedulePeerOffline(peerName: String) {
+        val version = peerPresenceVersions.advance(peerName)
+        P2PMessageRelay.runDelayedOnMain(OFFLINE_UI_GRACE_MS) {
+            if (peerPresenceVersions.current(peerName) != version) return@runDelayedOnMain
+            peerConnectionTransports.remove(peerName)
+            peerSessionStates.remove(peerName)
+            peerRttMs.remove(peerName)
+        }
+    }
+
     fun schedulePeerOfflineIfCurrent(peerName: String, expectedVersion: Long) {
         val version = peerPresenceVersions.advanceIfCurrent(peerName, expectedVersion) ?: return
         P2PMessageRelay.runDelayedOnMain(OFFLINE_UI_GRACE_MS) {

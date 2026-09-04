@@ -271,7 +271,7 @@ class NativeBridgeImpl(
             lastAuthenticatedInboundAt.remove(peerFP)
             activeEndpoints.remove(peerFP)
             activeTransports.remove(peerFP)
-            sessionListener?.onSessionClosed(resolvedName, peerFP)
+            sessionListener?.onSessionClosed(resolvedName, peerFP, reason)
         }
 
         NativeBridge.onMessageReceivedListener = message@{ peerFP, payload, messageID ->

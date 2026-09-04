@@ -206,9 +206,18 @@ func TestManagerConnectionAndMessaging(t *testing.T) {
 	bobFP := crypto.Fingerprint(bobId.Public.Bytes())
 
 	// Alice connects to Bob
-	_, err := aliceMgr.ConnectPeer(bobEndpoint, bobFP)
+	sess1, err := aliceMgr.ConnectPeer(bobEndpoint, bobFP)
 	if err != nil {
 		t.Fatalf("Alice ConnectPeer failed: %v", err)
+	}
+
+	// Verify ConnectPeer fast-paths and returns existing online session without redialing
+	sess2, err := aliceMgr.ConnectPeer(bobEndpoint, bobFP)
+	if err != nil {
+		t.Fatalf("Alice secondary ConnectPeer failed: %v", err)
+	}
+	if sess2 != sess1 {
+		t.Fatalf("Expected secondary ConnectPeer to return existing session %p, got %p", sess1, sess2)
 	}
 
 	select {

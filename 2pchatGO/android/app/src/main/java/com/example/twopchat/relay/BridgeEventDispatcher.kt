@@ -27,7 +27,7 @@ internal class BridgeEventDispatcher(
     private val TAG = "BridgeEventDispatcher"
 
     var onSessionEstablishedHook: ((peerName: String, peerFP: String, endpoint: String) -> Unit)? = null
-    var onSessionClosedHook: ((peerName: String, peerFP: String) -> Unit)? = null
+    var onSessionClosedHook: ((peerName: String, peerFP: String, reason: String) -> Unit)? = null
     var onPeerDiscoveredHook: ((infoHash: String, endpoint: String, source: String) -> Unit)? = null
 
     override fun onSessionEstablished(
@@ -63,15 +63,17 @@ internal class BridgeEventDispatcher(
         return true
     }
 
-    override fun onSessionClosed(peerName: String, fingerprint: String) {
+    override fun onSessionClosed(peerName: String, fingerprint: String, reason: String) {
         scope.launch(Dispatchers.Default) {
             try {
-                SafeLog.i(TAG, "Session closed with ${SafeLog.fp(fingerprint)}")
-                presenceManager.clearPeerPresenceImmediately(peerName)
+                val context = com.example.twopchat.yggdrasil.GlobalApplication.appContext
+                SafeLog.i(TAG, "Session closed with ${SafeLog.fp(fingerprint)}, reason: $reason")
+                AppLog.append(context, "Session closed with ${SafeLog.fp(fingerprint)}, reason: $reason\n")
+                presenceManager.schedulePeerOffline(peerName)
                 if (fingerprint.isNotBlank() && fingerprint != peerName) {
-                    presenceManager.clearPeerPresenceImmediately(fingerprint)
+                    presenceManager.schedulePeerOffline(fingerprint)
                 }
-                onSessionClosedHook?.invoke(peerName, fingerprint)
+                onSessionClosedHook?.invoke(peerName, fingerprint, reason)
             } catch (e: Throwable) {
                 SafeLog.e(TAG, "Error in onSessionClosed", e)
             }
