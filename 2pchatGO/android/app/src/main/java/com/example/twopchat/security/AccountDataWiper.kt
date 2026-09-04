@@ -30,6 +30,7 @@ object AccountDataWiper {
             "close encrypted chat databases" to {
                 ChatDatabaseHelper.closeAllConnections()
                 SecureStorage.clearDbPassphrase()
+                SecureStorage.clearGoStorageKey(appContext)
                 true
             },
             "clear in-memory account state" to {

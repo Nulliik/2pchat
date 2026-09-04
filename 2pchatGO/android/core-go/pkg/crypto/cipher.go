@@ -134,3 +134,45 @@ func ChaCha20Poly1305Decrypt(key, nonce, ciphertext, additionalData []byte) ([]b
 	}
 	return aead.Open(nil, nonce, ciphertext, additionalData)
 }
+
+// XChaCha20Poly1305Encrypt encrypts plaintext using XChaCha20-Poly1305 AEAD with a random 24-byte nonce.
+// Returns [24-byte Nonce] + [Ciphertext + 16-byte Poly1305 Tag].
+func XChaCha20Poly1305Encrypt(key, plaintext, additionalData []byte) ([]byte, error) {
+	if len(key) != chacha20poly1305.KeySize {
+		return nil, fmt.Errorf("invalid XChaCha20-Poly1305 key size: expected %d, got %d", chacha20poly1305.KeySize, len(key))
+	}
+	aead, err := chacha20poly1305.NewX(key)
+	if err != nil {
+		return nil, fmt.Errorf("failed to instantiate XChaCha20-Poly1305: %w", err)
+	}
+
+	nonce := make([]byte, chacha20poly1305.NonceSizeX)
+	if _, err := rand.Read(nonce); err != nil {
+		return nil, fmt.Errorf("failed to generate random nonce: %w", err)
+	}
+
+	out := make([]byte, chacha20poly1305.NonceSizeX, chacha20poly1305.NonceSizeX+len(plaintext)+aead.Overhead())
+	copy(out, nonce)
+	return aead.Seal(out, nonce, plaintext, additionalData), nil
+}
+
+// XChaCha20Poly1305Decrypt decrypts a payload produced by XChaCha20Poly1305Encrypt.
+// Expects [24-byte Nonce] + [Ciphertext + 16-byte Poly1305 Tag].
+func XChaCha20Poly1305Decrypt(key, payload, additionalData []byte) ([]byte, error) {
+	if len(key) != chacha20poly1305.KeySize {
+		return nil, fmt.Errorf("invalid XChaCha20-Poly1305 key size: expected %d, got %d", chacha20poly1305.KeySize, len(key))
+	}
+	if len(payload) < chacha20poly1305.NonceSizeX+chacha20poly1305.Overhead {
+		return nil, errors.New("payload too short for XChaCha20-Poly1305")
+	}
+
+	aead, err := chacha20poly1305.NewX(key)
+	if err != nil {
+		return nil, fmt.Errorf("failed to instantiate XChaCha20-Poly1305: %w", err)
+	}
+
+	nonce := payload[:chacha20poly1305.NonceSizeX]
+	ciphertext := payload[chacha20poly1305.NonceSizeX:]
+	return aead.Open(nil, nonce, ciphertext, additionalData)
+}
+

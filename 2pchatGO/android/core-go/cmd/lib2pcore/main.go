@@ -106,6 +106,17 @@ func createJByteArrayFromSlice(env *C.JNIEnv, data []byte) C.jbyteArray {
 	return C.createJByteArray(env, (*C.jbyte)(unsafe.Pointer(&data[0])), C.jsize(len(data)))
 }
 
+//export Java_com_example_twopchat_NativeBridge_nativeSetStorageKey
+func Java_com_example_twopchat_NativeBridge_nativeSetStorageKey(env *C.JNIEnv, clazz C.jclass, jKey C.jbyteArray) C.jboolean {
+	keyBytes := readJByteArray(env, jKey)
+	if len(keyBytes) != 32 {
+		return C.JNI_FALSE
+	}
+	defer crypto.Zeroize(keyBytes)
+	bridge.GetManager().SetStorageKey(keyBytes)
+	return C.JNI_TRUE
+}
+
 //export Java_com_example_twopchat_NativeBridge_nativeSetStorageDir
 func Java_com_example_twopchat_NativeBridge_nativeSetStorageDir(env *C.JNIEnv, clazz C.jclass, jDir C.jstring) {
 	cStr := C.getJStringUTFChars(env, jDir)

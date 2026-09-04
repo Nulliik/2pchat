@@ -286,5 +286,67 @@ object SecureStorage {
         }
     }
 
+    private const val PREF_GO_STORAGE_KEY_ENC = "go_storage_key_enc"
+
+    /**
+     * Retrieves or generates a 32-byte cryptographic storage key for the native Go engine.
+     * The key is protected by non-exportable Android Keystore AES-GCM envelope encryption.
+     */
+    @Synchronized
+    fun getOrGenerateGoStorageKey(context: android.content.Context): ByteArray {
+        val sharedPrefs = P2PPreferences.prefs(context)
+        val enc = sharedPrefs.getString(PREF_GO_STORAGE_KEY_ENC, null)
+        if (enc != null && enc.startsWith(PREFIX)) {
+            val b64Ciphertext = enc.removePrefix(PREFIX)
+            val packed = try {
+                Base64.decode(b64Ciphertext, Base64.NO_WRAP)
+            } catch (_: Exception) {
+                null
+            }
+            if (packed != null && packed.size > 12) {
+                try {
+                    val cipher = createCipher()
+                    cipher.init(
+                        Cipher.DECRYPT_MODE,
+                        key(),
+                        GCMParameterSpec(128, packed, 0, 12)
+                    )
+                    val plainBytes = cipher.doFinal(packed, 12, packed.size - 12)
+                    SecurityUtils.zeroize(packed)
+                    if (plainBytes.size == 32) {
+                        return plainBytes
+                    }
+                    SecurityUtils.zeroize(plainBytes)
+                } catch (e: Exception) {
+                    SafeLog.e("SecureStorage", "Failed to decrypt existing go storage key; generating fresh", e)
+                }
+            }
+        }
+
+        val rawKey = ByteArray(32)
+        java.security.SecureRandom().nextBytes(rawKey)
+
+        try {
+            val cipher = createCipher()
+            cipher.init(Cipher.ENCRYPT_MODE, key())
+            val cipherBytes = cipher.doFinal(rawKey)
+            val packed = cipher.iv + cipherBytes
+            val encString = PREFIX + Base64.encodeToString(packed, Base64.NO_WRAP)
+            SecurityUtils.zeroize(cipherBytes)
+            SecurityUtils.zeroize(packed)
+
+            sharedPrefs.edit().putString(PREF_GO_STORAGE_KEY_ENC, encString).commit()
+        } catch (e: Exception) {
+            SafeLog.e("SecureStorage", "Failed to persist encrypted go storage key", e)
+        }
+
+        return rawKey
+    }
+
+    @Synchronized
+    fun clearGoStorageKey(context: android.content.Context) {
+        P2PPreferences.prefs(context).edit().remove(PREF_GO_STORAGE_KEY_ENC).commit()
+    }
+
     private const val BINARY_VERSION: Byte = 1
 }

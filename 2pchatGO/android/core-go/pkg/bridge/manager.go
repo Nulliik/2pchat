@@ -25,6 +25,8 @@ import (
 type SessionManager struct {
 	mu              sync.RWMutex
 	storageDir      string
+	storageKey      [32]byte
+	hasKey          bool
 	identity        *crypto.IdentityKeyPair
 	prekeyPriv      *crypto.X25519PrivateKey
 	prekeyPub       *crypto.X25519PublicKey
@@ -85,6 +87,72 @@ func (m *SessionManager) callbackSnapshot() (session.EventCallbacks, discovery.D
 	return m.callbacks, m.onPeerDisc
 }
 
+const keyFileMagic = "2PK1"
+
+// SetStorageKey sets the 32-byte key used to encrypt and decrypt persistent key files on disk.
+func (m *SessionManager) SetStorageKey(key []byte) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if len(key) == 32 {
+		crypto.Zeroize(m.storageKey[:])
+		copy(m.storageKey[:], key)
+		m.hasKey = true
+	}
+}
+
+// writeKeyFile writes key data to path. If m.hasKey is true, the data is encrypted with XChaCha20-Poly1305.
+func (m *SessionManager) writeKeyFile(path string, data []byte, perm os.FileMode) error {
+	if !m.hasKey {
+		return atomicWriteFile(path, data, perm)
+	}
+
+	aad := []byte(filepath.Base(path))
+	encrypted, err := crypto.XChaCha20Poly1305Encrypt(m.storageKey[:], data, aad)
+	if err != nil {
+		return fmt.Errorf("failed to encrypt key file %s: %w", path, err)
+	}
+
+	payload := make([]byte, len(keyFileMagic)+len(encrypted))
+	copy(payload[:len(keyFileMagic)], keyFileMagic)
+	copy(payload[len(keyFileMagic):], encrypted)
+
+	return atomicWriteFile(path, payload, perm)
+}
+
+// readKeyFile reads key data from path, decrypting it if encrypted with 2PK1, or migrating legacy plaintext.
+func (m *SessionManager) readKeyFile(path string) ([]byte, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+
+	// Case 1: Encrypted with 2PK1
+	if len(raw) >= len(keyFileMagic) && string(raw[:len(keyFileMagic)]) == keyFileMagic {
+		if !m.hasKey {
+			return nil, errors.New("key file is encrypted but storage key is not set")
+		}
+		aad := []byte(filepath.Base(path))
+		ciphertext := raw[len(keyFileMagic):]
+		decrypted, decErr := crypto.XChaCha20Poly1305Decrypt(m.storageKey[:], ciphertext, aad)
+		if decErr != nil {
+			return nil, fmt.Errorf("failed to decrypt key file %s: %w", path, decErr)
+		}
+		return decrypted, nil
+	}
+
+	// Case 2: Legacy plaintext key file (96 bytes for identity, 32 bytes for prekey)
+	base := filepath.Base(path)
+	if (base == "identity_v1.key" && len(raw) == 96) || (base == "prekey_v1.key" && len(raw) == 32) {
+		// If storage key is available, transparently migrate by re-encrypting on disk immediately
+		if m.hasKey {
+			_ = m.writeKeyFile(path, raw, 0600)
+		}
+		return raw, nil
+	}
+
+	return nil, fmt.Errorf("unrecognized format or length in key file %s (len: %d)", path, len(raw))
+}
+
 // SetStorageDir sets the persistent directory for cryptographic keys and downloads.
 func (m *SessionManager) SetStorageDir(dir string) {
 	m.mu.Lock()
@@ -121,7 +189,7 @@ func (m *SessionManager) Init() error {
 		var keyPath string
 		if effectiveDir != "" {
 			keyPath = filepath.Join(effectiveDir, "identity_v1.key")
-			if data, readErr := os.ReadFile(keyPath); readErr == nil && len(data) == 96 {
+			if data, readErr := m.readKeyFile(keyPath); readErr == nil && len(data) == 96 {
 				xPriv, xpErr := crypto.X25519PrivateKeyFromBytes(data[:32])
 				if xpErr == nil {
 					edPriv := ed25519.PrivateKey(data[32:96])
@@ -132,6 +200,7 @@ func (m *SessionManager) Init() error {
 						Verify:  edPriv.Public().(ed25519.PublicKey),
 					}
 				}
+				crypto.Zeroize(data)
 			}
 		}
 		if id == nil {
@@ -144,7 +213,8 @@ func (m *SessionManager) Init() error {
 				keyData := make([]byte, 96)
 				copy(keyData[:32], id.Private.Bytes())
 				copy(keyData[32:96], id.Signing)
-				_ = atomicWriteFile(keyPath, keyData, 0600)
+				_ = m.writeKeyFile(keyPath, keyData, 0600)
+				crypto.Zeroize(keyData)
 			}
 		}
 		m.identity = id
@@ -156,11 +226,12 @@ func (m *SessionManager) Init() error {
 		var prekeyPath string
 		if effectiveDir != "" {
 			prekeyPath = filepath.Join(effectiveDir, "prekey_v1.key")
-			if data, readErr := os.ReadFile(prekeyPath); readErr == nil && len(data) == 32 {
+			if data, readErr := m.readKeyFile(prekeyPath); readErr == nil && len(data) == 32 {
 				priv, _ = crypto.X25519PrivateKeyFromBytes(data)
 				if priv != nil {
 					pub = priv.Public()
 				}
+				crypto.Zeroize(data)
 			}
 		}
 		if priv == nil {
@@ -170,7 +241,9 @@ func (m *SessionManager) Init() error {
 				return fmt.Errorf("failed to generate signed prekey: %w", err)
 			}
 			if prekeyPath != "" {
-				_ = atomicWriteFile(prekeyPath, priv.Bytes(), 0600)
+				prekeyBytes := priv.Bytes()
+				_ = m.writeKeyFile(prekeyPath, prekeyBytes, 0600)
+				crypto.Zeroize(prekeyBytes)
 			}
 		}
 		m.prekeyPriv = priv
@@ -426,6 +499,10 @@ func (m *SessionManager) StopListener() error {
 
 // Close stops the listener and cleans up resources.
 func (m *SessionManager) Close() error {
+	m.mu.Lock()
+	crypto.Zeroize(m.storageKey[:])
+	m.hasKey = false
+	m.mu.Unlock()
 	return m.StopListener()
 }
 
@@ -487,11 +564,14 @@ func (m *SessionManager) ConfigureLocalIdentity(nickname, privB64, aboutMe strin
 		keyData := make([]byte, 96)
 		copy(keyData[:32], idKey.Private.Bytes())
 		copy(keyData[32:96], idKey.Signing)
-		_ = atomicWriteFile(keyPath, keyData, 0600)
+		_ = m.writeKeyFile(keyPath, keyData, 0600)
+		crypto.Zeroize(keyData)
 
 		if newPrekeyPriv != nil {
 			prekeyPath := filepath.Join(effectiveDir, "prekey_v1.key")
-			_ = atomicWriteFile(prekeyPath, newPrekeyPriv.Bytes(), 0600)
+			prekeyBytes := newPrekeyPriv.Bytes()
+			_ = m.writeKeyFile(prekeyPath, prekeyBytes, 0600)
+			crypto.Zeroize(prekeyBytes)
 		}
 	}
 

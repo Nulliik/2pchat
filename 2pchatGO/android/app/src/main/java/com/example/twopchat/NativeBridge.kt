@@ -1,5 +1,6 @@
 package com.example.twopchat
 
+import android.content.Context
 import com.example.twopchat.logging.SafeLog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -57,9 +58,34 @@ object NativeBridge {
         val fingerprint: String,
     )
 
+    fun setStorageKey(key: ByteArray): Boolean {
+        if (!isLoaded) return false
+        return try {
+            nativeSetStorageKey(key)
+        } catch (e: Throwable) {
+            SafeLog.e(TAG, "nativeSetStorageKey failed", e)
+            false
+        }
+    }
+
+    private fun ensureStorageKey(context: Context? = null) {
+        if (!isLoaded) return
+        try {
+            val ctx = context ?: try { com.example.twopchat.yggdrasil.GlobalApplication.getContext() } catch (_: Throwable) { null }
+            if (ctx != null) {
+                val storageKey = com.example.twopchat.security.SecureStorage.getOrGenerateGoStorageKey(ctx)
+                nativeSetStorageKey(storageKey)
+                com.example.twopchat.security.SecurityUtils.zeroize(storageKey)
+            }
+        } catch (e: Throwable) {
+            SafeLog.e(TAG, "ensureStorageKey failed", e)
+        }
+    }
+
     fun setStorageDir(dir: String) {
         if (!isLoaded) return
         try {
+            ensureStorageKey()
             nativeSetStorageDir(dir)
         } catch (e: Throwable) {
             SafeLog.e(TAG, "nativeSetStorageDir failed", e)
@@ -73,6 +99,7 @@ object NativeBridge {
             // first Init call. Otherwise it creates an in-memory identity and
             // every process restart looks like a hostile peer-key change.
             val context = com.example.twopchat.yggdrasil.GlobalApplication.getContext()
+            ensureStorageKey(context)
             nativeSetStorageDir(context.filesDir.absolutePath)
             nativeInit()
         } catch (e: Throwable) {
@@ -662,6 +689,7 @@ object NativeBridge {
     }
 
     // --- Native JNI declarations ---
+    private external fun nativeSetStorageKey(key: ByteArray): Boolean
     private external fun nativeSetStorageDir(dir: String)
     private external fun nativeInit(): Boolean
     private external fun nativeSetNickname(nickname: String): Boolean
