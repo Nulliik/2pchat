@@ -60,17 +60,23 @@ class GlobalApplication: Application(), YggStateReceiver.StateReceiver {
             defaultHandler?.uncaughtException(thread, throwable)
         }
 
+        val oldPolicy = android.os.StrictMode.allowThreadDiskReads()
         try {
-            System.loadLibrary("sqlcipher")
-        } catch (e: Throwable) {
-            SafeLog.e("GlobalApplication", "Failed to load sqlcipher", e)
-        }
+            android.os.StrictMode.allowThreadDiskWrites()
+            try {
+                System.loadLibrary("sqlcipher")
+            } catch (e: Throwable) {
+                SafeLog.e("GlobalApplication", "Failed to load sqlcipher", e)
+            }
 
-        val prefs = yggdrasilPrefs(applicationContext)
-        if (!prefs.contains(PREF_KEY_ENABLED)) {
-            // Wait for explicit VPN consent. Starting from a network callback
-            // before it is granted makes Builder.establish() return null.
-            prefs.edit().putBoolean(PREF_KEY_ENABLED, false).apply()
+            val prefs = yggdrasilPrefs(applicationContext)
+            if (!prefs.contains(PREF_KEY_ENABLED)) {
+                // Wait for explicit VPN consent. Starting from a network callback
+                // before it is granted makes Builder.establish() return null.
+                prefs.edit().putBoolean(PREF_KEY_ENABLED, false).apply()
+            }
+        } finally {
+            android.os.StrictMode.setThreadPolicy(oldPolicy)
         }
 
         // libgojni.so (Yggdrasil/gomobile) and lib2pcore.so each embed a Go

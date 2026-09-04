@@ -1341,11 +1341,15 @@ object P2PMessageRelay {
                     } else sender
                     val key = "$sender:$messageId"
                     val resolvedKey = "$resolved:$messageId"
+                    val isComplete = totalBytes > 0L && bytesTransferred >= totalBytes
+                    if (isComplete && messageId.isNotEmpty()) {
+                        outboundMessenger.cleanupTempSanitizedFile(messageId)
+                    }
                     val info = FileProgressInfo(
                         bytesTransferred = bytesTransferred,
                         totalBytes = totalBytes,
                         speedKbps = speedKbps,
-                        state = if (totalBytes > 0L && bytesTransferred >= totalBytes) {
+                        state = if (isComplete) {
                             FileTransferState.COMPLETED
                         } else {
                             FileTransferState.TRANSFERRING
@@ -3206,6 +3210,7 @@ object P2PMessageRelay {
 
     fun cancelFileTransfer(context: Context, peerName: String, messageId: String): Boolean {
         val appContext = context.applicationContext
+        outboundMessenger.cleanupTempSanitizedFile(messageId)
         outboundMessenger.cancelFile(
             appContext,
             peerName,
@@ -3276,9 +3281,13 @@ object P2PMessageRelay {
                     // A cancelled transfer deliberately reports completion to
                     // the low-level callback so that progress cleanup can
                     // finish.  It must never be treated as a sent album part.
-                    if (isMediaAlbumCancelled(albumId, albumGeneration)) return@launch
+                    if (isMediaAlbumCancelled(albumId, albumGeneration)) {
+                        outboundMessenger.cleanupTempSanitizedFile(fileTransferId)
+                        return@launch
+                    }
 
                     if (!transferOk) {
+                        outboundMessenger.cleanupTempSanitizedFile(fileTransferId)
                         allTransfersOk = false
                         try {
                             db.updateMessageStatus(albumId, "PENDING")

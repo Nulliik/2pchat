@@ -2432,16 +2432,35 @@ private fun AlbumItemCell(
     onOpenVideo: (String, Message?) -> Unit,
     onShowOptions: (Message) -> Unit
 ) {
+    val isTransferActive = msg.status == "RECEIVING" || msg.status == "SENDING" || msg.status?.startsWith("PENDING") == true
     if (uri.isBlank()) {
         Box(
             contentAlignment = Alignment.Center,
-            modifier = modifier.background(Color.DarkGray.copy(alpha = 0.5f))
+            modifier = modifier
+                .background(Color.DarkGray.copy(alpha = 0.6f))
+                .combinedClickable(
+                    onClick = {
+                        if (isSelectMode) onToggleSelection() else onShowOptions(msg)
+                    },
+                    onLongClick = {
+                        if (isSelectMode) onToggleSelection() else onShowOptions(msg)
+                    }
+                )
         ) {
-            androidx.compose.material3.CircularProgressIndicator(
-                modifier = Modifier.size(24.dp),
-                color = Color.White.copy(alpha = 0.7f),
-                strokeWidth = 2.dp
-            )
+            if (isTransferActive) {
+                androidx.compose.material3.CircularProgressIndicator(
+                    modifier = Modifier.size(24.dp),
+                    color = Color.White.copy(alpha = 0.8f),
+                    strokeWidth = 2.dp
+                )
+            } else {
+                Icon(
+                    painter = painterResource(id = com.example.twopchat.R.drawable.ic_attach_gallery),
+                    contentDescription = "Missing media",
+                    tint = Color.White.copy(alpha = 0.4f),
+                    modifier = Modifier.size(28.dp)
+                )
+            }
         }
         return
     }
@@ -2484,6 +2503,18 @@ private fun AlbumItemCell(
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize()
             )
+        } else {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier.fillMaxSize()
+            ) {
+                Icon(
+                    painter = painterResource(id = com.example.twopchat.R.drawable.ic_attach_gallery),
+                    contentDescription = "Failed to load image",
+                    tint = Color.White.copy(alpha = 0.35f),
+                    modifier = Modifier.size(28.dp)
+                )
+            }
         }
         if (isVideo) {
             Box(

@@ -26,12 +26,20 @@ internal class P2POutboundMessenger(
     private val processingOfflineQueues = ConcurrentHashMap.newKeySet<String>()
     private val cancelledFileTransfers = ConcurrentHashMap.newKeySet<String>()
     private val activeFileTransfers = ConcurrentHashMap.newKeySet<String>()
+    private val activeSanitizedFiles = ConcurrentHashMap<String, File>()
     private val scope = CoroutineScope(Dispatchers.IO)
     private val pinnedStateScope = CoroutineScope(Dispatchers.IO.limitedParallelism(1))
 
     private val peerFailureBackoffMs = ConcurrentHashMap<String, Long>()
     private val lastPeerFailureAt = ConcurrentHashMap<String, Long>()
     private val peerSendLocks = ConcurrentHashMap<String, Mutex>()
+
+    fun cleanupTempSanitizedFile(messageId: String) {
+        if (messageId.isBlank()) return
+        activeSanitizedFiles.remove(messageId)?.let { file ->
+            TemporaryCacheSanitizer.shredFile(file)
+        }
+    }
 
     private fun normalizePeerKey(peerName: String): String =
         peerName.trim().lowercase()
@@ -208,6 +216,9 @@ internal class P2POutboundMessenger(
                 // Transparently strip EXIF metadata from outbound images unless explicitly sent as uncompressed document
                 tempSanitizedFile = if (asDocument) null else ImageSanitizer.sanitizeImageExif(context, filePath)
                 val effectiveFilePath = tempSanitizedFile?.absolutePath ?: filePath
+                if (tempSanitizedFile != null && messageId.isNotBlank()) {
+                    activeSanitizedFiles[messageId] = tempSanitizedFile
+                }
 
                 val previewBase64 = FileTransferPreview.createMediaPreviewBase64(effectiveFilePath)
                 val success = getBridge(context).sendFile(
@@ -225,6 +236,7 @@ internal class P2POutboundMessenger(
                 val cancelled = messageId.isNotBlank() && cancelledFileTransfers.remove(messageId)
                 activeFileTransfers.remove(messageId)
                 if (cancelled) {
+                    cleanupTempSanitizedFile(messageId)
                     onMessageStatusChanged(peerName, messageId, "CANCELLED")
                     log(context, "File transfer to $peerName was cancelled", "INFO", null)
                     return@launch postResult(onResult, true)
@@ -237,12 +249,15 @@ internal class P2POutboundMessenger(
                         File(effectiveFilePath),
                         direction = TrafficDirection.SENT,
                     )
+                } else {
+                    cleanupTempSanitizedFile(messageId)
                 }
                 log(context, "Sending file status to $peerName: ${if (success) "SUCCESS" else "FAILED"}", "INFO", null)
                 postResult(onResult, success)
             } catch (error: Exception) {
                 if (error is CancellationException) throw error
                 activeFileTransfers.remove(messageId)
+                cleanupTempSanitizedFile(messageId)
                 val cancelled = messageId.isNotBlank() && cancelledFileTransfers.remove(messageId)
                 if (cancelled) {
                     onMessageStatusChanged(peerName, messageId, "CANCELLED")
@@ -250,16 +265,13 @@ internal class P2POutboundMessenger(
                 }
                 log(context, "Failed to send secure file", "ERROR", error)
                 postResult(onResult, false)
-            } finally {
-                tempSanitizedFile?.let {
-                    TemporaryCacheSanitizer.shredFile(it)
-                }
             }
         }
     }
 
     fun cancelFile(context: Context, peerName: String, messageId: String): Boolean {
         if (messageId.isBlank()) return false
+        cleanupTempSanitizedFile(messageId)
         cancelledFileTransfers.add(messageId)
         activeFileTransfers.remove(messageId)
         onMessageStatusChanged(peerName, messageId, "CANCELLED")
@@ -530,22 +542,25 @@ internal class P2POutboundMessenger(
                                 } catch (e: Exception) {
                                     file
                                 }
-                                val fileSent = try {
-                                    getBridge(context).sendFile(
-                                        peerName = peerName,
-                                        endpoint = endpoint,
-                                        filePath = fileToSend.absolutePath,
-                                        expectedFingerprint = fingerprint,
-                                        messageId = "${message.id}_$index",
-                                        caption = if (index == 0) caption else "",
-                                        albumId = message.id,
-                                        albumIndex = index,
-                                        albumCount = albumFiles.size,
-                                    )
-                                } finally {
-                                    tempSanitized?.let { TemporaryCacheSanitizer.shredFile(it) }
+                                val partId = "${message.id}_$index"
+                                if (tempSanitized != null) {
+                                    activeSanitizedFiles[partId] = tempSanitized
                                 }
-                                if (!fileSent) return@run false
+                                val fileSent = getBridge(context).sendFile(
+                                    peerName = peerName,
+                                    endpoint = endpoint,
+                                    filePath = fileToSend.absolutePath,
+                                    expectedFingerprint = fingerprint,
+                                    messageId = partId,
+                                    caption = if (index == 0) caption else "",
+                                    albumId = message.id,
+                                    albumIndex = index,
+                                    albumCount = albumFiles.size,
+                                )
+                                if (!fileSent) {
+                                    cleanupTempSanitizedFile(partId)
+                                    return@run false
+                                }
                                 NetworkTrafficStats.recordFile(
                                     context,
                                     peerName,
@@ -564,27 +579,29 @@ internal class P2POutboundMessenger(
                         } catch (e: Exception) {
                             attachmentFile
                         }
-                        val fileSent = try {
-                            getBridge(context).sendFile(
-                                peerName = peerName,
-                                endpoint = endpoint,
-                                filePath = fileToSend.absolutePath,
-                                expectedFingerprint = fingerprint,
-                                messageId = message.id,
-                                caption = caption,
-                                albumId = "",
-                                albumIndex = -1,
-                                albumCount = 0,
-                            )
-                        } finally {
-                            tempSanitized?.let { TemporaryCacheSanitizer.shredFile(it) }
+                        if (tempSanitized != null) {
+                            activeSanitizedFiles[message.id] = tempSanitized
+                        }
+                        val fileSent = getBridge(context).sendFile(
+                            peerName = peerName,
+                            endpoint = endpoint,
+                            filePath = fileToSend.absolutePath,
+                            expectedFingerprint = fingerprint,
+                            messageId = message.id,
+                            caption = caption,
+                            albumId = "",
+                            albumIndex = -1,
+                            albumCount = 0,
+                        )
+                        if (!fileSent) {
+                            cleanupTempSanitizedFile(message.id)
                         }
                         if (fileSent) {
                             NetworkTrafficStats.recordFile(
                                 context,
                                 peerName,
                                 endpoint,
-                                attachmentFile,
+                                File(fileToSend.absolutePath),
                                 direction = TrafficDirection.SENT,
                             )
                         }
