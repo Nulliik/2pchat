@@ -180,8 +180,7 @@ internal fun ChatMessageBubble(
     }
 
     val context = androidx.compose.ui.platform.LocalContext.current
-    val sharedPrefs = remember(context) { com.example.twopchat.config.P2PPreferences.prefs(context) }
-    val linkPreviewsEnabled = remember(sharedPrefs) { sharedPrefs.getBoolean("settings_link_previews", false) }
+    val linkPreviewsEnabled = remember(context) { com.example.twopchat.config.P2PPreferences.isLinkPreviewsEnabled(context) }
     val isText = msg.attachmentType == null
     val isSticker = msg.attachmentType == StickerSupport.ATTACHMENT_TYPE
     val isGif = msg.attachmentType == GifStorageManager.ATTACHMENT_TYPE
@@ -2030,7 +2029,7 @@ internal fun LinkPreviewCard(
     val metadataState = remember(url) { mutableStateOf<LinkPreviewMetadata?>(null) }
 
     LaunchedEffect(url) {
-        metadataState.value = LinkPreviewFetcher.fetchPreview(url)
+        metadataState.value = LinkPreviewFetcher.fetchPreview(url, context)
     }
 
     val previewData = metadataState.value ?: return
@@ -2098,7 +2097,7 @@ internal fun LinkPreviewCard(
             )
         }
 
-        val bitmap = rememberNetworkImage(previewData.imageUrl)
+        val bitmap = rememberNetworkImage(previewData.imageUrl, context)
         if (bitmap != null) {
             Spacer(modifier = Modifier.height(6.dp))
             Box(

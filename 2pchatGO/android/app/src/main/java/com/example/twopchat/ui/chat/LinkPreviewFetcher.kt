@@ -2,12 +2,18 @@ package com.example.twopchat.ui.chat
 
 import com.example.twopchat.logging.SafeLog
 
+import android.content.Context
+import android.os.Build
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import com.example.twopchat.config.P2PPreferences
+import com.example.twopchat.config.ProxyConfig
+import com.example.twopchat.tor.TorManager
+import com.example.twopchat.yggdrasil.GlobalApplication
 import java.net.HttpURLConnection
 import java.net.InetAddress
 import java.net.InetSocketAddress
@@ -15,6 +21,7 @@ import java.net.URI
 import java.net.URL
 import java.net.Socket
 import java.io.ByteArrayOutputStream
+import java.util.Locale
 import java.util.regex.Pattern
 import javax.net.ssl.HttpsURLConnection
 import javax.net.ssl.SSLSocketFactory
@@ -77,7 +84,15 @@ object LinkPreviewFetcher {
         Pattern.CASE_INSENSITIVE or Pattern.DOTALL
     )
 
-    suspend fun fetchPreview(rawUrl: String): LinkPreviewMetadata? = withContext(Dispatchers.IO) {
+    suspend fun fetchPreview(rawUrl: String, context: Context? = null): LinkPreviewMetadata? = withContext(Dispatchers.IO) {
+        val ctx = context ?: try { GlobalApplication.appContext } catch (_: Throwable) { null }
+        val isTorEnabled = ctx?.let { P2PPreferences.isTorEnabled(it) } ?: false
+        val isTorRunning = TorManager.isTorRunning.value
+        if (isTorEnabled && !isTorRunning) {
+            SafeLog.w("LinkPreview", "Tor is enabled but not running; suppressing link preview fetch to prevent IP leak.")
+            return@withContext null
+        }
+
         val targetUrl = if (!rawUrl.startsWith("http://", ignoreCase = true) && 
                             !rawUrl.startsWith("https://", ignoreCase = true)) {
             "https://$rawUrl"
@@ -95,7 +110,7 @@ object LinkPreviewFetcher {
         try {
             while (redirectCount <= MAX_REDIRECTS) {
                 val urlObj = URL(currentUrl)
-                val protocol = urlObj.protocol?.lowercase(java.util.Locale.ROOT) ?: ""
+                val protocol = urlObj.protocol?.lowercase(Locale.ROOT) ?: ""
                 if (protocol != "http" && protocol != "https") {
                     val fallbackHost = extractHost(targetUrl)
                     val fallback = LinkPreviewMetadata(url = targetUrl, siteName = fallbackHost)
@@ -104,7 +119,7 @@ object LinkPreviewFetcher {
                 }
 
                 val host = urlObj.host.orEmpty()
-                val conn = openSafeConnection(urlObj, 4000, 4000)
+                val conn = openSafeConnection(urlObj, 4000, 4000, context = ctx)
                 if (conn == null) {
                     val fallbackHost = extractHost(targetUrl)
                     val fallback = LinkPreviewMetadata(url = targetUrl, siteName = fallbackHost)
@@ -194,7 +209,7 @@ object LinkPreviewFetcher {
                     SafeLog.d("LinkPreview", "Failed resolving relative image URL: ${e.javaClass.simpleName}")
                 }
             }
-            if (!imageUrl.isNullOrBlank() && !isSafeHttpUrl(imageUrl)) imageUrl = null
+            if (!imageUrl.isNullOrBlank() && !isSafeHttpUrl(imageUrl, context = ctx)) imageUrl = null
 
             val result = LinkPreviewMetadata(
                 url = targetUrl,
@@ -241,11 +256,51 @@ object LinkPreviewFetcher {
             .replace("&nbsp;", " ")
     }
 
-    internal fun isSafeHttpUrl(rawUrl: String): Boolean {
+    internal fun isNumericIpAddress(raw: String): Boolean {
+        val clean = raw.removePrefix("[").removeSuffix("]")
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            return android.net.InetAddresses.isNumericAddress(clean)
+        }
+        if (clean.contains(':')) {
+            return try {
+                InetAddress.getByName(clean) is java.net.Inet6Address
+            } catch (_: Exception) {
+                false
+            }
+        }
+        val parts = clean.split('.')
+        if (parts.size != 4) return false
+        return parts.all { it.toIntOrNull() in 0..255 }
+    }
+
+    internal fun isSafeHttpUrl(rawUrl: String, context: Context? = null): Boolean {
         return try {
             val url = URL(rawUrl)
-            val protocol = url.protocol.lowercase(java.util.Locale.ROOT)
-            (protocol == "http" || protocol == "https") && !isPrivateOrInternalHost(url.host.orEmpty())
+            val protocol = url.protocol.lowercase(Locale.ROOT)
+            if (protocol != "http" && protocol != "https") return false
+            val host = url.host.orEmpty()
+            if (host.isBlank()) return false
+            val lowerHost = host.lowercase(Locale.ROOT)
+            if (lowerHost == "localhost" || lowerHost.endsWith(".local") || lowerHost.endsWith(".internal") || lowerHost.endsWith(".lan")) return false
+
+            val cleanHost = host.removePrefix("[").removeSuffix("]")
+            if (isNumericIpAddress(cleanHost)) {
+                val addr = try { InetAddress.getByName(cleanHost) } catch (_: Exception) { null }
+                return addr != null && !isPrivateOrInternalAddress(addr)
+            }
+
+            val ctx = context ?: try { GlobalApplication.appContext } catch (_: Throwable) { null }
+            val isTorEnabled = ctx?.let { P2PPreferences.isTorEnabled(it) } ?: false
+            val isTorRunning = TorManager.isTorRunning.value
+            if (isTorEnabled && !isTorRunning) return false
+
+            val effectiveProxy = ctx?.let { ProxyConfig.getEffectiveProxyConfig(it) }
+            if (effectiveProxy != null && effectiveProxy.enabled) {
+                // In proxy/Tor mode, remote proxy resolves DNS; do not resolve locally
+                return true
+            }
+
+            !isPrivateOrInternalHost(host)
         } catch (_: Exception) {
             false
         }
@@ -262,10 +317,15 @@ object LinkPreviewFetcher {
 
     internal fun isPrivateOrInternalHost(host: String): Boolean {
         if (host.isBlank()) return true
-        val lower = host.lowercase(java.util.Locale.ROOT)
-        if (lower == "localhost" || lower.endsWith(".local") || lower.endsWith(".internal")) return true
+        val lower = host.lowercase(Locale.ROOT)
+        if (lower == "localhost" || lower.endsWith(".local") || lower.endsWith(".internal") || lower.endsWith(".lan")) return true
+        val clean = host.removePrefix("[").removeSuffix("]")
+        if (isNumericIpAddress(clean)) {
+            val addr = try { InetAddress.getByName(clean) } catch (_: Exception) { null }
+            return addr == null || isPrivateOrInternalAddress(addr)
+        }
         return try {
-            val addresses = java.net.InetAddress.getAllByName(host)
+            val addresses = InetAddress.getAllByName(host)
             addresses.isEmpty() || addresses.any { isPrivateOrInternalAddress(it) }
         } catch (_: Exception) {
             true
@@ -277,14 +337,49 @@ object LinkPreviewFetcher {
         connectTimeout: Int = 4000,
         readTimeout: Int = 4000,
         userAgent: String = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        context: Context? = null,
     ): HttpURLConnection? {
-        val protocol = urlObj.protocol?.lowercase(java.util.Locale.ROOT) ?: ""
+        val protocol = urlObj.protocol?.lowercase(Locale.ROOT) ?: ""
         if (protocol != "http" && protocol != "https") return null
         val host = urlObj.host.orEmpty()
-        if (isPrivateOrInternalHost(host)) return null
+        if (host.isBlank()) return null
+        val lowerHost = host.lowercase(Locale.ROOT)
+        if (lowerHost == "localhost" || lowerHost.endsWith(".local") || lowerHost.endsWith(".internal") || lowerHost.endsWith(".lan")) return null
 
+        val cleanHost = host.removePrefix("[").removeSuffix("]")
+        if (isNumericIpAddress(cleanHost)) {
+            val addr = try { InetAddress.getByName(cleanHost) } catch (_: Exception) { null }
+            if (addr == null || isPrivateOrInternalAddress(addr)) return null
+        }
+
+        val ctx = context ?: try { GlobalApplication.appContext } catch (_: Throwable) { null }
+        val isTorEnabled = ctx?.let { P2PPreferences.isTorEnabled(it) } ?: false
+        val isTorRunning = TorManager.isTorRunning.value
+        if (isTorEnabled && !isTorRunning) {
+            SafeLog.w("LinkPreview", "Tor is enabled but not running; refusing to connect to prevent IP leak.")
+            return null
+        }
+
+        val effectiveProxy = ctx?.let { ProxyConfig.getEffectiveProxyConfig(it) }
+        if (effectiveProxy != null && effectiveProxy.enabled) {
+            // SOCKS5 proxy routing (Tor or custom proxy).
+            // Crucial: we do NOT resolve host via InetAddress.getAllByName(host) here!
+            // The SOCKS5 proxy performs the remote DNS lookup, preventing DNS and IP leaks.
+            val proxy = java.net.Proxy(
+                java.net.Proxy.Type.SOCKS,
+                InetSocketAddress(effectiveProxy.host, effectiveProxy.port)
+            )
+            return (urlObj.openConnection(proxy) as HttpURLConnection).apply {
+                this.connectTimeout = connectTimeout
+                this.readTimeout = readTimeout
+                this.instanceFollowRedirects = false
+                this.setRequestProperty("User-Agent", userAgent)
+            }
+        }
+
+        // Clearnet mode: resolve host and pin address to prevent SSRF and DNS rebinding
         val addresses = try {
-            java.net.InetAddress.getAllByName(host)
+            InetAddress.getAllByName(host)
         } catch (_: Exception) {
             return null
         }
@@ -309,9 +404,6 @@ object LinkPreviewFetcher {
         }
 
         if (conn is HttpsURLConnection) {
-            // The URL deliberately contains the pinned IP. Restore the original
-            // TLS name for SNI and certificate verification without another DNS
-            // lookup.
             conn.sslSocketFactory = PinnedAddressSslSocketFactory(
                 delegate = HttpsURLConnection.getDefaultSSLSocketFactory(),
                 tlsHost = host,
@@ -371,13 +463,21 @@ object LinkPreviewFetcher {
         }
     }
 
-    suspend fun fetchImage(rawUrl: String): android.graphics.Bitmap? = withContext(Dispatchers.IO) {
+    suspend fun fetchImage(rawUrl: String, context: Context? = null): android.graphics.Bitmap? = withContext(Dispatchers.IO) {
+        val ctx = context ?: try { GlobalApplication.appContext } catch (_: Throwable) { null }
+        val isTorEnabled = ctx?.let { P2PPreferences.isTorEnabled(it) } ?: false
+        val isTorRunning = TorManager.isTorRunning.value
+        if (isTorEnabled && !isTorRunning) {
+            SafeLog.w("LinkPreview", "Tor is enabled but not running; suppressing image fetch to prevent IP leak.")
+            return@withContext null
+        }
+
         var currentUrl = rawUrl
         var redirects = 0
         var connection: HttpURLConnection? = null
         try {
             while (redirects <= MAX_REDIRECTS) {
-                val conn = openSafeConnection(URL(currentUrl), 6_000, 6_000, "2PChat Link Preview")
+                val conn = openSafeConnection(URL(currentUrl), 6_000, 6_000, "2PChat Link Preview", context = ctx)
                     ?: return@withContext null
                 connection = conn
                 val responseCode = connection.responseCode
@@ -433,12 +533,13 @@ object LinkPreviewFetcher {
 }
 
 @Composable
-fun rememberNetworkImage(url: String?): android.graphics.Bitmap? {
+fun rememberNetworkImage(url: String?, context: Context? = null): android.graphics.Bitmap? {
     if (url.isNullOrBlank()) return null
+    val localCtx = context ?: androidx.compose.ui.platform.LocalContext.current
     var bitmap by remember<androidx.compose.runtime.MutableState<android.graphics.Bitmap?>>(url) { mutableStateOf(LinkPreviewFetcher.getImageFromCache(url)) }
     if (bitmap == null) {
         LaunchedEffect(url) {
-            val decoded = LinkPreviewFetcher.fetchImage(url)
+            val decoded = LinkPreviewFetcher.fetchImage(url, localCtx)
             if (decoded != null) {
                 LinkPreviewFetcher.putImageToCache(url, decoded)
                 bitmap = decoded

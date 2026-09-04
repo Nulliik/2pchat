@@ -1096,6 +1096,16 @@ object P2PPreferences {
 
         return result
     }
+
+    const val SETTINGS_LINK_PREVIEWS = "settings_link_previews"
+    const val DEFAULT_LINK_PREVIEWS_ENABLED = false
+
+    fun isLinkPreviewsEnabled(context: Context): Boolean =
+        prefs(context).getBoolean(SETTINGS_LINK_PREVIEWS, DEFAULT_LINK_PREVIEWS_ENABLED)
+
+    fun setLinkPreviewsEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit().putBoolean(SETTINGS_LINK_PREVIEWS, enabled).apply()
+    }
 }
 
 internal data class AcceptedPeerIdentity(

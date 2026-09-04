@@ -76,7 +76,7 @@ fun AppearanceSettingsPage(
         mutableStateOf(sharedPrefs.getBoolean("persist_chat_history", true))
     }
     var linkPreviewsEnabled by remember {
-        mutableStateOf(sharedPrefs.getBoolean("settings_link_previews", true))
+        mutableStateOf(P2PPreferences.isLinkPreviewsEnabled(context))
     }
     var heroWidgetCollapsed by remember {
         mutableStateOf(sharedPrefs.getBoolean("settings_hero_widget_collapsed", false))
@@ -452,7 +452,7 @@ fun AppearanceSettingsPage(
                             checked = linkPreviewsEnabled,
                             onCheckedChange = {
                                 linkPreviewsEnabled = it
-                                sharedPrefs.edit().putBoolean("settings_link_previews", it).apply()
+                                P2PPreferences.setLinkPreviewsEnabled(context, it)
                             },
                             colors = SwitchDefaults.colors(
                                 checkedThumbColor = primaryColor,
