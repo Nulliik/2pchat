@@ -1246,16 +1246,21 @@ object P2PMessageRelay {
 
     internal fun log(context: Context, message: String, level: String = "INFO", error: Throwable? = null) {
         val fullMsg = if (error != null) "$message: ${SafeLog.getStackTraceString(error)}" else message
-        if (level == "ERROR") {
-            SafeLog.e(TAG, fullMsg)
-        } else {
-            SafeLog.i(TAG, fullMsg)
+        when (level) {
+            "ERROR" -> SafeLog.e(TAG, fullMsg)
+            "WARN" -> SafeLog.w(TAG, fullMsg)
+            "DEBUG" -> SafeLog.d(TAG, fullMsg)
+            else -> SafeLog.i(TAG, fullMsg)
         }
-        try {
-            val timestamp = checkNotNull(logTimestampFormatter.get()).format(Date())
-            AppLog.append(context, "$timestamp [KOTLIN_$level] $TAG: $fullMsg\n")
-        } catch (e: Exception) {
-            SafeLog.e(TAG, "Failed to append diagnostic log", e)
+        // Only write operational/diagnostic logs to the persistent on-disk app.log file.
+        // High-frequency DEBUG events (e.g. packet progress, frame pings) are kept in logcat only.
+        if (level != "DEBUG") {
+            try {
+                val timestamp = checkNotNull(logTimestampFormatter.get()).format(Date())
+                AppLog.append(context, "$timestamp [KOTLIN_$level] $TAG: $fullMsg\n")
+            } catch (e: Exception) {
+                SafeLog.e(TAG, "Failed to append diagnostic log", e)
+            }
         }
     }
 

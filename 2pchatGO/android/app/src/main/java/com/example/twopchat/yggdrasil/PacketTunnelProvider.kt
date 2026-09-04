@@ -50,10 +50,12 @@ open class PacketTunnelProvider: VpnService() {
                 SafeLog.e(TAG, fullMsg)
             } else if (level == "WARN") {
                 SafeLog.w(TAG, fullMsg)
+            } else if (level == "DEBUG") {
+                SafeLog.d(TAG, fullMsg)
             } else {
                 SafeLog.i(TAG, fullMsg)
             }
-            if (context != null) {
+            if (context != null && level != "DEBUG") {
                 try {
                     val timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss,SSS", Locale.getDefault()).format(Date())
                     com.example.twopchat.AppLog.append(context, "$timestamp [KOTLIN_$level] [YGGDRASIL] $TAG: $fullMsg\n")
