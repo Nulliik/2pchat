@@ -306,6 +306,10 @@ internal class MessageNotificationService {
         fun show(context: Context, sender: String, text: String, messageId: String) {
         val settings = P2PPreferences.prefs(context)
         if (!settings.getBoolean("settings_notifications", true)) return
+        if (P2PMessageRelay.isChatOpenWith(context, sender)) {
+            com.example.twopchat.logging.SafeLog.d("IncomingMessageServices", "Suppressed notification for active chat peer: $sender")
+            return
+        }
 
         val myUsername = settings.getString("username_profile", "") ?: ""
         val isMention = (myUsername.isNotBlank() && text.contains("@$myUsername", ignoreCase = true)) ||

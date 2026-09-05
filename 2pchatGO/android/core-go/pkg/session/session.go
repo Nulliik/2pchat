@@ -309,7 +309,21 @@ func (s *Session) performResponderHandshake(expectedFingerprint string) error {
 		return errors.New("invalid remote session signature")
 	}
 
-	// Send reply
+	remoteIdPub, err := crypto.X25519PublicKeyFromBytes(remoteIdBytes)
+	if err != nil {
+		return fmt.Errorf("invalid remote identity public key: %w", err)
+	}
+	remoteEphPub, err := crypto.X25519PublicKeyFromBytes(remoteEphBytes)
+	if err != nil {
+		return fmt.Errorf("invalid remote ephemeral public key: %w", err)
+	}
+
+	s.peerFingerprint = crypto.Fingerprint(remoteIdBytes)
+	if expectedFingerprint != "" && s.peerFingerprint != expectedFingerprint {
+		return fmt.Errorf("peer fingerprint mismatch: expected %s, got %s", expectedFingerprint, s.peerFingerprint)
+	}
+
+	// Send reply only after validating initiator's identity against expectedFingerprint (SEC-03)
 	prekeySig := crypto.SignPreKey(s.localIdentity.Signing, s.localPrekeyPub)
 
 	toSign := append([]byte(crypto.X3DHHandshakeContext), []byte("reply")...)
@@ -336,20 +350,6 @@ func (s *Session) performResponderHandshake(expectedFingerprint string) error {
 
 	if err := transport.WriteFrame(s.conn, rawReply); err != nil {
 		return fmt.Errorf("failed to write reply handshake frame: %w", err)
-	}
-
-	remoteIdPub, err := crypto.X25519PublicKeyFromBytes(remoteIdBytes)
-	if err != nil {
-		return fmt.Errorf("invalid remote identity public key: %w", err)
-	}
-	remoteEphPub, err := crypto.X25519PublicKeyFromBytes(remoteEphBytes)
-	if err != nil {
-		return fmt.Errorf("invalid remote ephemeral public key: %w", err)
-	}
-
-	s.peerFingerprint = crypto.Fingerprint(remoteIdBytes)
-	if expectedFingerprint != "" && s.peerFingerprint != expectedFingerprint {
-		return fmt.Errorf("peer fingerprint mismatch: expected %s, got %s", expectedFingerprint, s.peerFingerprint)
 	}
 
 	s.peerIdentityPub = remoteIdPub

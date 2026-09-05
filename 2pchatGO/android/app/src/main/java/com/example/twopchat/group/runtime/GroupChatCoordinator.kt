@@ -161,6 +161,7 @@ object GroupChatCoordinator {
     private val timelineLimits = ConcurrentHashMap<String, Int>()
     private val lastReadReceiptTargets = ConcurrentHashMap<String, String>()
     private val activeGroupChats = ConcurrentHashMap.newKeySet<String>()
+    private val activeGroupChatCounts = ConcurrentHashMap<String, java.util.concurrent.atomic.AtomicInteger>()
     private data class PendingSync(
         val groupId: String,
         val peerDeviceId: String,
@@ -268,6 +269,7 @@ object GroupChatCoordinator {
             attachmentServeBudgets.clear()
             controlAncestorCache.clear()
             activeGroupChats.clear()
+            activeGroupChatCounts.clear()
             lastReadReceiptTargets.clear()
             pendingSyncRequests.clear()
             syncingGroups.clear()
@@ -311,14 +313,19 @@ object GroupChatCoordinator {
 
     fun setGroupChatActive(groupId: String, active: Boolean) {
         if (active) {
+            activeGroupChatCounts.computeIfAbsent(groupId) { java.util.concurrent.atomic.AtomicInteger(0) }.incrementAndGet()
             activeGroupChats += groupId
             scope.launch {
                 markReadAndSendReceipt(groupId)
                 refreshGroup(groupId)
             }
         } else {
-            activeGroupChats -= groupId
-            typingMembersByGroup[groupId]?.clear()
+            val count = activeGroupChatCounts[groupId]?.decrementAndGet() ?: 0
+            if (count <= 0) {
+                activeGroupChatCounts.remove(groupId)
+                activeGroupChats -= groupId
+                typingMembersByGroup[groupId]?.clear()
+            }
         }
     }
 
@@ -1033,6 +1040,7 @@ object GroupChatCoordinator {
                     .apply()
             }
             activeGroupChats.remove(groupId)
+            activeGroupChatCounts.remove(groupId)
             timelineLimits.remove(groupId)
             lastReadReceiptTargets.remove(groupId)
             SafeLog.i(TAG, "Queued durable leave proposal ${proposal.eventId} for $groupId")
@@ -5128,6 +5136,7 @@ object GroupChatCoordinator {
     private fun purgeLocalGroup(groupId: String) {
         db().deleteGroup(groupId)
         activeGroupChats.remove(groupId)
+        activeGroupChatCounts.remove(groupId)
         timelineLimits.remove(groupId)
         lastReadReceiptTargets.remove(groupId)
         controlAncestorCache.remove(groupId)

@@ -31,15 +31,22 @@ async def test_python_to_python_yggdrasil_ipv6_chat_stream():
             identity_priv=alice_priv,
             signing_key=alice_sign,
         )
-        while True:
-            try:
-                msg = await sess.receive_message()
+        try:
+            while len(received_by_alice) < 3:
+                msg = await asyncio.wait_for(sess.receive_message(), timeout=3.0)
                 if msg.get("type") == "chat":
                     received_by_alice.append(msg.get("body"))
                     # Reply back
                     await sess.send_chat(f"Alice reply to: {msg.get('body')}")
+        except Exception:
+            pass
+        finally:
+            await sess.close()
+            writer.close()
+            try:
+                await writer.wait_closed()
             except Exception:
-                break
+                pass
 
     server = await asyncio.start_server(handle_alice_client, "127.0.0.1", 0)
     port = server.sockets[0].getsockname()[1]
@@ -65,6 +72,11 @@ async def test_python_to_python_yggdrasil_ipv6_chat_stream():
 
         await asyncio.sleep(0.1)
         await bob_sess.close()
+        writer.close()
+        try:
+            await writer.wait_closed()
+        except Exception:
+            pass
 
     assert len(received_by_alice) == 3
     assert len(received_by_bob) == 3

@@ -628,17 +628,97 @@ object P2PMessageRelay {
 
     internal val messageListeners = java.util.concurrent.CopyOnWriteArrayList<MessageListener>()
     private val activeChatPeer = AtomicReference<String?>(null)
+    private val activeChatPeerCounts = java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.atomic.AtomicInteger>()
+
     var activeChatPeerName: String?
-        get() = activeChatPeer.get()
-        set(value) { activeChatPeer.set(value) }
+        get() = activeChatPeer.get() ?: activeChatPeerCounts.keys.firstOrNull()
+        set(value) {
+            val old = activeChatPeer.getAndSet(value)
+            if (old != null && old != value) {
+                decrementActiveChatPeer(old)
+            }
+            if (value != null && old != value) {
+                incrementActiveChatPeer(value)
+            }
+        }
 
     /**
-     * Clears [activeChatPeerName] only when it still equals [peerName].
-     * Uses compare-and-set so a disposing screen cannot overwrite the name
-     * already set by the next chat screen during a fast peer switch.
+     * Enters an active chat session for [peerName]. Returns an [AutoCloseable] token
+     * that must be closed when the chat screen is paused or disposed.
+     * Uses reference counting so overlapping screen transitions never prematurely clear the active chat.
+     */
+    fun enterActiveChat(peerName: String): AutoCloseable {
+        incrementActiveChatPeer(peerName)
+        activeChatPeer.set(peerName)
+        val closed = java.util.concurrent.atomic.AtomicBoolean(false)
+        return AutoCloseable {
+            if (closed.compareAndSet(false, true)) {
+                decrementActiveChatPeer(peerName)
+                // After decrement, pick the first remaining active peer that is NOT peerName
+                // (in case user fast-switched to a different peer while this screen was composing).
+                // If peerName still has remaining tokens (e.g. another overlapping screen), keep it.
+                val remaining = activeChatPeerCounts.keys.firstOrNull()
+                if (remaining == null) {
+                    activeChatPeer.compareAndSet(peerName, null)
+                } else if (remaining != peerName) {
+                    // Another peer's screen is active — point activeChatPeer at it
+                    activeChatPeer.set(remaining)
+                }
+                // else: peerName still has tokens from another overlapping instance, leave activeChatPeer as-is
+            }
+        }
+    }
+
+    private fun incrementActiveChatPeer(peerName: String) {
+        if (peerName.isBlank()) return
+        activeChatPeerCounts.computeIfAbsent(peerName) { java.util.concurrent.atomic.AtomicInteger(0) }.incrementAndGet()
+    }
+
+    private fun decrementActiveChatPeer(peerName: String) {
+        if (peerName.isBlank()) return
+        val count = activeChatPeerCounts[peerName]?.decrementAndGet() ?: 0
+        if (count <= 0) {
+            activeChatPeerCounts.remove(peerName)
+        }
+    }
+
+    /**
+     * Legacy: Clears [activeChatPeerName] only when it still equals [peerName] and no active sessions remain.
+     * Prefer [enterActiveChat] for all new usages — it handles reference counting automatically.
+     * This variant is safe to call even without a prior [enterActiveChat] (it will not corrupt refcounts).
      */
     fun clearActiveChatPeerName(peerName: String) {
-        activeChatPeer.compareAndSet(peerName, null)
+        // Only decrement if there is actually a positive count to avoid underflow.
+        val existingCount = activeChatPeerCounts[peerName]?.get() ?: 0
+        if (existingCount > 0) {
+            decrementActiveChatPeer(peerName)
+        }
+        if (activeChatPeerCounts.isEmpty()) {
+            activeChatPeer.compareAndSet(peerName, null)
+        } else {
+            val remaining = activeChatPeerCounts.keys.firstOrNull { it != peerName } ?: activeChatPeerCounts.keys.firstOrNull()
+            activeChatPeer.set(remaining)
+        }
+    }
+
+    /**
+     * Checks whether a chat with [sender] is currently open and active in the foreground UI.
+     * Matches via exact name, alias, or cryptographic fingerprint.
+     */
+    fun isChatOpenWith(context: Context, sender: String?): Boolean {
+        if (sender.isNullOrBlank()) return false
+        val direct = activeChatPeer.get()
+        if (!direct.isNullOrBlank() && P2PPreferences.isSamePeer(context, direct, sender)) {
+            return true
+        }
+        return activeChatPeerCounts.keys.any { activePeer ->
+            P2PPreferences.isSamePeer(context, activePeer, sender)
+        }
+    }
+
+    internal fun resetActiveChatForTests() {
+        activeChatPeer.set(null)
+        activeChatPeerCounts.clear()
     }
 
     fun registerMessageListener(listener: MessageListener) {
@@ -780,8 +860,8 @@ object P2PMessageRelay {
 
             val latestTask = senderTasks.last()
             val latestNotificationText = latestTask.notificationText
-            val currentActivePeer = activeChatPeer.get()
-            val isChatOpenWithSender = currentActivePeer != null && P2PPreferences.isSamePeer(context, currentActivePeer, sender)
+            val currentActivePeer = activeChatPeerName
+            val isChatOpenWithSender = isChatOpenWith(context, sender)
 
             val newCount = senderTasks.count { it.countAsNew }
             val unreadKey = P2PPreferences.unreadCount(sender)

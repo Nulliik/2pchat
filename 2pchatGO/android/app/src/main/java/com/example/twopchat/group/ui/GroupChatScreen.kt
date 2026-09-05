@@ -13,6 +13,9 @@ import com.example.twopchat.group.ui.components.CreatePollDialog
 import com.example.twopchat.group.ui.components.GroupSeenByDialog
 import com.example.twopchat.group.ui.components.GroupDatePickerDialog
 import com.example.twopchat.group.ui.components.GroupChatModalsOverlay
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.currentStateAsState
 import androidx.compose.ui.draw.shadow
 import com.example.twopchat.ui.chat.AlbumPreviewModal
 import androidx.compose.runtime.collectAsState
@@ -361,14 +364,22 @@ fun GroupChatScreen(
     val surfaceColor = MaterialTheme.colorScheme.surface
     val onSurfaceColor = MaterialTheme.colorScheme.onSurface
 
-    DisposableEffect(state.groupId, controller) {
-        controller.setGroupChatActive(state.groupId, true)
-        com.example.twopchat.group.runtime.GroupNotificationService.cancelNotificationForGroup(context, state.groupId)
-        onDispose {
-            if (myTypingState) {
-                controller.sendTyping(state.groupId, false)
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val lifecycleState by lifecycleOwner.lifecycle.currentStateAsState()
+    val isResumed = lifecycleState.isAtLeast(Lifecycle.State.RESUMED)
+
+    DisposableEffect(state.groupId, controller, isResumed) {
+        if (isResumed) {
+            controller.setGroupChatActive(state.groupId, true)
+            com.example.twopchat.group.runtime.GroupNotificationService.cancelNotificationForGroup(context, state.groupId)
+            onDispose {
+                if (myTypingState) {
+                    controller.sendTyping(state.groupId, false)
+                }
+                controller.setGroupChatActive(state.groupId, false)
             }
-            controller.setGroupChatActive(state.groupId, false)
+        } else {
+            onDispose { }
         }
     }
 

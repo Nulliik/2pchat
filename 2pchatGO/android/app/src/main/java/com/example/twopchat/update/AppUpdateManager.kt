@@ -186,6 +186,25 @@ object AppUpdateManager {
         }
     }
 
+    fun getCurrentVersionCode(context: Context): Long {
+        return try {
+            val pInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                context.packageManager.getPackageInfo(context.packageName, PackageManager.PackageInfoFlags.of(0))
+            } else {
+                @Suppress("DEPRECATION")
+                context.packageManager.getPackageInfo(context.packageName, 0)
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                pInfo.longVersionCode
+            } else {
+                @Suppress("DEPRECATION")
+                pInfo.versionCode.toLong()
+            }
+        } catch (_: Throwable) {
+            1L
+        }
+    }
+
     suspend fun checkLatestRelease(
         context: Context,
         owner: String = GITHUB_OWNER,
@@ -195,9 +214,17 @@ object AppUpdateManager {
         val apiUrl = "https://api.github.com/repos/$owner/$repo/releases/latest"
 
         try {
-            val connection = (URL(apiUrl).openConnection() as HttpURLConnection).apply {
-                connectTimeout = 8000
-                readTimeout = 8000
+            val connResult = UpdateSecurityPolicy.openSecureConnection(
+                rawUrl = apiUrl,
+                context = context,
+                connectTimeoutMs = 8000,
+                readTimeoutMs = 8000
+            )
+            val connection = connResult.getOrElse {
+                return@withContext UpdateCheckResult.Error(it.localizedMessage ?: "Failed to open secure connection")
+            }
+
+            connection.apply {
                 setRequestProperty("User-Agent", USER_AGENT)
                 setRequestProperty("Accept", "application/vnd.github.v3+json")
             }
@@ -238,19 +265,29 @@ object AppUpdateManager {
             val destinationFile = File(updatesDir, "2pchat-update.apk")
             if (destinationFile.exists()) destinationFile.delete()
 
-            val connection = (URL(apkUrl).openConnection() as HttpURLConnection).apply {
-                connectTimeout = 15000
-                readTimeout = 20000
+            val initialConnResult = UpdateSecurityPolicy.openSecureConnection(
+                rawUrl = apkUrl,
+                context = context,
+                connectTimeoutMs = 15000,
+                readTimeoutMs = 20000
+            )
+            val connection = initialConnResult.getOrThrow().apply {
                 setRequestProperty("User-Agent", USER_AGENT)
-                instanceFollowRedirects = true
             }
 
-            // Handle GitHub direct redirects
+            // Handle GitHub direct redirects securely
             val finalConn = if (connection.responseCode in 300..399) {
                 val redirectUrl = connection.getHeaderField("Location")
-                (URL(redirectUrl).openConnection() as HttpURLConnection).apply {
-                    connectTimeout = 15000
-                    readTimeout = 20000
+                    ?: return@withContext Result.failure(SecurityException("Missing Location header on redirect"))
+                if (!UpdateSecurityPolicy.isValidUpdateUrl(redirectUrl)) {
+                    return@withContext Result.failure(SecurityException("Redirect to untrusted update URL: $redirectUrl"))
+                }
+                UpdateSecurityPolicy.openSecureConnection(
+                    rawUrl = redirectUrl,
+                    context = context,
+                    connectTimeoutMs = 15000,
+                    readTimeoutMs = 20000
+                ).getOrThrow().apply {
                     setRequestProperty("User-Agent", USER_AGENT)
                 }
             } else {
@@ -280,6 +317,14 @@ object AppUpdateManager {
                         }
                     }
                 }
+            }
+
+            // Post-download verification
+            val currentVc = getCurrentVersionCode(context)
+            val verification = UpdateVerifier(currentVersionCode = currentVc).verify(destinationFile)
+            if (verification is UpdateVerifier.Result.Rejected) {
+                destinationFile.delete()
+                return@withContext Result.failure(SecurityException("Update rejected: ${verification.reason}"))
             }
 
             Result.success(destinationFile)

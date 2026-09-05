@@ -221,3 +221,32 @@ dependencies {
   implementation("info.guardianproject:jtorctl:0.4.5.7")
   implementation("info.guardianproject.netcipher:netcipher:2.1.0")
 }
+
+val bannedDependencyGroups = listOf(
+    "com.google.android.gms",
+    "com.google.android.datatransport",
+    "com.google.firebase",
+    "com.google.android.play"
+)
+
+tasks.register("verifyNoTelemetryDependencies") {
+    group = "verification"
+    description = "Checks release runtime classpath for banned Google Play / telemetry dependencies (SEC-02)"
+    doLast {
+        val cfg = configurations.findByName("releaseRuntimeClasspath")
+        if (cfg == null) {
+            println("releaseRuntimeClasspath not found, skipping check")
+            return@doLast
+        }
+        val offenders = cfg.incoming.resolutionResult.allComponents
+            .mapNotNull { it.moduleVersion }
+            .filter { mv -> bannedDependencyGroups.any { mv.group.startsWith(it) } }
+        if (offenders.isNotEmpty()) {
+            val list = offenders.joinToString("\n") { "  ${it.group}:${it.name}:${it.version}" }
+            println("SEC-02 finding - Banned telemetry dependencies in release classpath:\n$list")
+            throw GradleException("Banned telemetry dependencies in release classpath:\n$list")
+        } else {
+            println("SEC-02: No banned telemetry dependencies found in release classpath.")
+        }
+    }
+}

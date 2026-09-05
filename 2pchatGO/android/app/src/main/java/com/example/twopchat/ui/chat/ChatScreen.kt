@@ -56,6 +56,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.currentStateAsState
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -1056,17 +1059,18 @@ fun ChatScreen(
         }
     }
 
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val lifecycleState by lifecycleOwner.lifecycle.currentStateAsState()
+    val isResumed = lifecycleState.isAtLeast(Lifecycle.State.RESUMED)
+    val shouldSuppressNotification = isActive && isResumed
+
     DisposableEffect(peerName, isActive) {
         if (isActive) {
-            P2PMessageRelay.activeChatPeerName = peerName
             P2PMessageRelay.registerMessageListener(messageListener)
             sharedPrefs.edit { putInt("unread_count_$peerName", 0) }
             com.example.twopchat.relay.MessageNotificationService.cancelNotificationForPeer(context, peerName)
         }
         onDispose {
-            // Use atomic CAS to avoid clearing the name that was already set
-            // by the next chat screen during a fast peer switch (BUG-03).
-            P2PMessageRelay.clearActiveChatPeerName(peerName)
             if (isActive) {
                 P2PMessageRelay.unregisterMessageListener(messageListener)
             }
@@ -1074,6 +1078,18 @@ fun ChatScreen(
             if (endpoint != null && peerName != "Saved Messages" && myTypingState) {
                 P2PMessageRelay.sendTypingState(context, peerName, endpoint, false)
             }
+        }
+    }
+
+    DisposableEffect(peerName, shouldSuppressNotification) {
+        if (shouldSuppressNotification) {
+            val token = P2PMessageRelay.enterActiveChat(peerName)
+            com.example.twopchat.relay.MessageNotificationService.cancelNotificationForPeer(context, peerName)
+            onDispose {
+                token.close()
+            }
+        } else {
+            onDispose { }
         }
     }
 
