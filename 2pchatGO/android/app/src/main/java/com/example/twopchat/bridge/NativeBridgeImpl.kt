@@ -218,7 +218,7 @@ class NativeBridgeImpl(
     }
 
     private fun setupNativeCallbacks() {
-        NativeBridge.onPeerConnectedListener = { peerFP, endpoint ->
+        NativeBridge.onPeerConnectedListener = connected@{ peerFP, endpoint ->
             SafeLog.i(TAG, "[GoCore] Peer connected: ${SafeLog.fp(peerFP)}")
             SafeLog.d(TAG, "[GoCore] Peer connected: ${SafeLog.fp(peerFP)} @ $endpoint")
             // CRITICAL: populate bidirectional name↔fp maps BEFORE setting onlinePeers.
@@ -247,6 +247,14 @@ class NativeBridgeImpl(
             // route from the host range instead of treating every host:port
             // as Yggdrasil.
             val transportHint = canonicalConnectionTransport(null, endpoint) ?: "Direct P2P"
+            val appContext = com.example.twopchat.yggdrasil.GlobalApplication.appContext
+            val isGroupInferred = runCatching {
+                com.example.twopchat.data.ChatDatabaseHelper.getInstance(appContext).isPeerGroupInferred(peerFP)
+            }.getOrDefault(false)
+            if (isGroupInferred && transportHint != "Tor") {
+                SafeLog.w(TAG, "[GoCore] Inbound clearnet connection ($transportHint) from group-inferred peer ${SafeLog.fp(peerFP)} rejected by policy")
+                return@connected
+            }
             activeEndpoints[peerFP] = endpoint
             activeTransports[peerFP] = transportHint
             SafeLog.i(TAG, "[GoCore] Active route for ${SafeLog.fp(peerFP)}: $transportHint")

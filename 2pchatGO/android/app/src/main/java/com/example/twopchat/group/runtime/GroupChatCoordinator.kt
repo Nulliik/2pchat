@@ -39,6 +39,7 @@ import com.example.twopchat.group.protocol.GroupAttachmentBlockFrame
 import com.example.twopchat.group.protocol.GroupAttachmentFrames
 import com.example.twopchat.group.protocol.GroupAttachmentRequest
 import com.example.twopchat.group.protocol.GroupEpochKeyPackage
+import com.example.twopchat.group.protocol.GroupKeyRequest
 import com.example.twopchat.group.protocol.GroupEventFactory
 import com.example.twopchat.group.ui.GroupReadReceipt
 import com.example.twopchat.group.protocol.GroupEventKind
@@ -108,6 +109,8 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
@@ -116,6 +119,11 @@ import kotlinx.coroutines.sync.withLock
 import org.json.JSONArray
 import org.json.JSONObject
 
+sealed class GroupSecurityEvent {
+    data class AwaitingKeyTimeout(val groupId: String, val taskId: String) : GroupSecurityEvent()
+    data class EquivocationDetected(val groupId: String, val authorDeviceId: String) : GroupSecurityEvent()
+}
+
 /**
  * Durable group runtime layered over the existing authenticated pairwise
  * sessions. Network delivery is at-least-once; the append-only SQLCipher event
@@ -123,6 +131,9 @@ import org.json.JSONObject
  */
 object GroupChatCoordinator {
     private const val TAG = "GroupChatCoordinator"
+    private val _securityEvents = MutableSharedFlow<GroupSecurityEvent>(extraBufferCapacity = 64)
+    val securityEvents = _securityEvents.asSharedFlow()
+    private val lastOwnerKeyRequestHandlingMs = ConcurrentHashMap<String, Long>()
     private const val INVITE_LIFETIME_MS = 7L * 24L * 60L * 60L * 1_000L
     private const val MAX_CLOCK_SKEW_MS = 5L * 60L * 1_000L
     private const val SMALL_GROUP_FANOUT = 32
@@ -178,6 +189,13 @@ object GroupChatCoordinator {
     private val attachmentServeBudgets = ConcurrentHashMap<String, AttachmentServeBudget>()
     private val controlAncestorCache = ConcurrentHashMap<String, ControlAncestorCache>()
     private val typingMembersByGroup = ConcurrentHashMap<String, ConcurrentHashMap<String, Long>>()
+    private val memberActiveAtEpochCache = ConcurrentHashMap<Triple<String, String, Long>, Boolean>()
+
+    private fun isAuthorActiveAtEpoch(groupId: String, authorDeviceId: String, epoch: Long): Boolean {
+        return memberActiveAtEpochCache.computeIfAbsent(Triple(groupId, authorDeviceId, epoch)) {
+            db().isMemberActiveAtEpoch(groupId, authorDeviceId, epoch)
+        }
+    }
 
     internal data class PendingKeyPackageRecord(
         val senderPeerName: String,
@@ -193,12 +211,85 @@ object GroupChatCoordinator {
         val receivedAtMs: Long = System.currentTimeMillis(),
     )
 
+    internal data class PendingOutgoingEvent(
+        val kind: GroupEventKind,
+        val payload: JSONObject,
+        val targetEventId: String?,
+        val createdAtMs: Long = System.currentTimeMillis(),
+    )
+
+    internal data class PendingTombstoneRecord(
+        val senderPeerName: String,
+        val json: JSONObject,
+        val event: GroupWireEvent,
+        val receivedAtMs: Long = System.currentTimeMillis(),
+    )
+
     private val pendingKeyPackages = ConcurrentHashMap<String, MutableList<PendingKeyPackageRecord>>()
     private val pendingEpochEvents = ConcurrentHashMap<String, MutableList<PendingGroupEventRecord>>()
+    private val pendingOutgoingEpochEvents = ConcurrentHashMap<String, MutableList<PendingOutgoingEvent>>()
+    private val pendingTombstones = ConcurrentHashMap<String, MutableList<PendingTombstoneRecord>>()
     private val PENDING_BUFFER_TTL_MS = 5 * 60 * 1000L
     private val MAX_PENDING_BUFFER_PER_GROUP = 50
     private val lastSyncRequestAtMs = ConcurrentHashMap<String, Long>()
     private const val SYNC_REQUEST_COOLDOWN_MS = 5_000L
+
+    private val memberSupportsV2 = ConcurrentHashMap<Pair<String, String>, Boolean>()
+
+    fun setMemberSupportsV2(groupId: String, deviceId: String, supports: Boolean) {
+        memberSupportsV2[groupId to deviceId] = supports
+    }
+
+    fun doesMemberSupportV2(groupId: String, deviceId: String): Boolean =
+        memberSupportsV2[groupId to deviceId] == true
+
+    fun canRotateToV2(groupId: String): Boolean {
+        val group = db().getGroup(groupId) ?: return false
+        val activeMembers = db().listMembers(groupId).filter {
+            it.deviceId != group.ownerDeviceId && it.status in setOf("ACTIVE", "RESTRICTED")
+        }
+        return activeMembers.all { doesMemberSupportV2(groupId, it.deviceId) }
+    }
+
+    suspend fun rotateGroupToV2(groupId: String, forceOverride: Boolean = false): Boolean {
+        val group = db().getGroup(groupId) ?: return false
+        val local = localIdentity()
+        if (group.ownerDeviceId != local.deviceId) {
+            throw SecurityException("only the group owner can rotate to v2")
+        }
+        val currentKey = db().getEpochKey(groupId, group.currentEpoch)
+        if (currentKey?.suite == GroupWireProtocol.SUITE_V2) {
+            return true
+        }
+        if (!forceOverride && !canRotateToV2(groupId)) {
+            SafeLog.w(TAG, "Owner defers v2 rotation for group $groupId: active members lack supports_v2")
+            return false
+        }
+        val nextEpoch = group.currentEpoch + 1
+        val newSecret = EpochAeadGroupCrypto.generateEpochSecret()
+        val newKey = StoredGroupEpochKey(
+            groupId = groupId,
+            epoch = nextEpoch,
+            keyMaterial = newSecret,
+            suite = GroupWireProtocol.SUITE_V2,
+        )
+        check(db().storeEpochKey(newKey))
+        val event = emitEvent(
+            groupId = groupId,
+            kind = GroupEventKind.GROUP_UPDATED,
+            payload = JSONObject().apply {
+                put("title", group.title)
+                put("description", group.description)
+                put("crypto_suite", GroupWireProtocol.SUITE_V2)
+                put("next_epoch", nextEpoch)
+            },
+            targetEventId = group.controlHead,
+        ) ?: return false
+        enqueueEpochKeyPackages(groupId, event.eventId, nextEpoch, newSecret)
+        flushDueOutbox()
+        refreshGroup(groupId)
+        return true
+    }
 
     private val _summaries = MutableStateFlow<List<GroupSummary>>(emptyList())
     val summaries: StateFlow<List<GroupSummary>> = _summaries.asStateFlow()
@@ -272,6 +363,7 @@ object GroupChatCoordinator {
             activeGroupChatCounts.clear()
             lastReadReceiptTargets.clear()
             pendingSyncRequests.clear()
+            pendingTombstones.clear()
             syncingGroups.clear()
             lastSyncRequestAtMs.clear()
             scope = newRuntimeScope()
@@ -380,6 +472,7 @@ object GroupChatCoordinator {
         title: String,
         description: String,
         contactIds: Set<String>,
+        torOnlyGroup: Boolean = false,
         onCreated: (String) -> Unit = {},
     ) {
         scope.launch {
@@ -395,7 +488,7 @@ object GroupChatCoordinator {
             }
             _createState.value = _createState.value.copy(isCreating = true, errorMessage = null)
             runCatching {
-                createGroupInternal(normalizedTitle, normalizedDescription, contactIds)
+                createGroupInternal(normalizedTitle, normalizedDescription, contactIds, torOnlyGroup)
             }.onFailure { error ->
                 _createState.value = _createState.value.copy(
                     isCreating = false,
@@ -775,13 +868,31 @@ object GroupChatCoordinator {
 
     fun deleteMessage(groupId: String, messageId: String) {
         scope.launch {
-            emitEvent(groupId, GroupEventKind.DELETE, JSONObject(), messageId)
+            val target = db().getEvent(groupId, messageId)
+            val prevAuthorEvent = target?.payload?.let {
+                runCatching { GroupWireProtocol.parseEvent(JSONObject(it.toString(Charsets.UTF_8))).previousAuthorEvent }.getOrNull()
+            } ?: if (target != null && target.authorSeq > 1L) {
+                db().getEventByAuthorSequence(groupId, target.authorDeviceId, target.authorSeq - 1L)?.eventId
+            } else null
+
+            val payload = JSONObject().apply {
+                if (target != null) {
+                    put("target_event_id", target.eventId)
+                    put("target_author_device_id", target.authorDeviceId)
+                    put("target_author_sequence", target.authorSeq)
+                    put("target_previous_author_event", prevAuthorEvent.orEmpty())
+                    put("target_hlc_physical_ms", target.hlcPhysicalMs)
+                    put("target_hlc_logical", target.hlcLogical)
+                }
+            }
+            emitEvent(groupId, GroupEventKind.DELETE, payload, messageId)
         }
     }
 
     fun clearHistory(groupId: String) {
         scope.launch {
             try {
+                pendingTombstones.remove(groupId)
                 db().clearHistory(groupId)
                 refreshAllSummariesWithoutRecursion()
                 refreshGroup(groupId)
@@ -853,6 +964,26 @@ object GroupChatCoordinator {
                     put("title", group.title)
                     put("description", group.description)
                     put("admin_only_posting", enabled)
+                },
+            )
+        }
+    }
+
+    fun setTorOnlyGroup(groupId: String, enabled: Boolean) {
+        scope.launch {
+            val group = db().getGroup(groupId) ?: return@launch
+            if (group.torOnlyGroup == enabled) return@launch
+            if (group.torOnlyGroup && !enabled) {
+                // Monotonic: weakening true -> false is rejected
+                return@launch
+            }
+            requestSerializedControl(
+                groupId,
+                "update_info",
+                JSONObject().apply {
+                    put("title", group.title)
+                    put("description", group.description)
+                    put("tor_only_group", enabled)
                 },
             )
         }
@@ -1177,6 +1308,7 @@ object GroupChatCoordinator {
     fun invalidateActiveMemberCache() {
         cachedActiveMemberPeerNames = null
         lastActiveMemberCacheTimeMs = 0L
+        memberActiveAtEpochCache.clear()
     }
 
     fun listActiveGroupMemberPeerNames(context: Context): Set<String> {
@@ -1455,6 +1587,7 @@ object GroupChatCoordinator {
         title: String,
         description: String,
         contactIds: Set<String>,
+        torOnlyGroup: Boolean = false,
     ): String {
         val context = requireNotNull(applicationContext)
         val prefs = P2PPreferences.prefs(context)
@@ -1502,6 +1635,7 @@ object GroupChatCoordinator {
                 localDeviceId = local.deviceId,
                 ownerDeviceId = local.deviceId,
                 currentEpoch = 1,
+                torOnlyGroup = torOnlyGroup,
             ),
             members,
             StoredGroupEpochKey(groupId, 1, secret),
@@ -1523,6 +1657,7 @@ object GroupChatCoordinator {
             GroupWireProtocol.TYPE_SYNC_REQUEST -> receiveSyncRequest(senderPeerName, json)
             GroupWireProtocol.TYPE_SYNC_BATCH -> receiveSyncBatch(senderPeerName, json)
             GroupWireProtocol.TYPE_KEY_PACKAGE -> receiveKeyPackage(senderPeerName, json)
+            GroupWireProtocol.TYPE_KEY_REQUEST -> receiveKeyRequest(senderPeerName, json)
             GroupWireProtocol.TYPE_ROSTER_SNAPSHOT -> receiveRosterSnapshot(senderPeerName, json)
             GroupWireProtocol.TYPE_ATTACHMENT_REQUEST ->
                 receiveAttachmentRequest(senderPeerName, json)
@@ -1808,6 +1943,7 @@ object GroupChatCoordinator {
                     description = invite.description,
                     avatarUri = savedAvatarPath,
                     adminOnlyPosting = invite.adminOnlyPosting,
+                    torOnlyGroup = invite.torOnlyGroup,
                     localDeviceId = local.deviceId,
                     ownerDeviceId = owner.deviceId,
                     currentEpoch = invite.epoch,
@@ -1921,6 +2057,14 @@ object GroupChatCoordinator {
             ) { "group changed while accepting its invite" }
         }
         db().deletePendingInvite(inviteId)
+        for (m in members) {
+            if (m.deviceId != local.deviceId) {
+                val peerFP = m.transportFingerprint.ifBlank { m.accountId }
+                if (peerFP.isNotBlank()) {
+                    enforceGroupInferredPeerPolicy(peerFP, m.peerName)
+                }
+            }
+        }
         refreshPendingInvites()
         refreshGroup(invite.groupId)
         refreshAllGroups()
@@ -1977,6 +2121,7 @@ object GroupChatCoordinator {
         val member = db().getMember(response.groupId, response.memberDeviceId)
             ?: throw SecurityException("unknown group invite recipient")
         require(member.transportFingerprint == response.memberFingerprint)
+        setMemberSupportsV2(response.groupId, response.memberDeviceId, response.supportsV2)
         if (!response.accepted) {
             if (member.status == "INVITED") {
                 executeSerializedControlLocked(
@@ -2161,7 +2306,10 @@ object GroupChatCoordinator {
                 require(memberWasActiveAt(recipient, removalEvent.epoch))
                 val epochKey = db().getEpochKey(group.groupId, removalEvent.epoch)
                     ?: throw SecurityException("removal ACK refers to a forgotten epoch")
-                val removalPayload = eventFactory.decrypt(removalEvent, epochKey.keyMaterial)
+                val removalRosterHash = if (removalEvent.cryptoSuite == GroupWireProtocol.SUITE_V2) {
+                    GroupWireProtocol.computeRosterHash(db().listMembers(group.groupId))
+                } else null
+                val removalPayload = eventFactory.decrypt(removalEvent, epochKey.keyMaterial, removalRosterHash)
                 require(
                     removalPayload.optString("member_device_id") == recipient.deviceId,
                 ) { "removal ACK sender is not the removed member" }
@@ -2187,6 +2335,154 @@ object GroupChatCoordinator {
         }
     }
 
+    private suspend fun handleIncomingTombstone(
+        group: StoredGroup,
+        senderPeerName: String,
+        json: JSONObject,
+        event: GroupWireEvent,
+        acknowledge: Boolean,
+    ) {
+        val existing = db().getEvent(group.groupId, event.eventId)
+        if (existing != null) {
+            if (!existing.isTombstoned) {
+                val authDelete = db().getDeleteEventForTarget(group.groupId, event.eventId)
+                if (authDelete != null) {
+                    db().tombstoneEvent(group.groupId, event.eventId)
+                }
+            }
+            if (acknowledge) {
+                sendAck(
+                    senderPeerName,
+                    GroupStoreAck(group.groupId, event.eventId, group.localDeviceId, System.currentTimeMillis()),
+                )
+            }
+            return
+        }
+
+        val authorizingDelete = db().getDeleteEventForTarget(group.groupId, event.eventId)
+        if (authorizingDelete == null) {
+            SafeLog.d(TAG, "Buffering tombstone placeholder ${event.eventId} in group ${group.groupId} waiting for authorizing DELETE")
+            bufferPendingTombstone(group.groupId, senderPeerName, json, event)
+            val author = db().getMember(group.groupId, event.authorDeviceId)
+            if (author != null) {
+                sendSyncRequests(group, author)
+            }
+            return
+        }
+
+        val deletePayload = runCatching { JSONObject(authorizingDelete.body.orEmpty()) }.getOrNull()
+            ?: throw SecurityException("authorizing DELETE payload is invalid")
+        require(deletePayload.optString("target_event_id") == event.eventId) {
+            "tombstone event ID mismatch"
+        }
+        val targetAuthor = deletePayload.optString("target_author_device_id")
+        require(targetAuthor.isNotBlank() && targetAuthor == event.authorDeviceId) {
+            "tombstone author device ID mismatch"
+        }
+        val targetSeq = deletePayload.optLong("target_author_sequence", -1L)
+        require(targetSeq != -1L && targetSeq == event.authorSequence) {
+            "tombstone author sequence mismatch"
+        }
+        val targetPrev = deletePayload.optString("target_previous_author_event").takeIf { it.isNotBlank() && it != "null" }
+        require(targetPrev == event.previousAuthorEvent) {
+            "tombstone previous author event mismatch"
+        }
+        val targetHlcMs = deletePayload.optLong("target_hlc_physical_ms", -1L)
+        require(targetHlcMs != -1L && targetHlcMs == event.hlcPhysicalMs) {
+            "tombstone HLC physical mismatch"
+        }
+        val targetHlcLogical = deletePayload.optInt("target_hlc_logical", -1)
+        require(targetHlcLogical != -1 && targetHlcLogical == event.hlcLogical) {
+            "tombstone HLC logical mismatch"
+        }
+
+        require(isAuthorActiveAtEpoch(group.groupId, event.authorDeviceId, event.epoch)) {
+            "tombstone author is not active at epoch ${event.epoch}"
+        }
+
+        val author = db().getMember(group.groupId, event.authorDeviceId)
+        val minEpoch = author?.joinedEpoch ?: 0L
+        val sequenceOccupant = db().getEventByAuthorSequence(
+            group.groupId,
+            event.authorDeviceId,
+            event.authorSequence,
+            minimumEpoch = minEpoch,
+        )
+        require(sequenceOccupant == null || sequenceOccupant.eventId == event.eventId) {
+            "tombstone author sequence conflict"
+        }
+        if (event.authorSequence == 1L) {
+            require(event.previousAuthorEvent == null) {
+                "first author event must not have previous author event"
+            }
+        } else {
+            require(!event.previousAuthorEvent.isNullOrBlank()) {
+                "subsequent author event must have previous author event"
+            }
+            db().getEventByAuthorSequence(
+                group.groupId,
+                event.authorDeviceId,
+                event.authorSequence - 1L,
+                minimumEpoch = minEpoch,
+            )?.let { predecessor ->
+                require(event.previousAuthorEvent == predecessor.eventId) {
+                    "tombstone predecessor hash chain mismatch"
+                }
+            }
+        }
+        if (event.authorSequence < Long.MAX_VALUE) {
+            db().getEventByAuthorSequence(
+                group.groupId,
+                event.authorDeviceId,
+                event.authorSequence + 1L,
+                minimumEpoch = minEpoch,
+            )?.let { successor ->
+                val successorWire = successor.payload?.let {
+                    runCatching { GroupWireProtocol.parseEvent(JSONObject(it.toString(Charsets.UTF_8))) }.getOrNull()
+                }
+                if (successorWire != null) {
+                    require(successorWire.previousAuthorEvent == event.eventId) {
+                        "tombstone successor hash chain conflict"
+                    }
+                }
+            }
+        }
+
+        val now = System.currentTimeMillis()
+        val stored = StoredGroupEvent(
+            groupId = event.groupId,
+            eventId = event.eventId,
+            epoch = event.epoch,
+            authorDeviceId = event.authorDeviceId,
+            authorSeq = event.authorSequence,
+            hlcPhysicalMs = event.hlcPhysicalMs,
+            hlcLogical = event.hlcLogical,
+            kind = when (event.kind) {
+                GroupEventKind.MEDIA -> GroupEventKind.MEDIA.name
+                GroupEventKind.POLL -> GroupEventKind.POLL.name
+                GroupEventKind.POLL_VOTE -> GroupEventKind.POLL_VOTE.name
+                GroupEventKind.EDIT -> StoredGroupEventKind.EDIT.name
+                GroupEventKind.DELETE -> StoredGroupEventKind.DELETE.name
+                else -> StoredGroupEventKind.MESSAGE.name
+            },
+            body = "",
+            targetEventId = event.targetEventId,
+            controlHead = event.controlHead,
+            payload = null,
+            createdAtMs = event.hlcPhysicalMs,
+            receivedAtMs = now,
+            isTombstoned = true,
+        )
+        db().ingestEvent(stored, countAsUnread = false)
+        db().tombstoneEvent(group.groupId, event.eventId)
+        if (acknowledge) {
+            sendAck(
+                senderPeerName,
+                GroupStoreAck(group.groupId, event.eventId, group.localDeviceId, now),
+            )
+        }
+    }
+
     private suspend fun receiveEventLocked(
         senderPeerName: String,
         json: JSONObject,
@@ -2196,8 +2492,47 @@ object GroupChatCoordinator {
         val event = GroupWireProtocol.parseEvent(json)
         val group = db().getGroup(event.groupId) ?: return
         requireTransportMember(group.groupId, senderPeerName)
+
+        if (event.isTombstoned) {
+            handleIncomingTombstone(group, senderPeerName, json, event, acknowledge)
+            return
+        }
+
+        if (event.epoch > group.currentEpoch) {
+            SafeLog.d(TAG, "Buffering future epoch event ${event.eventId} (epoch ${event.epoch} > current ${group.currentEpoch})")
+            bufferPendingGroupEvent(group.groupId, senderPeerName, json, event)
+            val author = db().getMember(group.groupId, event.authorDeviceId)
+            if (author != null) {
+                sendSyncRequests(group, author)
+            }
+            return
+        }
+
+        val controlApplied = event.controlHead == null ||
+            event.controlHead == group.controlHead ||
+            db().getEvent(group.groupId, event.controlHead) != null
+
         val author = db().getMember(group.groupId, event.authorDeviceId)
-            ?: throw SecurityException("group event author is absent from the accepted roster")
+        if (author == null) {
+            if (!controlApplied) {
+                SafeLog.d(TAG, "Buffering out-of-order event ${event.eventId} waiting for author ${event.authorDeviceId} control head ${event.controlHead}")
+                bufferPendingGroupEvent(group.groupId, senderPeerName, json, event)
+                return
+            }
+            throw SecurityException("group event author is absent from the accepted roster")
+        }
+
+        val authorActiveAtEpoch = isAuthorActiveAtEpoch(group.groupId, event.authorDeviceId, event.epoch)
+        if (!authorActiveAtEpoch) {
+            if (!controlApplied) {
+                SafeLog.d(TAG, "Buffering out-of-order event ${event.eventId} (author not active yet at epoch ${event.epoch} and control head ${event.controlHead} not applied)")
+                bufferPendingGroupEvent(group.groupId, senderPeerName, json, event)
+                sendSyncRequests(group, author)
+                return
+            }
+            throw SecurityException("group event author ${event.authorDeviceId} is not active at epoch ${event.epoch}")
+        }
+
         require(author.deviceId == stableDeviceId(author.transportFingerprint)) {
             "group event author has an invalid roster identity"
         }
@@ -2277,7 +2612,18 @@ object GroupChatCoordinator {
                 }
                 return
             }
-        val payload = eventFactory.decrypt(event, epochKey.keyMaterial)
+        require(event.cryptoSuite == epochKey.suite) {
+            "event suite ${event.cryptoSuite} does not match epoch suite ${epochKey.suite}"
+        }
+        val rosterHash = if (event.cryptoSuite == GroupWireProtocol.SUITE_V2) {
+            GroupWireProtocol.computeRosterHash(db().listMembers(group.groupId))
+        } else null
+        val payload = try {
+            eventFactory.decrypt(event, epochKey.keyMaterial, rosterHash)
+        } catch (e: SecurityException) {
+            SafeLog.e(TAG, "Failed to decrypt group event ${event.eventId} (roster mismatch / equivocation detected)", e)
+            throw SecurityException("group event decryption failed (potential owner equivocation / roster mismatch)", e)
+        }
         val localMembership = db().getMember(group.groupId, group.localDeviceId)
             ?: throw SecurityException("local device has no group membership")
         var isJoiningBootstrapControl = false
@@ -2320,6 +2666,61 @@ object GroupChatCoordinator {
             }
             return
         }
+        val authorizingDelete = db().getDeleteEventForTarget(group.groupId, event.eventId)
+        if (authorizingDelete != null) {
+            val deletePayload = runCatching { JSONObject(authorizingDelete.body.orEmpty()) }.getOrNull()
+            var matchesHeader = true
+            if (deletePayload != null && deletePayload.has("target_event_id")) {
+                if (deletePayload.optString("target_event_id") != event.eventId) {
+                    matchesHeader = false
+                }
+                val targetAuthor = deletePayload.optString("target_author_device_id")
+                if (targetAuthor.isNotBlank() && targetAuthor != event.authorDeviceId) {
+                    matchesHeader = false
+                }
+                val targetSeq = deletePayload.optLong("target_author_sequence", -1L)
+                if (targetSeq != -1L && targetSeq != event.authorSequence) {
+                    matchesHeader = false
+                }
+                val targetPrev = deletePayload.optString("target_previous_author_event").takeIf { it.isNotBlank() && it != "null" }
+                if (deletePayload.has("target_previous_author_event") && targetPrev != (event.previousAuthorEvent ?: "")) {
+                    matchesHeader = false
+                }
+                val targetHlcMs = deletePayload.optLong("target_hlc_physical_ms", -1L)
+                if (targetHlcMs != -1L && targetHlcMs != event.hlcPhysicalMs) {
+                    matchesHeader = false
+                }
+                val targetHlcLogical = deletePayload.optInt("target_hlc_logical", -1)
+                if (targetHlcLogical != -1 && targetHlcLogical != event.hlcLogical) {
+                    matchesHeader = false
+                }
+            }
+
+            if (!matchesHeader) {
+                SafeLog.w(
+                    TAG,
+                    "Stored DELETE event ${authorizingDelete.eventId} does not match incoming original ${event.eventId} header! Keeping original and invalidating DELETE.",
+                )
+                db().invalidateDeleteForTarget(group.groupId, event.eventId)
+            } else {
+                // Tombstone on arrival!
+                val stored = event.toStored(payload, json).copy(
+                    body = "",
+                    payload = null,
+                    isTombstoned = true,
+                )
+                db().ingestEvent(stored, countAsUnread = false)
+                db().tombstoneEvent(group.groupId, event.eventId)
+                if (acknowledge) {
+                    sendAck(
+                        senderPeerName,
+                        GroupStoreAck(group.groupId, event.eventId, group.localDeviceId, now),
+                    )
+                }
+                return
+            }
+        }
+
         require(validatePolicy(group, author, event, payload))
 
         val stored = event.toStored(payload, json)
@@ -2346,6 +2747,17 @@ object GroupChatCoordinator {
                 )
             }
             return
+        }
+        if (event.kind == GroupEventKind.DELETE) {
+            shredMessageAttachmentsIfUnreferenced(group.groupId, event.targetEventId)
+            applicationContext?.let { context ->
+                GroupNotificationService.cancelNotificationForGroup(context, group.groupId)
+            }
+            attachmentManifests.remove(attachmentManifestKey(group.groupId, event.targetEventId.orEmpty()))
+            event.targetEventId?.let { targetId ->
+                drainPendingTombstones(group.groupId, targetId)
+            }
+            refreshGroup(group.groupId)
         }
         if (isSerializedControl(event.kind)) {
             applySerializedControl(group, event, payload)
@@ -2451,6 +2863,13 @@ object GroupChatCoordinator {
         val group = db().getGroup(request.groupId) ?: return
         val requester = requireTransportMember(group.groupId, senderPeerName)
         require(request.requesterDeviceId == requester.deviceId)
+        if (request.signatureBase64.isNotBlank()) {
+            require(request.verify(requester.signingKeyBase64)) {
+                "sync request signature must verify against requester signing key"
+            }
+        } else if (request.supportsV2) {
+            throw SecurityException("sync request asserting supports_v2 must be signed")
+        }
         val events = mutableListOf<JSONObject>()
         var directOversizedEvent: JSONObject? = null
         var hasMore = false
@@ -2470,9 +2889,44 @@ object GroupChatCoordinator {
                 minimumEpoch = requester.joinedEpoch,
             )
             for (event in stored) {
-                val wire = event.payload?.let {
-                    JSONObject(it.toString(Charsets.UTF_8))
-                } ?: continue
+                val wire = if (event.isTombstoned) {
+                    val authorMember = db().getMember(group.groupId, event.authorDeviceId)
+                    val prevAuthorEvent = if (event.authorSeq > 1L) {
+                        db().getEventByAuthorSequence(group.groupId, event.authorDeviceId, event.authorSeq - 1L)?.eventId
+                    } else null
+                    val suite = db().getEpochKey(group.groupId, event.epoch)?.suite ?: "2pchat-epoch-aes256gcm-ed25519-v1"
+                    JSONObject().apply {
+                        put("type", GroupWireProtocol.TYPE_EVENT)
+                        put("version", GroupWireProtocol.VERSION)
+                        put("group_id", event.groupId)
+                        put("event_id", event.eventId)
+                        put("epoch", event.epoch)
+                        put("kind", when (event.kind) {
+                            StoredGroupEventKind.MESSAGE.name -> GroupEventKind.MESSAGE.wireName
+                            StoredGroupEventKind.EDIT.name -> GroupEventKind.EDIT.wireName
+                            StoredGroupEventKind.DELETE.name -> GroupEventKind.DELETE.wireName
+                            else -> runCatching { GroupEventKind.valueOf(event.kind).wireName }.getOrDefault(event.kind.lowercase())
+                        })
+                        put("author_fingerprint", authorMember?.transportFingerprint.orEmpty())
+                        put("author_device_id", event.authorDeviceId)
+                        put("author_signing_key", authorMember?.signingKeyBase64.orEmpty())
+                        put("author_sequence", event.authorSeq)
+                        if (prevAuthorEvent != null) put("previous_author_event", prevAuthorEvent)
+                        if (event.controlHead != null) put("control_head", event.controlHead)
+                        put("hlc_physical_ms", event.hlcPhysicalMs)
+                        put("hlc_logical", event.hlcLogical)
+                        if (event.targetEventId != null) put("target_event_id", event.targetEventId)
+                        put("nonce", "")
+                        put("ciphertext", "")
+                        put("signature", "")
+                        put("crypto_suite", suite)
+                        put("is_tombstoned", true)
+                    }
+                } else {
+                    event.payload?.let {
+                        JSONObject(it.toString(Charsets.UTF_8))
+                    } ?: continue
+                }
                 events += wire
                 val probe = GroupControlFrames.syncBatchToJson(
                     GroupSyncBatch(request.requestId, group.groupId, events, hasMore = true),
@@ -2518,6 +2972,85 @@ object GroupChatCoordinator {
         pending.response.complete(batch)
     }
 
+    private suspend fun receiveKeyRequest(senderPeerName: String, json: JSONObject) {
+        val request = GroupControlFrames.parseKeyRequest(json)
+        val group = db().getGroup(request.groupId) ?: return
+        val requester = db().getMember(group.groupId, request.requesterDeviceId) ?: return
+        // Must verify signature against DB roster, NEVER from wire or embedded key!
+        require(request.verify(requester.signingKeyBase64)) {
+            "key request signature must verify against DB roster"
+        }
+        val rateLimitKey = "${request.groupId}:${request.requesterDeviceId}"
+        val now = System.currentTimeMillis()
+        val lastTime = lastOwnerKeyRequestHandlingMs[rateLimitKey] ?: 0L
+        if (now - lastTime < 2_000L) {
+            SafeLog.w(TAG, "Dropping rate-limited key request for group ${group.groupId} from ${requester.deviceId}")
+            return
+        }
+        lastOwnerKeyRequestHandlingMs[rateLimitKey] = now
+
+        // Limit number of epochs in one response: capped at 64
+        val epochsToServe = request.requestedEpochs.distinct().take(64)
+        val local = localIdentity()
+
+        for (epoch in epochsToServe) {
+            // Issuance restricted to requester membership intervals
+            if (!memberWasActiveAt(requester, epoch)) {
+                SafeLog.w(TAG, "Requester ${requester.deviceId} was not active at epoch $epoch, skipping")
+                continue
+            }
+            val epochKey = db().getEpochKey(group.groupId, epoch) ?: continue
+            val controlHead = epochKey.controlHead ?: group.controlHead ?: ""
+            val unsigned = GroupEpochKeyPackage(
+                groupId = group.groupId,
+                epoch = epoch,
+                epochSecretBase64 = epochKey.keyMaterial.base64(),
+                recipientDeviceId = requester.deviceId,
+                controlHead = controlHead,
+                senderFingerprint = local.fingerprint,
+                senderDeviceId = local.deviceId,
+                senderSigningKey = local.signingKey,
+                createdAtMs = System.currentTimeMillis(),
+                signatureBase64 = "",
+                rosterHash = epochKey.rosterHash,
+                suite = epochKey.suite,
+            )
+            val signed = unsigned.copy(
+                signatureBase64 = GroupIdentitySignatures.sign(unsigned.canonicalForSignature()),
+            )
+            val context = applicationContext ?: continue
+            P2PMessageRelay.sendGroupFrame(
+                context,
+                senderPeerName,
+                GroupControlFrames.keyPackageToJson(signed),
+            )
+        }
+    }
+
+    internal suspend fun sendKeyRequest(group: StoredGroup, requestedEpochs: List<Long>) {
+        val owner = db().getMember(group.groupId, group.ownerDeviceId) ?: return
+        if (owner.deviceId == group.localDeviceId) return
+        val requestId = UUID.randomUUID().toString()
+        val now = System.currentTimeMillis()
+        val unsigned = GroupKeyRequest(
+            requestId = requestId,
+            groupId = group.groupId,
+            requesterDeviceId = group.localDeviceId,
+            requestedEpochs = requestedEpochs.distinct(),
+            createdAtMs = now,
+            signatureBase64 = "",
+        )
+        val signed = unsigned.copy(
+            signatureBase64 = GroupIdentitySignatures.sign(unsigned.canonicalForSignature()),
+        )
+        val context = applicationContext ?: return
+        P2PMessageRelay.sendGroupFrame(
+            context,
+            owner.peerName,
+            GroupControlFrames.keyRequestToJson(signed),
+        )
+    }
+
     private suspend fun receiveKeyPackage(senderPeerName: String, json: JSONObject) {
         val keyPackage = GroupControlFrames.parseKeyPackage(json)
         val group = db().getGroup(keyPackage.groupId) ?: return
@@ -2526,7 +3059,24 @@ object GroupChatCoordinator {
         require(sender.deviceId == keyPackage.senderDeviceId)
         require(sender.transportFingerprint == keyPackage.senderFingerprint)
         require(sender.signingKeyBase64 == keyPackage.senderSigningKey)
-        require(keyPackage.verify())
+        val rosterOwner = db().getMember(group.groupId, group.ownerDeviceId)
+            ?: throw SecurityException("group has no owner in roster")
+        val currentSuite = db().getEpochKey(group.groupId, group.currentEpoch)?.suite ?: GroupWireProtocol.SUITE_V1
+        if (keyPackage.senderDeviceId == group.ownerDeviceId) {
+            require(keyPackage.senderSigningKey == rosterOwner.signingKeyBase64) {
+                "key package signing key must match owner in DB roster"
+            }
+            require(keyPackage.verify(rosterOwner.signingKeyBase64)) {
+                "key package signature must verify against owner signing key from DB roster"
+            }
+        } else {
+            require(currentSuite == GroupWireProtocol.SUITE_V1) {
+                "only owner can issue key package in v2"
+            }
+            require(keyPackage.verify(sender.signingKeyBase64)) {
+                "key package signature must verify against sender signing key"
+            }
+        }
         val control = db().getEvent(group.groupId, keyPackage.controlHead)
         if (control == null) {
             SafeLog.d(
@@ -2550,10 +3100,16 @@ object GroupChatCoordinator {
         require(isCanonicalControlEvent(group, control.eventId)) {
             "epoch key package refers to a losing control fork"
         }
-        require(control.authorDeviceId == sender.deviceId)
+        val isCurrentOwner = sender.deviceId == group.ownerDeviceId
+        if (!isCurrentOwner || keyPackage.epoch >= group.currentEpoch) {
+            require(control.authorDeviceId == sender.deviceId) {
+                "control author does not match key package sender"
+            }
+        }
         require(control.kind in setOf(
             GroupEventKind.MEMBER_ADDED.name,
             GroupEventKind.MEMBER_REMOVED.name,
+            GroupEventKind.GROUP_UPDATED.name,
         ))
         val controlPayload = JSONObject(control.body.orEmpty())
         require(controlPayload.optLong("next_epoch", -1L) == keyPackage.epoch)
@@ -2563,7 +3119,34 @@ object GroupChatCoordinator {
         require(memberWasActiveAt(localMember, keyPackage.epoch))
         val secret = keyPackage.epochSecretBase64.decodeBase64()
         require(secret.size == 32)
-        val stored = db().storeEpochKey(StoredGroupEpochKey(group.groupId, keyPackage.epoch, secret))
+        val suite = if (controlPayload.optString("crypto_suite") == GroupWireProtocol.SUITE_V2 ||
+            keyPackage.suite == GroupWireProtocol.SUITE_V2 ||
+            db().getEpochKey(group.groupId, group.currentEpoch)?.suite == GroupWireProtocol.SUITE_V2) {
+            GroupWireProtocol.SUITE_V2
+        } else {
+            controlPayload.optString("crypto_suite").takeIf { it.isNotBlank() } ?: GroupWireProtocol.SUITE_V1
+        }
+        if (suite == GroupWireProtocol.SUITE_V2) {
+            require(!keyPackage.rosterHash.isNullOrBlank()) {
+                "v2 key package requires roster_hash"
+            }
+        }
+        val expectedRosterHash = controlPayload.optString("roster_hash").takeIf { it.isNotBlank() }
+        if (expectedRosterHash != null && !keyPackage.rosterHash.isNullOrBlank()) {
+            require(keyPackage.rosterHash == expectedRosterHash) {
+                "key package roster_hash mismatch against historical control event"
+            }
+        }
+        val stored = db().storeEpochKey(
+            StoredGroupEpochKey(
+                groupId = group.groupId,
+                epoch = keyPackage.epoch,
+                keyMaterial = secret,
+                suite = suite,
+                controlHead = keyPackage.controlHead,
+                rosterHash = keyPackage.rosterHash,
+            )
+        )
         if (!stored) {
             val existing = db().getEpochKey(group.groupId, keyPackage.epoch)
             require(existing != null && existing.keyMaterial.contentEquals(secret)) {
@@ -2670,6 +3253,176 @@ object GroupChatCoordinator {
                 SafeLog.w(TAG, "Failed applying drained group event ${item.event.eventId} for epoch $epoch: ${error.message}")
             }
         }
+        drainPendingOutgoingEventsForEpoch(groupId, epoch)
+    }
+
+    internal suspend fun drainPendingOutgoingEventsForEpoch(groupId: String, epoch: Long) {
+        val tasks = db().loadAwaitingEpochKeyTasks(groupId).sortedBy { it.createdAtMs }
+        if (tasks.isEmpty()) return
+
+        val local = localIdentity()
+        for (task in tasks) {
+            val group = db().getGroup(groupId) ?: break
+            val author = db().getMember(groupId, local.deviceId)
+
+            // Check if author has since been removed
+            if (author == null || !author.isParticipating()) {
+                SafeLog.w(TAG, "Author ${local.deviceId} was removed since outbox task ${task.taskId} was created, dropping intent")
+                db().deleteOutboxTask(task.taskId)
+                continue
+            }
+
+            // Must drain at latest drain-time epoch (not intent creation epoch)
+            val currentEpoch = group.currentEpoch
+            val currentKey = db().getEpochKey(groupId, currentEpoch)
+            if (currentKey == null) {
+                SafeLog.d(TAG, "Current epoch key $currentEpoch not yet available during drain for group $groupId")
+                break
+            }
+
+            emitMutex.withLock {
+                val lockGroup = db().getGroup(groupId) ?: return@withLock
+                val lockKey = db().getEpochKey(groupId, lockGroup.currentEpoch) ?: return@withLock
+                val intentJson = runCatching { JSONObject(task.payload.decodeToString()) }.getOrDefault(JSONObject())
+                val kindStr = intentJson.optString("kind")
+                val kind = runCatching { GroupEventKind.valueOf(kindStr) }.getOrDefault(GroupEventKind.MESSAGE)
+                val payload = intentJson.optJSONObject("payload") ?: JSONObject()
+                val targetEventId = intentJson.optString("target_event_id").takeIf { it.isNotBlank() }
+
+                val sequence = db().nextAuthorSequence(groupId, local.deviceId)
+                val latestAuthor = db().latestAuthorEvent(groupId, local.deviceId)
+                val observed: List<StoredGroupEvent> = buildList {
+                    if (latestAuthor != null) add(latestAuthor)
+                    db().listRecentEvents(groupId, 1).lastOrNull()?.let { add(it) }
+                    lockGroup.controlHead?.let { db().getEvent(groupId, it)?.let { ev -> add(ev) } }
+                    targetEventId?.let { db().getEvent(groupId, it)?.let { ev -> add(ev) } }
+                }
+                val wallClockMs = System.currentTimeMillis()
+                val observedClock = observed.maxWithOrNull(
+                    compareBy<StoredGroupEvent>(
+                        StoredGroupEvent::hlcPhysicalMs,
+                        StoredGroupEvent::hlcLogical,
+                    ),
+                )
+                val nextClock = if (observedClock == null) {
+                    HybridLogicalClock(wallClockMs, 0, local.deviceId)
+                } else {
+                    HybridLogicalClock(
+                        observedClock.hlcPhysicalMs,
+                        observedClock.hlcLogical.coerceAtMost(
+                            HybridLogicalClock.MAX_LOGICAL_COUNTER,
+                        ),
+                        local.deviceId,
+                    ).tick(wallClockMs)
+                }
+                val suite = lockKey.suite
+                val rosterHash = if (suite == GroupWireProtocol.SUITE_V2) {
+                    GroupWireProtocol.computeRosterHash(db().listMembers(groupId))
+                } else {
+                    null
+                }
+                val event = eventFactory.create(
+                    groupId = groupId,
+                    epoch = lockGroup.currentEpoch,
+                    epochSecret = lockKey.keyMaterial,
+                    kind = kind,
+                    authorFingerprint = local.fingerprint,
+                    authorDeviceId = local.deviceId,
+                    authorSequence = sequence,
+                    previousAuthorEvent = latestAuthor?.eventId,
+                    controlHead = lockGroup.controlHead,
+                    hlcPhysicalMs = nextClock.physicalTimeMs,
+                    hlcLogical = nextClock.logicalCounter,
+                    plaintextPayload = payload,
+                    targetEventId = targetEventId,
+                    cryptoSuite = suite,
+                    rosterHash = rosterHash,
+                )
+                val json = GroupWireProtocol.eventToJson(event)
+                val outboxTasks = buildEventOutboxTasks(lockGroup, event, payload, json)
+                val drained = db().drainAwaitingEpochKeyTask(
+                    drainingTaskId = task.taskId,
+                    event = event.toStored(payload, json),
+                    countAsUnread = false,
+                    tasks = outboxTasks,
+                )
+                if (drained) {
+                    SafeLog.i(TAG, "Successfully drained outbox task ${task.taskId} as event ${event.eventId} for epoch ${lockGroup.currentEpoch}")
+                }
+            }
+        }
+    }
+
+    internal fun getPendingOutgoingCount(groupId: String): Int {
+        return db().countAwaitingEpochKeyTasks(groupId)
+    }
+
+    fun checkAwaitingEpochKeyTimeouts() {
+        val groups = db().listGroups()
+        val now = System.currentTimeMillis()
+        for (group in groups) {
+            val tasks = db().loadAwaitingEpochKeyTasks(group.groupId)
+            if (tasks.isEmpty()) continue
+            val hasExpiredTask = tasks.any { (now - it.createdAtMs) >= 60_000L }
+            if (hasExpiredTask) {
+                SafeLog.w(TAG, "Group ${group.groupId} has outbox tasks awaiting epoch key older than 60s")
+                _securityEvents.tryEmit(GroupSecurityEvent.AwaitingKeyTimeout(group.groupId, tasks.first().taskId))
+            }
+            if (now - group.lastKeyRequestMs >= 60_000L) {
+                db().updateLastKeyRequestMs(group.groupId, now)
+                scope.launch {
+                    sendKeyRequest(group, listOf(group.currentEpoch))
+                }
+            }
+        }
+    }
+
+    private fun bufferPendingTombstone(
+        groupId: String,
+        senderPeerName: String,
+        json: JSONObject,
+        event: GroupWireEvent,
+    ) {
+        val list = pendingTombstones.computeIfAbsent(groupId) { mutableListOf() }
+        synchronized(list) {
+            if (list.size >= MAX_PENDING_BUFFER_PER_GROUP) {
+                list.removeAt(0)
+            }
+            list.removeAll { it.event.eventId == event.eventId }
+            list.add(PendingTombstoneRecord(senderPeerName, json, event))
+        }
+    }
+
+    private suspend fun drainPendingTombstones(groupId: String, targetEventId: String) {
+        val list = pendingTombstones[groupId] ?: return
+        val matching = synchronized(list) {
+            val iterator = list.iterator()
+            val result = mutableListOf<PendingTombstoneRecord>()
+            while (iterator.hasNext()) {
+                val item = iterator.next()
+                if (item.event.eventId == targetEventId) {
+                    result.add(item)
+                    iterator.remove()
+                }
+            }
+            result
+        }
+        for (item in matching) {
+            try {
+                receiveEventLocked(
+                    senderPeerName = item.senderPeerName,
+                    json = item.json,
+                    acknowledge = false,
+                    refreshUi = true,
+                )
+            } catch (e: Exception) {
+                SafeLog.w(TAG, "Failed draining pending tombstone ${item.event.eventId}: ${e.message}")
+            }
+        }
+    }
+
+    internal fun getPendingTombstonesCount(groupId: String): Int {
+        return pendingTombstones[groupId]?.size ?: 0
     }
 
     private suspend fun receiveRosterSnapshot(senderPeerName: String, json: JSONObject) {
@@ -2798,6 +3551,14 @@ object GroupChatCoordinator {
                     },
                 ),
             ) { "group advanced while its roster snapshot was assembling" }
+            for (m in updates) {
+                if (m.deviceId != group.localDeviceId) {
+                    val peerFP = m.transportFingerprint.ifBlank { m.accountId }
+                    if (peerFP.isNotBlank()) {
+                        enforceGroupInferredPeerPolicy(peerFP, m.peerName)
+                    }
+                }
+            }
         }
         sendAck(
             senderPeerName,
@@ -3002,7 +3763,28 @@ object GroupChatCoordinator {
         val local = localIdentity()
         val author = storage.getMember(groupId, local.deviceId) ?: return@withLock null
         if (!validatePolicy(group, author, kind, targetEventId, payload)) return@withLock null
-        val key = storage.getEpochKey(groupId, group.currentEpoch) ?: return@withLock null
+        val key = storage.getEpochKey(groupId, group.currentEpoch)
+        if (key == null) {
+            if (!isSerializedControl(kind)) {
+                val now = System.currentTimeMillis()
+                storage.enqueueAwaitingEpochKeyIntent(
+                    groupId = groupId,
+                    kind = kind.name,
+                    payload = payload,
+                    targetEventId = targetEventId,
+                    createdAtMs = now,
+                )
+                SafeLog.i(TAG, "Epoch key for epoch ${group.currentEpoch} not yet available for group $groupId; queued outgoing $kind to durable outbox")
+                if (now - group.lastKeyRequestMs >= 60_000L) {
+                    storage.updateLastKeyRequestMs(groupId, now)
+                    val owner = storage.getMember(groupId, group.ownerDeviceId)
+                    if (owner != null && owner.deviceId != group.localDeviceId) {
+                        sendKeyRequest(group, listOf(group.currentEpoch))
+                    }
+                }
+            }
+            return@withLock null
+        }
         val sequence = storage.nextAuthorSequence(groupId, local.deviceId)
         val latestAuthor = storage.latestAuthorEvent(groupId, local.deviceId)
         val observed = listOfNotNull(
@@ -3029,6 +3811,12 @@ object GroupChatCoordinator {
                 local.deviceId,
             ).tick(wallClockMs)
         }
+        val suite = key.suite
+        val rosterHash = if (suite == GroupWireProtocol.SUITE_V2) {
+            GroupWireProtocol.computeRosterHash(storage.listMembers(groupId))
+        } else {
+            null
+        }
         val event = eventFactory.create(
             groupId = groupId,
             epoch = group.currentEpoch,
@@ -3043,6 +3831,8 @@ object GroupChatCoordinator {
             hlcLogical = nextClock.logicalCounter,
             plaintextPayload = payload,
             targetEventId = targetEventId,
+            cryptoSuite = suite,
+            rosterHash = rosterHash,
         )
         val json = GroupWireProtocol.eventToJson(event)
         val outboxTasks = buildEventOutboxTasks(group, event, payload, json)
@@ -3160,9 +3950,30 @@ object GroupChatCoordinator {
                 )
             }
             GroupEventKind.DELETE -> {
-                val target = targetEventId?.let { db().getEvent(group.groupId, it) } ?: return false
-                val targetAuthor = db().getMember(group.groupId, target.authorDeviceId) ?: return false
-                GroupRolePolicy.canDeleteMessage(actor, UserId(targetAuthor.accountId))
+                val target = targetEventId?.let { db().getEvent(group.groupId, it) }
+                val targetAuthorDeviceId = target?.authorDeviceId
+                    ?: payload.optString("target_author_device_id").takeIf { it.isNotBlank() }
+                    ?: return false
+                if (target != null) {
+                    if (payload.has("target_author_device_id") && payload.optString("target_author_device_id") != target.authorDeviceId) {
+                        return false
+                    }
+                    if (payload.has("target_author_sequence") && payload.optLong("target_author_sequence") != target.authorSeq) {
+                        return false
+                    }
+                    if (payload.has("target_hlc_physical_ms") && payload.optLong("target_hlc_physical_ms") != target.hlcPhysicalMs) {
+                        return false
+                    }
+                    if (payload.has("target_hlc_logical") && payload.optInt("target_hlc_logical") != target.hlcLogical) {
+                        return false
+                    }
+                }
+                val targetAccountId = if (targetAuthorDeviceId == author.deviceId) {
+                    author.accountId
+                } else {
+                    db().getMember(group.groupId, targetAuthorDeviceId)?.accountId ?: return false
+                }
+                GroupRolePolicy.canDeleteMessage(actor, UserId(targetAccountId))
             }
             GroupEventKind.REACTION_ADD,
             GroupEventKind.REACTION_REMOVE,
@@ -3173,6 +3984,10 @@ object GroupChatCoordinator {
             GroupEventKind.GROUP_UPDATED ->
                 GroupRolePolicy.canPerform(actor, GroupAction.MANAGE_GROUP_INFO)
             GroupEventKind.MEMBER_ADDED -> {
+                val currentSuite = db().getEpochKey(group.groupId, group.currentEpoch)?.suite ?: GroupWireProtocol.SUITE_V1
+                if (currentSuite == GroupWireProtocol.SUITE_V2 && author.deviceId != group.ownerDeviceId) {
+                    return false
+                }
                 val targetId = payload.optString("member_device_id")
                 val target = db().getMember(group.groupId, targetId)
                 val requestedStatus = payload.optString("status")
@@ -3217,6 +4032,16 @@ object GroupChatCoordinator {
                     } else {
                         GroupRolePolicy.canRemoveMember(actor, target)
                     }
+                }
+            }
+            GroupEventKind.MEMBER_REMOVAL_PROPOSED -> {
+                val targetId = payload.optString("member_device_id")
+                val target = db().getMember(group.groupId, targetId)?.toPolicyMember()
+                    ?: return false
+                if (payload.optString("status") == "BANNED") {
+                    GroupRolePolicy.canBanMember(actor, target)
+                } else {
+                    GroupRolePolicy.canRemoveMember(actor, target)
                 }
             }
             GroupEventKind.ROLE_CHANGED -> {
@@ -3309,9 +4134,18 @@ object GroupChatCoordinator {
         }
         if (!decision.allowed) return false
         // Membership and role mutations are serialized by the current owner.
+        // In v1 epochs, admin removals remain grandfathered and canonical.
         // Moderators/admins still operate content controls without a leader.
         if (isSerializedControl(kind) && author.deviceId != group.ownerDeviceId) {
-            return false
+            val epochSuite = db().getEpochKey(group.groupId, group.currentEpoch)?.suite ?: GroupWireProtocol.SUITE_V1
+            val isGrandfatheredAdminRemoval = (
+                epochSuite == GroupWireProtocol.SUITE_V1 &&
+                kind == GroupEventKind.MEMBER_REMOVED &&
+                actor.role == GroupRole.ADMINISTRATOR
+            )
+            if (!isGrandfatheredAdminRemoval) {
+                return false
+            }
         }
         return true
     }
@@ -3339,6 +4173,26 @@ object GroupChatCoordinator {
             executeSerializedControl(groupId, action, payload, proposalEventId = null)
             return
         }
+        val currentSuite = db().getEpochKey(groupId, group.currentEpoch)?.suite ?: GroupWireProtocol.SUITE_V1
+        if (currentSuite == GroupWireProtocol.SUITE_V1 && action == "remove" && local.role == GroupRole.ADMINISTRATOR.name) {
+            executeSerializedControl(groupId, action, payload, proposalEventId = null)
+            return
+        }
+        if (currentSuite == GroupWireProtocol.SUITE_V2 && action == "remove") {
+            val targetId = payload.optString("member_device_id")
+            val status = payload.optString("status", "LEFT")
+            emitEvent(
+                groupId = groupId,
+                kind = GroupEventKind.MEMBER_REMOVAL_PROPOSED,
+                payload = JSONObject().apply {
+                    put("proposed_by", local.deviceId)
+                    put("member_device_id", targetId)
+                    put("status", status)
+                },
+                targetEventId = targetId.takeIf { it.isNotBlank() },
+            )
+            return
+        }
         emitEvent(
             groupId,
             GroupEventKind.SYSTEM,
@@ -3353,10 +4207,14 @@ object GroupChatCoordinator {
         payload: JSONObject,
         author: StoredGroupMember,
     ) {
-        if (event.kind != GroupEventKind.SYSTEM || group.localDeviceId != group.ownerDeviceId) return
+        if ((event.kind != GroupEventKind.SYSTEM && event.kind != GroupEventKind.MEMBER_REMOVAL_PROPOSED) || group.localDeviceId != group.ownerDeviceId) return
         val current = db().getGroup(group.groupId) ?: return
         if (event.controlHead != current.controlHead) return
-        val action = payload.optString("control_proposal")
+        val action = if (event.kind == GroupEventKind.MEMBER_REMOVAL_PROPOSED) {
+            "remove"
+        } else {
+            payload.optString("control_proposal")
+        }
         if (action !in setOf(
                 "set_role",
                 "restrict",
@@ -3457,7 +4315,7 @@ object GroupChatCoordinator {
         val controlPayload = if (proposalEventId != null) {
             val currentGroup = db().getGroup(groupId) ?: return
             val proposal = db().getEvent(groupId, proposalEventId) ?: return
-            if (proposal.kind != GroupEventKind.SYSTEM.name) return
+            if (proposal.kind != GroupEventKind.SYSTEM.name && proposal.kind != GroupEventKind.MEMBER_REMOVAL_PROPOSED.name) return
             val proposalWire = proposal.payload?.let {
                 runCatching {
                     GroupWireProtocol.parseEvent(JSONObject(it.toString(Charsets.UTF_8)))
@@ -3472,8 +4330,13 @@ object GroupChatCoordinator {
             val proposer = db().getMember(groupId, proposal.authorDeviceId) ?: return
             val storedPayload = runCatching { JSONObject(proposal.body.orEmpty()) }.getOrNull()
                 ?: return
+            val proposalAction = if (proposal.kind == GroupEventKind.MEMBER_REMOVAL_PROPOSED.name) {
+                "remove"
+            } else {
+                storedPayload.optString("control_proposal")
+            }
             if (
-                storedPayload.optString("control_proposal") != action ||
+                proposalAction != action ||
                 !validateProposalPermission(currentGroup, proposer, action, storedPayload)
             ) {
                 return
@@ -3505,9 +4368,10 @@ object GroupChatCoordinator {
             -> {
                 val group = db().getGroup(groupId) ?: return
                 val nextEpoch = group.currentEpoch + 1
+                val currentSuite = db().getEpochKey(groupId, group.currentEpoch)?.suite ?: GroupWireProtocol.SUITE_V1
                 val newSecret = db().getEpochKey(groupId, nextEpoch)?.keyMaterial
                     ?: EpochAeadGroupCrypto.generateEpochSecret().also {
-                        check(db().storeEpochKey(StoredGroupEpochKey(groupId, nextEpoch, it)))
+                        check(db().storeEpochKey(StoredGroupEpochKey(groupId, nextEpoch, it, suite = currentSuite)))
                     }
                 val event = emitEvent(
                     groupId,
@@ -3556,9 +4420,10 @@ object GroupChatCoordinator {
         if (occupied >= GroupWireProtocol.MAX_GROUP_MEMBERS_IN_INVITE) return
 
         val nextEpoch = group.currentEpoch + 1
+        val currentSuite = db().getEpochKey(groupId, group.currentEpoch)?.suite ?: GroupWireProtocol.SUITE_V1
         val newSecret = db().getEpochKey(groupId, nextEpoch)?.keyMaterial
             ?: EpochAeadGroupCrypto.generateEpochSecret().also {
-                check(db().storeEpochKey(StoredGroupEpochKey(groupId, nextEpoch, it)))
+                check(db().storeEpochKey(StoredGroupEpochKey(groupId, nextEpoch, it, suite = currentSuite)))
             }
         val event = emitEvent(
             groupId,
@@ -3605,6 +4470,7 @@ object GroupChatCoordinator {
         var nextDescription: String? = null
         var nextAvatarUri: String? = null
         var nextAdminOnlyPosting: Boolean? = null
+        var nextTorOnlyGroup: Boolean? = null
         val memberUpdates = mutableListOf<StoredGroupMember>()
         when (event.kind) {
             GroupEventKind.GROUP_UPDATED -> {
@@ -3678,6 +4544,14 @@ object GroupChatCoordinator {
                 }
                 if (payload.has("admin_only_posting")) {
                     nextAdminOnlyPosting = payload.optBoolean("admin_only_posting")
+                }
+                if (payload.has("tor_only_group")) {
+                    val reqTorOnly = payload.optBoolean("tor_only_group")
+                    if (current.torOnlyGroup && !reqTorOnly) {
+                        SafeLog.w(TAG, "Rejecting monotonic downgrade of torOnlyGroup from true to false")
+                        return
+                    }
+                    nextTorOnlyGroup = reqTorOnly
                 }
                 if (nextTitle.isNullOrBlank()) return
             }
@@ -3849,6 +4723,7 @@ object GroupChatCoordinator {
             description = nextDescription,
             avatarUri = nextAvatarUri,
             adminOnlyPosting = nextAdminOnlyPosting,
+            torOnlyGroup = nextTorOnlyGroup,
             members = memberUpdates,
             ownerLineageCertificate = if (
                 event.kind == GroupEventKind.OWNERSHIP_TRANSFERRED
@@ -3882,6 +4757,37 @@ object GroupChatCoordinator {
         )
         if (!applied) {
             SafeLog.w(TAG, "Control head race rejected ${event.eventId}")
+        } else {
+            memberActiveAtEpochCache.clear()
+            for (member in memberUpdates) {
+                if (member.deviceId != originalGroup.localDeviceId) {
+                    val peerFP = member.transportFingerprint.ifBlank { member.accountId }
+                    if (peerFP.isNotBlank()) {
+                        enforceGroupInferredPeerPolicy(peerFP, member.peerName)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun enforceGroupInferredPeerPolicy(peerFP: String, peerName: String) {
+        val ctx = applicationContext ?: return
+        runCatching {
+            val chatDb = com.example.twopchat.data.ChatDatabaseHelper.getInstance(ctx)
+            val currentSource = chatDb.getPeerSource(peerFP)
+            if (currentSource != "DIRECT_INVITE") {
+                chatDb.setPeerSource(peerFP, "GROUP_INFERRED")
+                chatDb.setPeerTransportPolicy(
+                    peerFP,
+                    com.example.twopchat.config.P2PPreferences.PeerTransportPreference.TOR_ONLY.policyInt,
+                )
+                com.example.twopchat.NativeBridge.setPeerPolicy(
+                    peerFP,
+                    com.example.twopchat.NativeBridge.POLICY_FLAG_ALLOW_ONION,
+                )
+            }
+        }.onFailure { e ->
+            SafeLog.w(TAG, "Failed to enforce group inferred peer policy for $peerFP", e)
         }
     }
 
@@ -3906,11 +4812,14 @@ object GroupChatCoordinator {
                     )
                 }.getOrNull() ?: continue
                 val key = db().getEpochKey(groupId, wire.epoch) ?: continue
-                val payload = runCatching { eventFactory.decrypt(wire, key.keyMaterial) }
+                val rosterHash = if (wire.cryptoSuite == GroupWireProtocol.SUITE_V2) {
+                    GroupWireProtocol.computeRosterHash(db().listMembers(groupId))
+                } else null
+                val payload = runCatching { eventFactory.decrypt(wire, key.keyMaterial, rosterHash) }
                     .getOrNull() ?: continue
                 val author = db().getMember(groupId, wire.authorDeviceId) ?: continue
                 if (!wire.verifySignature(author.signingKeyBase64) ||
-                    !memberWasActiveAt(author, wire.epoch) ||
+                    !isAuthorActiveAtEpoch(groupId, wire.authorDeviceId, wire.epoch) ||
                     !validatePolicy(current, author, wire, payload)
                 ) {
                     SafeLog.w(TAG, "Quarantined unauthorized control child ${wire.eventId}")
@@ -3978,7 +4887,7 @@ object GroupChatCoordinator {
                 }
                 ?.let { recipients[it.deviceId] = it }
         }
-        if (payload.has("control_proposal") && group.ownerDeviceId != group.localDeviceId) {
+        if ((payload.has("control_proposal") || event.kind == GroupEventKind.MEMBER_REMOVAL_PROPOSED) && group.ownerDeviceId != group.localDeviceId) {
             db().getMember(group.groupId, group.ownerDeviceId)
                 ?.takeIf { it.isParticipating() }
                 ?.let { recipients[it.deviceId] = it }
@@ -4442,16 +5351,22 @@ object GroupChatCoordinator {
         val requestId = UUID.randomUUID().toString()
         val response = CompletableDeferred<GroupSyncBatch>()
         pendingSyncRequests[requestId] = PendingSync(group.groupId, peer.deviceId, response)
-        val request = GroupSyncRequest(
+        val unsigned = GroupSyncRequest(
             requestId = requestId,
             groupId = group.groupId,
             requesterDeviceId = group.localDeviceId,
             cursors = cursors,
+            createdAtMs = System.currentTimeMillis(),
+            supportsV2 = true,
+            signatureBase64 = "",
+        )
+        val signed = unsigned.copy(
+            signatureBase64 = GroupIdentitySignatures.sign(unsigned.canonicalForSignature()),
         )
         return try {
             P2PMessageRelay.sendGroupFrame(
                 requireNotNull(applicationContext), peer.peerName,
-                GroupControlFrames.syncRequestToJson(request),
+                GroupControlFrames.syncRequestToJson(signed),
             )
             // Allow high-latency Tor sessions, then try the next member.
             withTimeoutOrNull(15_000L) { response.await() }
@@ -4669,6 +5584,7 @@ object GroupChatCoordinator {
                 poll = poll,
                 readByMembers = readByMembers,
                 readReceipts = readReceiptsList,
+                isDeleted = message.deleted,
             )
         }
         val activeMembers = members.count { it.isParticipating() }
@@ -5277,6 +6193,7 @@ object GroupChatCoordinator {
             memberSigningKey = local.signingKey,
             createdAtMs = System.currentTimeMillis(),
             signatureBase64 = "",
+            supportsV2 = true,
         )
         return unsigned.copy(
             signatureBase64 = GroupIdentitySignatures.sign(unsigned.canonicalForSignature()),
@@ -5591,6 +6508,7 @@ object GroupChatCoordinator {
     ): Boolean {
         if (isSerializedControl(event.kind)) return true
         if (event.kind in setOf(GroupEventKind.PIN, GroupEventKind.UNPIN)) return true
+        if (event.kind == GroupEventKind.MEMBER_REMOVAL_PROPOSED) return true
         if (
             event.kind == GroupEventKind.SYSTEM &&
             payload.optString("control_proposal").isNotBlank()
@@ -5789,8 +6707,11 @@ object GroupChatCoordinator {
             }.getOrNull()
         } ?: return emptyList()
         val key = db().getEpochKey(groupId, wire.epoch) ?: return emptyList()
+        val rosterHash = if (wire.cryptoSuite == GroupWireProtocol.SUITE_V2) {
+            GroupWireProtocol.computeRosterHash(db().listMembers(groupId))
+        } else null
         return runCatching {
-            val payload = eventFactory.decrypt(wire, key.keyMaterial)
+            val payload = eventFactory.decrypt(wire, key.keyMaterial, rosterHash)
             val list = mutableListOf<GroupAttachmentManifest>()
             val attachmentsArr = payload.optJSONArray("attachments")
             if (attachmentsArr != null && attachmentsArr.length() > 0) {
@@ -5868,6 +6789,78 @@ object GroupChatCoordinator {
             "group_downloads/${sha256Hex(groupId)}/${manifest.attachmentId}",
         ).also { it.mkdirs() }
         return File(directory, File(manifest.fileName).name)
+    }
+
+    internal fun isCidReferencedByOtherActiveEvents(
+        groupId: String,
+        cid: String,
+        excludingEventId: String?,
+    ): Boolean {
+        for ((key, manifest) in attachmentManifests) {
+            val eventId = key.substringAfterLast("\u0000")
+            if (eventId != excludingEventId && manifest.blocks.any { it.ciphertextCid == cid }) {
+                val event = db().getEvent(groupId, eventId)
+                if (event != null && !event.isTombstoned) {
+                    return true
+                }
+            }
+        }
+        val activeEvents = db().listActiveMediaEvents(excludingEventId)
+        for ((gId, eId) in activeEvents) {
+            val manifests = loadAttachmentManifests(gId, eId)
+            for (m in manifests) {
+                if (m.blocks.any { it.ciphertextCid == cid }) {
+                    return true
+                }
+            }
+        }
+        return false
+    }
+
+    private fun isDestinationReferencedByOtherActiveEvents(
+        groupId: String,
+        destination: File,
+        excludingEventId: String?,
+    ): Boolean {
+        val activeEvents = db().listActiveMediaEvents(excludingEventId)
+        for ((gId, eId) in activeEvents) {
+            val manifests = loadAttachmentManifests(gId, eId)
+            for (m in manifests) {
+                val dest = attachmentDestination(gId, m)
+                if (dest.absolutePath == destination.absolutePath) {
+                    return true
+                }
+            }
+        }
+        return false
+    }
+
+    internal fun shredMessageAttachmentsIfUnreferenced(groupId: String, targetEventId: String?) {
+        if (targetEventId.isNullOrBlank()) return
+        if (applicationContext == null) return
+        val manifests = loadAttachmentManifests(groupId, targetEventId)
+        val store = attachmentStore(groupId)
+        for (manifest in manifests) {
+            for (block in manifest.blocks) {
+                if (!isCidReferencedByOtherActiveEvents(groupId, block.ciphertextCid, targetEventId)) {
+                    store.shredBlock(block.ciphertextCid)
+                }
+            }
+            val destination = attachmentDestination(groupId, manifest)
+            if (!isDestinationReferencedByOtherActiveEvents(groupId, destination, targetEventId)) {
+                if (destination.exists()) {
+                    TemporaryCacheSanitizer.shredFile(destination)
+                }
+                val verFile = attachmentVerificationFile(destination)
+                if (verFile.exists()) {
+                    TemporaryCacheSanitizer.shredFile(verFile)
+                }
+                applicationContext?.let { ctx ->
+                    AttachmentStorageManager.deleteMessageAttachments(ctx, destination.absolutePath)
+                }
+            }
+        }
+        attachmentManifests.remove(attachmentManifestKey(groupId, targetEventId))
     }
 
     private fun formatByteCount(bytes: Long): String = when {

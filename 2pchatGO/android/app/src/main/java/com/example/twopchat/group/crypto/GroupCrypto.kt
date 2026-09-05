@@ -8,6 +8,9 @@ import javax.crypto.Cipher
 import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.SecretKeySpec
 
+const val SUITE_V1 = "2pchat-epoch-aes256gcm-ed25519-v1"
+const val SUITE_V2 = "2pchat-epoch-aes256gcm-ed25519-v2"
+
 /**
  * Cryptographic boundary used by the group transport.
  *
@@ -18,6 +21,7 @@ import javax.crypto.spec.SecretKeySpec
  */
 interface GroupCryptoProvider {
     val suiteId: String
+    val supportedSuites: Set<String> get() = setOf(suiteId)
 
     fun generateEpochSecret(): ByteArray
 
@@ -49,7 +53,8 @@ data class ProtectedGroupPayload(
  * post-compromise security or TreeKEM semantics.
  */
 object EpochAeadGroupCrypto : GroupCryptoProvider {
-    override val suiteId: String = "2pchat-epoch-aes256gcm-ed25519-v1"
+    override val suiteId: String = SUITE_V1
+    override val supportedSuites: Set<String> = setOf(SUITE_V1, SUITE_V2)
 
     private const val KEY_BYTES = 32
     private const val NONCE_BYTES = 12
@@ -122,31 +127,55 @@ object EpochAeadGroupCrypto : GroupCryptoProvider {
 object GroupIdentitySignatures {
     const val DOMAIN = "2pchat-group-event-signature-v1"
 
+    @Volatile
+    var testSigner: ((String) -> String)? = null
+    @Volatile
+    var testVerifier: ((String, String, String) -> Boolean)? = null
+
     fun localVerificationKey(): String =
         NativeBridge.getLocalSigningPublicKey()
 
     fun sign(canonicalPayload: String): String =
-        NativeBridge.signGroupPayload(canonicalPayload)
+        testSigner?.invoke(canonicalPayload) ?: NativeBridge.signGroupPayload(canonicalPayload)
 
     fun verify(
         verificationKeyBase64: String,
         canonicalPayload: String,
         signatureBase64: String,
-    ): Boolean = NativeBridge.verifyGroupPayload(
-        verificationKeyBase64,
-        canonicalPayload,
-        signatureBase64,
-    )
+    ): Boolean = testVerifier?.invoke(verificationKeyBase64, canonicalPayload, signatureBase64)
+        ?: NativeBridge.verifyGroupPayload(
+            verificationKeyBase64,
+            canonicalPayload,
+            signatureBase64,
+        )
 
     fun digestBase64(payload: ByteArray): String =
         MessageDigest.getInstance("SHA-256").digest(payload).toBase64()
 }
 
-internal fun ByteArray.toBase64(): String =
-    Base64.encodeToString(this, Base64.NO_WRAP)
+internal fun ByteArray.toBase64(): String = try {
+    Base64.encodeToString(this, Base64.NO_WRAP) ?: java.util.Base64.getEncoder().encodeToString(this)
+} catch (e: Throwable) {
+    java.util.Base64.getEncoder().encodeToString(this)
+}
 
 internal fun String.decodeBase64Strict(): ByteArray = try {
-    Base64.decode(this, Base64.NO_WRAP)
+    val res = Base64.decode(this, Base64.NO_WRAP)
+    if (res == null || (res.isEmpty() && this.isNotBlank())) {
+        java.util.Base64.getDecoder().decode(this)
+    } else {
+        res
+    }
 } catch (error: IllegalArgumentException) {
-    throw SecurityException("invalid Base64 group field", error)
+    try {
+        java.util.Base64.getDecoder().decode(this)
+    } catch (e: Exception) {
+        throw SecurityException("invalid Base64 group field", error)
+    }
+} catch (e: Throwable) {
+    try {
+        java.util.Base64.getDecoder().decode(this)
+    } catch (err: Exception) {
+        throw SecurityException("invalid Base64 group field", e)
+    }
 }

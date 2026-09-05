@@ -185,7 +185,8 @@ data class GroupTimelineMessage(
   val canPin: Boolean = false,
   val poll: GroupPollUi? = null,
   val readByMembers: List<String> = emptyList(),
-  val readReceipts: List<GroupReadReceipt> = emptyList()
+  val readReceipts: List<GroupReadReceipt> = emptyList(),
+  val isDeleted: Boolean = false
 )
 
 @Immutable

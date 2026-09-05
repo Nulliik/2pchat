@@ -38,6 +38,7 @@ class GroupDatabaseHelperInstrumentedTest {
         val expected = setOf(
             "groups",
             "group_members",
+            "group_membership_intervals",
             "group_epoch_keys",
             "group_events",
             "group_messages",
@@ -388,6 +389,283 @@ class GroupDatabaseHelperInstrumentedTest {
             assertTrue(cursor.moveToFirst())
             assertEquals("preserved", cursor.getString(0))
         }
+    }
+
+    @Test
+    fun testMembershipIntervalsMaintainedAcrossKickAndReadd() {
+        createGroup()
+        val bob = StoredGroupMember(
+            groupId = GROUP_ID,
+            deviceId = "bob-device",
+            accountId = "bob-account",
+            displayName = "Bob",
+            role = "MEMBER",
+            permissions = 0L,
+            status = "ACTIVE",
+            joinedEpoch = 1,
+            removedEpoch = null,
+            createdAtMs = 100,
+            updatedAtMs = 100,
+        )
+        // Add Bob at epoch 1
+        helper.applyControlMutation(
+            groupId = GROUP_ID,
+            expectedHead = null,
+            newHead = "c1",
+            updatedMembers = listOf(bob),
+        )
+        assertTrue(helper.isMemberActiveAtEpoch(GROUP_ID, "bob-device", 1))
+        assertTrue(helper.isMemberActiveAtEpoch(GROUP_ID, "bob-device", 2))
+
+        // Kick Bob at epoch 3 (boundary semantics: [1, 3))
+        val bobRemoved = bob.copy(status = "LEFT", removedEpoch = 3, updatedAtMs = 200)
+        helper.applyControlMutation(
+            groupId = GROUP_ID,
+            expectedHead = "c1",
+            newHead = "c2",
+            currentEpoch = 3,
+            updatedMembers = listOf(bobRemoved),
+        )
+        assertTrue(helper.isMemberActiveAtEpoch(GROUP_ID, "bob-device", 1))
+        assertTrue(helper.isMemberActiveAtEpoch(GROUP_ID, "bob-device", 2))
+        assertFalse(helper.isMemberActiveAtEpoch(GROUP_ID, "bob-device", 3))
+        assertFalse(helper.isMemberActiveAtEpoch(GROUP_ID, "bob-device", 4))
+
+        // Re-add Bob at epoch 5 ([1, 3) and [5, null))
+        val bobReadded = bob.copy(status = "ACTIVE", joinedEpoch = 5, removedEpoch = null, updatedAtMs = 300)
+        helper.applyControlMutation(
+            groupId = GROUP_ID,
+            expectedHead = "c2",
+            newHead = "c3",
+            currentEpoch = 5,
+            updatedMembers = listOf(bobReadded),
+        )
+        assertTrue(helper.isMemberActiveAtEpoch(GROUP_ID, "bob-device", 1))
+        assertTrue(helper.isMemberActiveAtEpoch(GROUP_ID, "bob-device", 2))
+        assertFalse(helper.isMemberActiveAtEpoch(GROUP_ID, "bob-device", 3))
+        assertFalse(helper.isMemberActiveAtEpoch(GROUP_ID, "bob-device", 4))
+        assertTrue(helper.isMemberActiveAtEpoch(GROUP_ID, "bob-device", 5))
+        assertTrue(helper.isMemberActiveAtEpoch(GROUP_ID, "bob-device", 6))
+
+        val intervals = helper.listMembershipIntervals(GROUP_ID, "bob-device")
+        assertEquals(2, intervals.size)
+        assertEquals(1L, intervals[0].joinedEpoch)
+        assertEquals(3L, intervals[0].removedEpoch)
+        assertEquals(5L, intervals[1].joinedEpoch)
+        assertEquals(null, intervals[1].removedEpoch)
+    }
+
+    @Test
+    fun testRebuildProjectionsRebuildsIntervalsIdentically() {
+        createGroup()
+        val bob = StoredGroupMember(
+            groupId = GROUP_ID,
+            deviceId = "bob-device",
+            accountId = "bob-account",
+            displayName = "Bob",
+            role = "MEMBER",
+            permissions = 0L,
+            status = "ACTIVE",
+            joinedEpoch = 1,
+            removedEpoch = null,
+            createdAtMs = 100,
+            updatedAtMs = 100,
+        )
+        helper.applyControlMutation(
+            groupId = GROUP_ID,
+            expectedHead = null,
+            newHead = "c1",
+            updatedMembers = listOf(bob),
+        )
+        val bobRemoved = bob.copy(status = "LEFT", removedEpoch = 3, updatedAtMs = 200)
+        helper.applyControlMutation(
+            groupId = GROUP_ID,
+            expectedHead = "c1",
+            newHead = "c2",
+            currentEpoch = 3,
+            updatedMembers = listOf(bobRemoved),
+        )
+        val bobReadded = bob.copy(status = "ACTIVE", joinedEpoch = 5, removedEpoch = null, updatedAtMs = 300)
+        helper.applyControlMutation(
+            groupId = GROUP_ID,
+            expectedHead = "c2",
+            newHead = "c3",
+            currentEpoch = 5,
+            updatedMembers = listOf(bobReadded),
+        )
+
+        // Store control events in group_events so rebuildMembershipIntervals can replay
+        val c1Event = StoredGroupEvent(
+            groupId = GROUP_ID,
+            eventId = "c1",
+            epoch = 1,
+            authorDeviceId = "local-device",
+            authorSeq = 1,
+            hlcPhysicalMs = 100,
+            hlcLogical = 0,
+            kind = StoredGroupEventKind.CONTROL_MUTATION.name,
+            body = """{"kind":"MEMBER_ADDED","target_member_device_id":"bob-device","epoch":1}""",
+            createdAtMs = 100,
+            receivedAtMs = 100,
+        )
+        val c2Event = StoredGroupEvent(
+            groupId = GROUP_ID,
+            eventId = "c2",
+            epoch = 3,
+            authorDeviceId = "local-device",
+            authorSeq = 2,
+            hlcPhysicalMs = 200,
+            hlcLogical = 0,
+            kind = StoredGroupEventKind.CONTROL_MUTATION.name,
+            body = """{"kind":"MEMBER_REMOVED","target_member_device_id":"bob-device","epoch":3}""",
+            createdAtMs = 200,
+            receivedAtMs = 200,
+        )
+        val c3Event = StoredGroupEvent(
+            groupId = GROUP_ID,
+            eventId = "c3",
+            epoch = 5,
+            authorDeviceId = "local-device",
+            authorSeq = 3,
+            hlcPhysicalMs = 300,
+            hlcLogical = 0,
+            kind = StoredGroupEventKind.CONTROL_MUTATION.name,
+            body = """{"kind":"MEMBER_ADDED","target_member_device_id":"bob-device","epoch":5}""",
+            createdAtMs = 300,
+            receivedAtMs = 300,
+        )
+        helper.ingestEvent(c1Event)
+        helper.ingestEvent(c2Event)
+        helper.ingestEvent(c3Event)
+
+        // Rebuild projections
+        helper.rebuildProjections(GROUP_ID)
+
+        assertTrue(helper.isMemberActiveAtEpoch(GROUP_ID, "bob-device", 1))
+        assertTrue(helper.isMemberActiveAtEpoch(GROUP_ID, "bob-device", 2))
+        assertFalse(helper.isMemberActiveAtEpoch(GROUP_ID, "bob-device", 3))
+        assertFalse(helper.isMemberActiveAtEpoch(GROUP_ID, "bob-device", 4))
+        assertTrue(helper.isMemberActiveAtEpoch(GROUP_ID, "bob-device", 5))
+
+        val intervals = helper.listMembershipIntervals(GROUP_ID, "bob-device")
+        assertEquals(2, intervals.size)
+        assertEquals(1L, intervals[0].joinedEpoch)
+        assertEquals(3L, intervals[0].removedEpoch)
+        assertEquals(5L, intervals[1].joinedEpoch)
+        assertEquals(null, intervals[1].removedEpoch)
+    }
+
+    @Test
+    fun migrationOnRealV6Fixture_KickReaddAndAdminEpoch() {
+        helper.close()
+        context.deleteDatabase(databaseName)
+        val file = context.getDatabasePath(databaseName)
+        file.parentFile?.mkdirs()
+        System.loadLibrary("sqlcipher")
+        val v6Db = SQLiteDatabase.openOrCreateDatabase(
+            file.absolutePath,
+            SecureStorage.getOrGenerateDbPassphrase(context),
+            null,
+            null,
+            null,
+            null,
+        )
+        v6Db.execSQL("CREATE TABLE groups(group_id TEXT PRIMARY KEY, title TEXT NOT NULL, local_device_id TEXT NOT NULL, owner_device_id TEXT NOT NULL, current_epoch INTEGER NOT NULL, control_head TEXT, control_depth INTEGER NOT NULL DEFAULT 0, created_at_ms INTEGER NOT NULL, updated_at_ms INTEGER NOT NULL, avatar_uri TEXT, direct_peer_pubkey TEXT, direct_transport_type TEXT, unread_count INTEGER NOT NULL DEFAULT 0, last_read_hlc_physical_ms INTEGER NOT NULL DEFAULT 0, last_read_hlc_logical INTEGER NOT NULL DEFAULT 0, is_archived INTEGER NOT NULL DEFAULT 0, is_muted INTEGER NOT NULL DEFAULT 0, admin_only_posting INTEGER NOT NULL DEFAULT 0)")
+        v6Db.execSQL("CREATE TABLE group_members(group_id TEXT NOT NULL, device_id TEXT NOT NULL, account_id TEXT NOT NULL, display_name TEXT NOT NULL, role TEXT NOT NULL, permissions INTEGER NOT NULL, status TEXT NOT NULL, joined_epoch INTEGER NOT NULL, removed_epoch INTEGER, created_at_ms INTEGER NOT NULL, updated_at_ms INTEGER NOT NULL, transport_fingerprint TEXT, peer_name TEXT, signing_key_base64 TEXT, PRIMARY KEY (group_id, device_id))")
+        v6Db.execSQL("CREATE TABLE group_epoch_keys(group_id TEXT NOT NULL, epoch INTEGER NOT NULL, key_material BLOB NOT NULL, created_at_ms INTEGER NOT NULL, PRIMARY KEY (group_id, epoch))")
+        v6Db.execSQL("CREATE TABLE group_events(group_id TEXT NOT NULL, event_id TEXT PRIMARY KEY, epoch INTEGER NOT NULL, author_device_id TEXT NOT NULL, author_seq INTEGER NOT NULL, hlc_physical_ms INTEGER NOT NULL, hlc_logical INTEGER NOT NULL, kind TEXT NOT NULL, body TEXT NOT NULL, created_at_ms INTEGER NOT NULL, received_at_ms INTEGER NOT NULL)")
+        v6Db.execSQL("CREATE TABLE group_messages(group_id TEXT NOT NULL, event_id TEXT PRIMARY KEY, author_device_id TEXT NOT NULL, hlc_physical_ms INTEGER NOT NULL, hlc_logical INTEGER NOT NULL, text TEXT NOT NULL, status TEXT NOT NULL, created_at_ms INTEGER NOT NULL, delivered_at_ms INTEGER, read_at_ms INTEGER)")
+        v6Db.execSQL("CREATE TABLE outbox_tasks(task_id TEXT PRIMARY KEY, group_id TEXT NOT NULL, event_id TEXT NOT NULL, recipient_device_id TEXT NOT NULL, payload BLOB NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, next_attempt_ms INTEGER NOT NULL, last_error TEXT, created_at_ms INTEGER NOT NULL, updated_at_ms INTEGER NOT NULL)")
+        v6Db.execSQL("CREATE TABLE receipts(group_id TEXT NOT NULL, event_id TEXT NOT NULL, recipient_device_id TEXT NOT NULL, received_at_ms INTEGER NOT NULL, PRIMARY KEY (group_id, event_id, recipient_device_id))")
+        v6Db.execSQL("CREATE TABLE pending_invites(invite_id TEXT PRIMARY KEY, group_id TEXT NOT NULL, invitee_device_id TEXT NOT NULL, created_at_ms INTEGER NOT NULL)")
+        v6Db.execSQL("CREATE TABLE sync_cursors(group_id TEXT NOT NULL, peer_device_id TEXT NOT NULL, last_synced_hlc_physical_ms INTEGER NOT NULL, last_synced_hlc_logical INTEGER NOT NULL, PRIMARY KEY (group_id, peer_device_id))")
+        v6Db.execSQL("CREATE TABLE owner_lineage_certificates(group_id TEXT NOT NULL, sequence INTEGER NOT NULL, transition_id TEXT NOT NULL, payload BLOB NOT NULL, PRIMARY KEY (group_id, sequence))")
+        v6Db.execSQL("CREATE TABLE roster_snapshot_pages(group_id TEXT NOT NULL, root_event_id TEXT NOT NULL, page_index INTEGER NOT NULL, total_pages INTEGER NOT NULL, payload BLOB NOT NULL, PRIMARY KEY (group_id, root_event_id, page_index))")
+
+        // Seed initial v6 group and members
+        v6Db.execSQL("INSERT INTO groups(group_id, title, local_device_id, owner_device_id, current_epoch, created_at_ms, updated_at_ms) VALUES ('g-v6', 'V6 Group', 'owner-dev', 'owner-dev', 3, 1000, 2000)")
+        v6Db.execSQL("INSERT INTO group_members(group_id, device_id, account_id, display_name, role, permissions, status, joined_epoch, created_at_ms, updated_at_ms) VALUES ('g-v6', 'owner-dev', 'acc-owner', 'Owner', 'OWNER', 999, 'ACTIVE', 1, 1000, 1000)")
+        v6Db.execSQL("INSERT INTO group_members(group_id, device_id, account_id, display_name, role, permissions, status, joined_epoch, removed_epoch, created_at_ms, updated_at_ms) VALUES ('g-v6', 'kicked-dev', 'acc-kicked', 'Kicked', 'MEMBER', 0, 'LEFT', 1, 2, 1000, 1500)")
+        v6Db.execSQL("INSERT INTO group_epoch_keys(group_id, epoch, key_material, created_at_ms) VALUES ('g-v6', 1, x'010203', 1000)")
+        v6Db.version = 6
+        v6Db.close()
+
+        // Open with updated helper -> auto-triggers upgradeToV7
+        helper = GroupDatabaseHelper(context, databaseName)
+        assertEquals(7, helper.readableDatabase.version)
+
+        // Check new table group_membership_intervals exists
+        assertTrue(helper.isMemberActiveAtEpoch("g-v6", "owner-dev", 1))
+        assertTrue(helper.isMemberActiveAtEpoch("g-v6", "owner-dev", 3))
+        // kicked-dev joined at 1, removed at 2 -> active at 1, inactive at 2
+        assertTrue(helper.isMemberActiveAtEpoch("g-v6", "kicked-dev", 1))
+        assertFalse(helper.isMemberActiveAtEpoch("g-v6", "kicked-dev", 2))
+
+        // Check suite column was added to group_epoch_keys
+        val key = helper.getEpochKey("g-v6", 1)
+        assertNotNull(key)
+        assertEquals("2pchat-epoch-aes256gcm-ed25519-v1", key?.suite)
+    }
+
+    @Test
+    fun testMonotonicTorOnlyGroupFlagCannotBeDowngraded() {
+        // Create a tor-only group
+        helper.createGroup(
+            StoredGroup(
+                groupId = "group-tor-monotonic",
+                title = "Tor Group",
+                localDeviceId = "local-device",
+                ownerDeviceId = "local-device",
+                currentEpoch = 1,
+                torOnlyGroup = true,
+                createdAtMs = 1,
+                updatedAtMs = 1,
+            ),
+            members = listOf(
+                StoredGroupMember(
+                    groupId = "group-tor-monotonic",
+                    deviceId = "local-device",
+                    accountId = "local-account",
+                    displayName = "Owner",
+                    role = "OWNER",
+                    permissions = Long.MAX_VALUE,
+                    joinedEpoch = 1,
+                    createdAtMs = 1,
+                    updatedAtMs = 1,
+                ),
+            ),
+            initialEpochKey = StoredGroupEpochKey(
+                groupId = "group-tor-monotonic",
+                epoch = 1,
+                keyMaterial = byteArrayOf(1, 2, 3),
+                createdAtMs = 1,
+            ),
+        )
+
+        assertTrue(checkNotNull(helper.getGroup("group-tor-monotonic")).torOnlyGroup)
+
+        // Attempting to downgrade torOnlyGroup from true to false must be rejected by applyControlMutation
+        val downgradeResult = helper.applyControlMutation(
+            groupId = "group-tor-monotonic",
+            expectedHead = null,
+            newHead = "mut-downgrade",
+            torOnlyGroup = false,
+        )
+        assertFalse("Monotonic rule: weakening torOnlyGroup from true to false must fail", downgradeResult)
+        // Group must still have torOnlyGroup == true
+        assertTrue(checkNotNull(helper.getGroup("group-tor-monotonic")).torOnlyGroup)
+
+        // Permitted transition: upgrading false to true
+        createGroup() // creates GROUP_ID with torOnlyGroup = false
+        assertFalse(checkNotNull(helper.getGroup(GROUP_ID)).torOnlyGroup)
+        val upgradeResult = helper.applyControlMutation(
+            groupId = GROUP_ID,
+            expectedHead = null,
+            newHead = "mut-upgrade",
+            torOnlyGroup = true,
+        )
+        assertTrue("Enabling torOnlyGroup (false -> true) must succeed", upgradeResult)
+        assertTrue(checkNotNull(helper.getGroup(GROUP_ID)).torOnlyGroup)
     }
 
     private fun createGroup() {

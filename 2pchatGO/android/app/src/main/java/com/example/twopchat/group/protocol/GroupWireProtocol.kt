@@ -23,6 +23,7 @@ object GroupWireProtocol {
     const val TYPE_ATTACHMENT_BLOCK = "group_attachment_block_v1"
     const val TYPE_JOIN_REQUEST = "group_join_request_v1"
     const val TYPE_TYPING = "group_typing_v1"
+    const val TYPE_KEY_REQUEST = "group_key_request_v1"
 
     const val MAX_WIRE_BYTES = 1536 * 1024
     const val MAX_EVENT_CIPHERTEXT_CHARS = 1024 * 1024
@@ -34,6 +35,28 @@ object GroupWireProtocol {
     const val MAX_GROUP_WALLPAPER_BYTES = 500_000
     const val MAX_GROUP_WALLPAPER_BASE64_CHARS = 666_668
     const val MAX_HLC_LOGICAL = HybridLogicalClock.MAX_LOGICAL_COUNTER
+
+    const val SUITE_V1 = com.example.twopchat.group.crypto.SUITE_V1
+    const val SUITE_V2 = com.example.twopchat.group.crypto.SUITE_V2
+
+    fun computeRosterHash(members: Collection<com.example.twopchat.group.storage.StoredGroupMember>): String {
+        val entries = members
+            .filter { it.status in setOf("ACTIVE", "RESTRICTED") }
+            .map { "${it.deviceId}:${it.signingKeyBase64}" }
+            .sorted()
+        val rosterString = entries.joinToString("\n")
+        val digest = MessageDigest.getInstance("SHA-256").digest(rosterString.toByteArray(Charsets.UTF_8))
+        return digest.joinToString("") { "%02x".format(it) }
+    }
+
+    fun computeRosterHashFromEntries(entries: List<Pair<String, String>>): String {
+        val sortedEntries = entries
+            .map { "${it.first}:${it.second}" }
+            .sorted()
+        val rosterString = sortedEntries.joinToString("\n")
+        val digest = MessageDigest.getInstance("SHA-256").digest(rosterString.toByteArray(Charsets.UTF_8))
+        return digest.joinToString("") { "%02x".format(it) }
+    }
 
     fun isGroupFrame(json: JSONObject): Boolean =
         json.optString("type") in setOf(
@@ -49,18 +72,20 @@ object GroupWireProtocol {
             TYPE_ATTACHMENT_BLOCK,
             TYPE_JOIN_REQUEST,
             TYPE_TYPING,
+            TYPE_KEY_REQUEST,
         )
 
     fun parseEvent(json: JSONObject): GroupWireEvent {
         requireTypeAndVersion(json, TYPE_EVENT)
+        val isTombstoned = json.optBoolean("is_tombstoned", false)
         val event = GroupWireEvent(
             groupId = json.requiredToken("group_id", 128),
             eventId = json.requiredToken("event_id", 128),
             epoch = json.requiredPositiveLong("epoch"),
             kind = GroupEventKind.fromWire(json.requiredToken("kind", 64)),
-            authorFingerprint = json.requiredText("author_fingerprint", 256),
+            authorFingerprint = if (isTombstoned) json.optString("author_fingerprint", "").take(256) else json.requiredText("author_fingerprint", 256),
             authorDeviceId = json.requiredToken("author_device_id", 128),
-            authorSigningKey = json.requiredText("author_signing_key", 256),
+            authorSigningKey = if (isTombstoned) json.optString("author_signing_key", "").take(256) else json.requiredText("author_signing_key", 256),
             authorSequence = json.requiredPositiveLong("author_sequence"),
             previousAuthorEvent = json.optNullableToken("previous_author_event", 128),
             controlHead = json.optNullableToken("control_head", 128),
@@ -69,16 +94,19 @@ object GroupWireProtocol {
                 require(it in 0..MAX_HLC_LOGICAL) { "invalid HLC logical component" }
             },
             targetEventId = json.optNullableToken("target_event_id", 128),
-            nonceBase64 = json.requiredText("nonce", 128),
-            ciphertextBase64 = json.requiredText(
+            nonceBase64 = if (isTombstoned) json.optString("nonce", "") else json.requiredText("nonce", 128),
+            ciphertextBase64 = if (isTombstoned) json.optString("ciphertext", "") else json.requiredText(
                 "ciphertext",
                 MAX_EVENT_CIPHERTEXT_CHARS,
             ),
-            signatureBase64 = json.requiredText("signature", 256),
-            cryptoSuite = json.requiredToken("crypto_suite", 128),
+            signatureBase64 = if (isTombstoned) json.optString("signature", "") else json.requiredText("signature", 256),
+            cryptoSuite = json.optString("crypto_suite", "").takeIf { it.isNotBlank() } ?: "2pchat-epoch-aes256gcm-ed25519-v1",
             expiresAtMs = json.optLong("expires_at_ms", 0L).coerceAtLeast(0L),
+            isTombstoned = isTombstoned,
         )
-        require(event.eventId == event.computedEventId()) { "group event id mismatch" }
+        if (!isTombstoned) {
+            require(event.eventId == event.computedEventId()) { "group event id mismatch" }
+        }
         return event
     }
 
@@ -103,6 +131,7 @@ object GroupWireProtocol {
         put("signature", event.signatureBase64)
         put("crypto_suite", event.cryptoSuite)
         if (event.expiresAtMs > 0L) put("expires_at_ms", event.expiresAtMs)
+        if (event.isTombstoned) put("is_tombstoned", true)
     }
 
     fun parseInvite(json: JSONObject): GroupInvite {
@@ -159,6 +188,7 @@ object GroupWireProtocol {
             title = json.requiredText("title", 160),
             description = json.optString("description").take(2_000),
             adminOnlyPosting = json.optBoolean("admin_only_posting", false),
+            torOnlyGroup = json.optBoolean("tor_only_group", false),
             epoch = json.requiredPositiveLong("epoch"),
             epochSecretBase64 = json.requiredText("epoch_secret", 128),
             ownerFingerprint = json.requiredText("owner_fingerprint", 256),
@@ -209,6 +239,7 @@ object GroupWireProtocol {
         put("title", invite.title)
         put("description", invite.description)
         put("admin_only_posting", invite.adminOnlyPosting)
+        if (invite.torOnlyGroup) put("tor_only_group", true)
         invite.groupAvatarDataB64?.let { put("group_avatar_data", it) }
         if (invite.groupAvatarSigned) put("group_avatar_signed", true)
         invite.groupWallpaperDataB64?.let { put("group_wallpaper_data", it) }
@@ -278,8 +309,13 @@ class GroupEventFactory(
         plaintextPayload: JSONObject,
         targetEventId: String? = null,
         expiresAtMs: Long = 0L,
+        cryptoSuite: String = GroupWireProtocol.SUITE_V1,
+        rosterHash: String? = null,
     ): GroupWireEvent {
         require(groupId.isNotBlank() && epoch > 0 && authorSequence > 0)
+        if (cryptoSuite == GroupWireProtocol.SUITE_V2) {
+            require(!rosterHash.isNullOrBlank()) { "rosterHash is required for v2 crypto suite" }
+        }
         val signingKey = GroupIdentitySignatures.localVerificationKey()
         require(signingKey.isNotBlank()) { "local group signing identity is unavailable" }
         val aadTemplate = GroupWireEvent(
@@ -299,12 +335,12 @@ class GroupEventFactory(
             nonceBase64 = "",
             ciphertextBase64 = "",
             signatureBase64 = "",
-            cryptoSuite = crypto.suiteId,
+            cryptoSuite = cryptoSuite,
             expiresAtMs = expiresAtMs,
         )
         val plaintext = plaintextPayload.toString().toByteArray(Charsets.UTF_8)
         require(plaintext.size <= 256 * 1024) { "group event plaintext is too large" }
-        val protected = crypto.protect(epochSecret, aadTemplate.authenticatedData(), plaintext)
+        val protected = crypto.protect(epochSecret, aadTemplate.authenticatedData(rosterHash), plaintext)
         val unsigned = aadTemplate.copy(
             nonceBase64 = protected.nonceBase64,
             ciphertextBase64 = protected.ciphertextBase64,
@@ -319,11 +355,15 @@ class GroupEventFactory(
     fun decrypt(
         event: GroupWireEvent,
         epochSecret: ByteArray,
+        rosterHash: String? = null,
     ): JSONObject {
-        require(event.cryptoSuite == crypto.suiteId) { "unsupported group crypto suite" }
+        require(event.cryptoSuite in crypto.supportedSuites) { "unsupported group crypto suite: ${event.cryptoSuite}" }
+        if (event.cryptoSuite == GroupWireProtocol.SUITE_V2) {
+            require(!rosterHash.isNullOrBlank()) { "rosterHash is required for v2 crypto suite" }
+        }
         val plaintext = crypto.unprotect(
             epochSecret,
-            event.authenticatedData(),
+            event.authenticatedData(rosterHash),
             ProtectedGroupPayload(
                 nonceBase64 = event.nonceBase64,
                 ciphertextBase64 = event.ciphertextBase64,
@@ -351,6 +391,7 @@ enum class GroupEventKind(val wireName: String) {
     GROUP_UPDATED("group_updated"),
     MEMBER_ADDED("member_added"),
     MEMBER_REMOVED("member_removed"),
+    MEMBER_REMOVAL_PROPOSED("member_removal_proposed"),
     ROLE_CHANGED("role_changed"),
     MEMBER_RESTRICTED("member_restricted"),
     OWNERSHIP_TRANSFERRED("ownership_transferred"),
@@ -359,7 +400,7 @@ enum class GroupEventKind(val wireName: String) {
     companion object {
         fun fromWire(value: String): GroupEventKind =
             entries.firstOrNull { it.wireName == value }
-                ?: throw IllegalArgumentException("unsupported group event kind")
+                ?: throw IllegalArgumentException("unsupported group event kind: $value")
     }
 }
 
@@ -382,16 +423,30 @@ data class GroupWireEvent(
     val signatureBase64: String,
     val cryptoSuite: String,
     val expiresAtMs: Long = 0L,
+    val isTombstoned: Boolean = false,
 ) {
-    fun authenticatedData(): ByteArray = buildString {
-        append("2pchat-group-aad-v1\n")
-        append(groupId).append('\n')
-        append(epoch).append('\n')
-        append(kind.wireName).append('\n')
-        append(authorDeviceId).append('\n')
-        append(authorSequence).append('\n')
-        append(controlHead.orEmpty())
-    }.toByteArray(Charsets.UTF_8)
+    fun authenticatedData(rosterHash: String? = null): ByteArray = if (cryptoSuite == GroupWireProtocol.SUITE_V2) {
+        buildString {
+            append("2pchat-group-aad-v2\n")
+            append(groupId).append('\n')
+            append(epoch).append('\n')
+            append(kind.wireName).append('\n')
+            append(authorDeviceId).append('\n')
+            append(authorSequence).append('\n')
+            append(controlHead.orEmpty()).append('\n')
+            append(rosterHash.orEmpty())
+        }.toByteArray(Charsets.UTF_8)
+    } else {
+        buildString {
+            append("2pchat-group-aad-v1\n")
+            append(groupId).append('\n')
+            append(epoch).append('\n')
+            append(kind.wireName).append('\n')
+            append(authorDeviceId).append('\n')
+            append(authorSequence).append('\n')
+            append(controlHead.orEmpty())
+        }.toByteArray(Charsets.UTF_8)
+    }
 
     fun canonicalForSignature(): String = buildString {
         append(GroupIdentitySignatures.DOMAIN).append('\n')
@@ -458,6 +513,7 @@ data class GroupInvite(
     val cryptoSuite: String,
     val signatureBase64: String,
     val adminOnlyPosting: Boolean = false,
+    val torOnlyGroup: Boolean = false,
     val groupAvatarDataB64: String? = null,
     val groupAvatarSigned: Boolean = false,
     val groupWallpaperDataB64: String? = null,

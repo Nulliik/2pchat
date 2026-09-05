@@ -33,7 +33,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
 
     companion object {
         private const val DATABASE_NAME = "twopchat.db"
-        internal const val DATABASE_VERSION = 14
+        internal const val DATABASE_VERSION = 16
         private const val TABLE_MESSAGES = "messages"
         private const val TABLE_PENDING_CONTROLS = "pending_controls"
         private const val TABLE_PEERS = "peers"
@@ -64,6 +64,8 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
         private const val KEY_FINGERPRINT = "fingerprint"
         private const val KEY_ABOUT_ME = "about_me"
         private const val KEY_TRANSPORT_POLICY = "transport_policy"
+        private const val KEY_PEER_SOURCE = "peer_source"
+        private const val KEY_POLICY_CONFIRMED = "policy_confirmed"
         private const val KEY_UPDATED_AT_MS = "updated_at_ms"
         private const val TAG = "ChatDatabaseHelper"
         private val instanceLock = Any()
@@ -373,6 +375,24 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
                 )
             } catch (e: Exception) {
                 SafeLog.w(TAG, "Failed backfilling transport_policy for onion contacts in $TABLE_PEERS", e)
+            }
+        }
+        if (oldVersion < 15) {
+            try {
+                db.execSQL("ALTER TABLE $TABLE_PEERS ADD COLUMN $KEY_PEER_SOURCE TEXT NOT NULL DEFAULT 'DIRECT_INVITE'")
+            } catch (e: android.database.sqlite.SQLiteException) {
+                // intentionally ignored: column KEY_PEER_SOURCE may already exist from previous migration
+            } catch (e: Exception) {
+                SafeLog.w(TAG, "Failed adding KEY_PEER_SOURCE to $TABLE_PEERS", e)
+            }
+        }
+        if (oldVersion < 16) {
+            try {
+                db.execSQL("ALTER TABLE $TABLE_PEERS ADD COLUMN $KEY_POLICY_CONFIRMED INTEGER NOT NULL DEFAULT 0")
+            } catch (e: android.database.sqlite.SQLiteException) {
+                // intentionally ignored if column exists
+            } catch (e: Exception) {
+                SafeLog.w(TAG, "Failed adding KEY_POLICY_CONFIRMED to $TABLE_PEERS", e)
             }
         }
     }
@@ -1389,6 +1409,125 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
         }
     }
 
+    fun getPeerSource(peerNameOrFP: String): String {
+        if (peerNameOrFP.isBlank()) return "DIRECT_INVITE"
+        val db = this.safeReadableDatabase
+        return try {
+            db.query(
+                TABLE_PEERS,
+                arrayOf(KEY_PEER_SOURCE),
+                "LOWER($KEY_PEER_NAME) = LOWER(?) OR $KEY_FINGERPRINT = ?",
+                arrayOf(peerNameOrFP.trim(), peerNameOrFP.trim()),
+                null,
+                null,
+                null,
+            ).use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val idx = cursor.getColumnIndex(KEY_PEER_SOURCE)
+                    if (idx != -1 && !cursor.isNull(idx)) cursor.getString(idx) else "DIRECT_INVITE"
+                } else "DIRECT_INVITE"
+            }
+        } catch (e: Exception) {
+            SafeLog.w(TAG, "Failed to get peer source for $peerNameOrFP", e)
+            "DIRECT_INVITE"
+        }
+    }
+
+    fun setPeerSource(peerNameOrFP: String, source: String) {
+        if (peerNameOrFP.isBlank()) return
+        val db = this.safeWritableDatabase
+        try {
+            val values = ContentValues().apply {
+                put(KEY_PEER_SOURCE, source)
+                put(KEY_UPDATED_AT_MS, System.currentTimeMillis())
+            }
+            val rows = db.update(
+                TABLE_PEERS,
+                values,
+                "LOWER($KEY_PEER_NAME) = LOWER(?) OR $KEY_FINGERPRINT = ?",
+                arrayOf(peerNameOrFP.trim(), peerNameOrFP.trim())
+            )
+            if (rows == 0) {
+                values.put(KEY_PEER_NAME, peerNameOrFP.trim())
+                db.insertWithOnConflict(TABLE_PEERS, null, values, SQLiteDatabase.CONFLICT_IGNORE)
+            }
+        } catch (e: Exception) {
+            SafeLog.e(TAG, "Failed to set peer source for $peerNameOrFP", e)
+        }
+    }
+
+    fun isPeerGroupInferred(peerNameOrFP: String): Boolean {
+        return getPeerSource(peerNameOrFP) == "GROUP_INFERRED"
+    }
+
+    fun isPolicyConfirmed(peerNameOrFP: String): Boolean {
+        if (peerNameOrFP.isBlank()) return false
+        val db = this.safeReadableDatabase
+        return try {
+            db.query(
+                TABLE_PEERS,
+                arrayOf(KEY_POLICY_CONFIRMED),
+                "LOWER($KEY_PEER_NAME) = LOWER(?) OR $KEY_FINGERPRINT = ?",
+                arrayOf(peerNameOrFP.trim(), peerNameOrFP.trim()),
+                null,
+                null,
+                null,
+            ).use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val idx = cursor.getColumnIndex(KEY_POLICY_CONFIRMED)
+                    if (idx != -1 && !cursor.isNull(idx)) cursor.getInt(idx) == 1 else false
+                } else false
+            }
+        } catch (e: Exception) {
+            SafeLog.w(TAG, "Failed to get policy_confirmed for $peerNameOrFP", e)
+            false
+        }
+    }
+
+    fun setPolicyConfirmed(peerNameOrFP: String, confirmed: Boolean) {
+        if (peerNameOrFP.isBlank()) return
+        val db = this.safeWritableDatabase
+        try {
+            val values = ContentValues().apply {
+                put(KEY_POLICY_CONFIRMED, if (confirmed) 1 else 0)
+                put(KEY_UPDATED_AT_MS, System.currentTimeMillis())
+            }
+            val rows = db.update(
+                TABLE_PEERS,
+                values,
+                "LOWER($KEY_PEER_NAME) = LOWER(?) OR $KEY_FINGERPRINT = ?",
+                arrayOf(peerNameOrFP.trim(), peerNameOrFP.trim())
+            )
+            if (rows == 0) {
+                values.put(KEY_PEER_NAME, peerNameOrFP.trim())
+                db.insertWithOnConflict(TABLE_PEERS, null, values, SQLiteDatabase.CONFLICT_IGNORE)
+            }
+        } catch (e: Exception) {
+            SafeLog.e(TAG, "Failed to set policy_confirmed for $peerNameOrFP", e)
+        }
+    }
+
+    fun strictnessRank(policy: Int): Int = when (policy) {
+        com.example.twopchat.config.P2PPreferences.PeerTransportPreference.TOR_ONLY.policyInt -> 100
+        com.example.twopchat.config.P2PPreferences.PeerTransportPreference.YGGDRASIL_ONLY.policyInt -> 50
+        com.example.twopchat.config.P2PPreferences.PeerTransportPreference.DIRECT_ONLY.policyInt -> 50
+        else -> 0
+    }
+
+    fun confirmPeerTransportPolicy(peerNameOrFP: String, desiredPolicy: Int, groupFloor: Int = 0): Int {
+        val effective = if (groupFloor == com.example.twopchat.config.P2PPreferences.PeerTransportPreference.TOR_ONLY.policyInt) {
+            // Tor-only floor can NEVER be weakened by any desired policy (even YGG or DIRECT)
+            com.example.twopchat.config.P2PPreferences.PeerTransportPreference.TOR_ONLY.policyInt
+        } else if (strictnessRank(desiredPolicy) >= strictnessRank(groupFloor)) {
+            desiredPolicy
+        } else {
+            groupFloor
+        }
+        setPeerTransportPolicy(peerNameOrFP, effective)
+        setPolicyConfirmed(peerNameOrFP, true)
+        return effective
+    }
+
     private fun createPeersTable(db: SQLiteDatabase) {
         db.execSQL(
             "CREATE TABLE IF NOT EXISTS $TABLE_PEERS(" +
@@ -1398,6 +1537,8 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
                 "$KEY_LAST_ENDPOINT TEXT," +
                 "$KEY_ABOUT_ME TEXT," +
                 "$KEY_TRANSPORT_POLICY INTEGER NOT NULL DEFAULT 0," +
+                "$KEY_PEER_SOURCE TEXT NOT NULL DEFAULT 'DIRECT_INVITE'," +
+                "$KEY_POLICY_CONFIRMED INTEGER NOT NULL DEFAULT 0," +
                 "$KEY_UPDATED_AT_MS INTEGER NOT NULL DEFAULT 0)"
         )
     }

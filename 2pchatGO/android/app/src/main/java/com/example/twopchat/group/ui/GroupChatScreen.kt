@@ -732,6 +732,7 @@ fun GroupChatScreen(
                 emptyList<Int>()
             } else {
                 state.messages.mapIndexedNotNull { index, msg ->
+                    if (msg.isDeleted || msg.text == "Message deleted") return@mapIndexedNotNull null
                     val matchesText = searchQuery.isBlank() ||
                         msg.text.contains(searchQuery, ignoreCase = true) ||
                         msg.authorName.contains(searchQuery, ignoreCase = true) ||

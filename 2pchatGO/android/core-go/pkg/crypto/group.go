@@ -5,10 +5,14 @@ import (
 	"crypto/cipher"
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
+	"sort"
+	"strings"
 )
 
 const (
@@ -18,7 +22,22 @@ const (
 	GroupSignatureDomain                = "2pchat-group-event-signature-v1"
 	GroupSignatureContextV2             = "2pchat-group-event-signature-v2\x00"
 	legacyPythonGroupSignatureContextV1 = "2pchat-group-signature-api-v1\x00"
+	GroupCryptoSuiteV1                  = "2pchat-epoch-aes256gcm-ed25519-v1"
+	GroupCryptoSuiteV2                  = "2pchat-epoch-aes256gcm-ed25519-v2"
+	GroupAADContextV1                   = "2pchat-group-aad-v1\n"
+	GroupAADContextV2                   = "2pchat-group-aad-v2\n"
 )
+
+// ComputeRosterHash computes SHA-256 over lexicographically sorted entries of "deviceId:signingKey"
+// for active/restricted members, joined by newlines.
+func ComputeRosterHash(entries []string) string {
+	sorted := make([]string, len(entries))
+	copy(sorted, entries)
+	sort.Strings(sorted)
+	rosterString := strings.Join(sorted, "\n")
+	h := sha256.Sum256([]byte(rosterString))
+	return hex.EncodeToString(h[:])
+}
 
 // SignGroupPayload signs a canonical string using Ed25519 and returns Base64 signature.
 func SignGroupPayload(privKey ed25519.PrivateKey, canonicalPayload string) (string, error) {

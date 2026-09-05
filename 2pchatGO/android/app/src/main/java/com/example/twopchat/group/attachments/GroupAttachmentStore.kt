@@ -13,6 +13,7 @@ import java.util.concurrent.ConcurrentHashMap
 import javax.crypto.Cipher
 import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.SecretKeySpec
+import com.example.twopchat.security.TemporaryCacheSanitizer
 
 data class GroupAttachmentBlock(
     val index: Int,
@@ -310,10 +311,21 @@ class GroupAttachmentStore(
 
     fun discard(manifest: GroupAttachmentManifest) {
         manifest.blocks.forEach { block ->
-            verifiedBlocks.remove(block.ciphertextCid)
-            blockFile(block.ciphertextCid).delete()
+            shredBlock(block.ciphertextCid)
         }
     }
+
+    fun shredBlock(cid: String) {
+        verifiedBlocks.remove(cid)
+        val file = blockFile(cid)
+        if (file.exists()) {
+            TemporaryCacheSanitizer.shredFile(file)
+        }
+    }
+
+    fun hasBlock(cid: String): Boolean = blockFile(cid).exists()
+
+    fun blockFileForTesting(cid: String): File = blockFile(cid)
 
     private fun verifyBlockFile(
         cid: String,

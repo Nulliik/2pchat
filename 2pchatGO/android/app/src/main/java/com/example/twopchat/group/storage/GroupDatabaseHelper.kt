@@ -21,6 +21,7 @@ enum class StoredOutboxState {
     RETRY,
     ACKED,
     FAILED,
+    AWAITING_EPOCH_KEY,
 }
 
 data class StoredGroup(
@@ -36,6 +37,8 @@ data class StoredGroup(
     val metadataVersion: Long = 0,
     val unreadCount: Int = 0,
     val adminOnlyPosting: Boolean = false,
+    val torOnlyGroup: Boolean = false,
+    val lastKeyRequestMs: Long = 0L,
     val createdAtMs: Long = System.currentTimeMillis(),
     val updatedAtMs: Long = createdAtMs,
 )
@@ -63,6 +66,17 @@ data class StoredGroupEpochKey(
     val keyMaterial: ByteArray,
     val createdAtMs: Long = System.currentTimeMillis(),
     val expiresAtMs: Long? = null,
+    val suite: String = "2pchat-epoch-aes256gcm-ed25519-v1",
+    val controlHead: String? = null,
+    val rosterHash: String? = null,
+)
+
+data class StoredMembershipInterval(
+    val groupId: String,
+    val deviceId: String,
+    val joinedEpoch: Long,
+    val removedEpoch: Long?,
+    val createdAtMs: Long,
 )
 
 data class StoredGroupEvent(
@@ -80,6 +94,7 @@ data class StoredGroupEvent(
     val payload: ByteArray? = null,
     val createdAtMs: Long = hlcPhysicalMs,
     val receivedAtMs: Long = System.currentTimeMillis(),
+    val isTombstoned: Boolean = false,
 )
 
 data class StoredGroupMessage(
@@ -248,6 +263,8 @@ class GroupDatabaseHelper(
                 metadata_version INTEGER NOT NULL DEFAULT 0,
                 unread_count INTEGER NOT NULL DEFAULT 0 CHECK(unread_count >= 0),
                 admin_only_posting INTEGER NOT NULL DEFAULT 0 CHECK(admin_only_posting IN (0, 1)),
+                tor_only_group INTEGER NOT NULL DEFAULT 0 CHECK(tor_only_group IN (0, 1)),
+                last_key_request_ms INTEGER NOT NULL DEFAULT 0,
                 created_at_ms INTEGER NOT NULL,
                 updated_at_ms INTEGER NOT NULL
             )
@@ -277,12 +294,28 @@ class GroupDatabaseHelper(
         )
         db.execSQL(
             """
+            CREATE TABLE group_membership_intervals(
+                group_id TEXT NOT NULL,
+                device_id TEXT NOT NULL,
+                joined_epoch INTEGER NOT NULL,
+                removed_epoch INTEGER,
+                created_at_ms INTEGER NOT NULL,
+                PRIMARY KEY(group_id, device_id, joined_epoch),
+                FOREIGN KEY(group_id) REFERENCES groups(group_id) ON DELETE CASCADE
+            )
+            """.trimIndent(),
+        )
+        db.execSQL(
+            """
             CREATE TABLE group_epoch_keys(
                 group_id TEXT NOT NULL,
                 epoch INTEGER NOT NULL,
                 key_material BLOB NOT NULL,
                 created_at_ms INTEGER NOT NULL,
                 expires_at_ms INTEGER,
+                suite TEXT NOT NULL DEFAULT '2pchat-epoch-aes256gcm-ed25519-v1',
+                control_head TEXT,
+                roster_hash TEXT,
                 PRIMARY KEY(group_id, epoch),
                 FOREIGN KEY(group_id) REFERENCES groups(group_id) ON DELETE CASCADE
             )
@@ -305,6 +338,7 @@ class GroupDatabaseHelper(
                 payload BLOB,
                 created_at_ms INTEGER NOT NULL,
                 received_at_ms INTEGER NOT NULL,
+                is_tombstoned INTEGER NOT NULL DEFAULT 0,
                 PRIMARY KEY(group_id, event_id),
                 UNIQUE(group_id, author_device_id, author_seq),
                 FOREIGN KEY(group_id) REFERENCES groups(group_id) ON DELETE CASCADE
@@ -420,9 +454,20 @@ class GroupDatabaseHelper(
         db.execSQL(
             "CREATE INDEX IF NOT EXISTS idx_group_events_lookup ON group_events(group_id, event_id)",
         )
+        db.execSQL(
+            "CREATE INDEX IF NOT EXISTS idx_group_membership_intervals_lookup ON group_membership_intervals(" +
+                "group_id, device_id, joined_epoch, removed_epoch)",
+        )
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+        if (com.example.twopchat.BuildConfig.DEBUG) {
+            val looper = android.os.Looper.myLooper()
+            val mainLooper = android.os.Looper.getMainLooper()
+            if (looper != null && mainLooper != null && looper == mainLooper) {
+                error("Database migration must run on background thread (ANR prevention)")
+            }
+        }
         if (oldVersion < 2) {
             createReactionTable(db)
             db.query(
@@ -449,6 +494,101 @@ class GroupDatabaseHelper(
         if (oldVersion < 6) {
             createReceiptLookupIndex(db)
         }
+        if (oldVersion < 7) {
+            upgradeToV7(db)
+        }
+    }
+
+    private fun upgradeToV7(db: SQLiteDatabase) {
+        db.beginTransaction()
+        try {
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS group_membership_intervals(
+                    group_id TEXT NOT NULL,
+                    device_id TEXT NOT NULL,
+                    joined_epoch INTEGER NOT NULL,
+                    removed_epoch INTEGER,
+                    created_at_ms INTEGER NOT NULL,
+                    PRIMARY KEY(group_id, device_id, joined_epoch),
+                    FOREIGN KEY(group_id) REFERENCES groups(group_id) ON DELETE CASCADE
+                )
+                """.trimIndent(),
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS idx_group_membership_intervals_lookup ON group_membership_intervals(" +
+                    "group_id, device_id, joined_epoch, removed_epoch)",
+            )
+            val eventsCols = getTableColumns(db, TABLE_EVENTS)
+            if ("is_tombstoned" !in eventsCols) {
+                db.execSQL("ALTER TABLE group_events ADD COLUMN is_tombstoned INTEGER NOT NULL DEFAULT 0")
+            }
+            val epochKeysCols = getTableColumns(db, TABLE_EPOCH_KEYS)
+            if ("suite" !in epochKeysCols) {
+                db.execSQL("ALTER TABLE group_epoch_keys ADD COLUMN suite TEXT NOT NULL DEFAULT '2pchat-epoch-aes256gcm-ed25519-v1'")
+            }
+            if ("control_head" !in epochKeysCols) {
+                db.execSQL("ALTER TABLE group_epoch_keys ADD COLUMN control_head TEXT")
+            }
+            if ("roster_hash" !in epochKeysCols) {
+                db.execSQL("ALTER TABLE group_epoch_keys ADD COLUMN roster_hash TEXT")
+            }
+            val groupsCols = getTableColumns(db, TABLE_GROUPS)
+            if ("tor_only_group" !in groupsCols) {
+                db.execSQL("ALTER TABLE groups ADD COLUMN tor_only_group INTEGER NOT NULL DEFAULT 0")
+            }
+            if ("last_key_request_ms" !in groupsCols) {
+                db.execSQL("ALTER TABLE groups ADD COLUMN last_key_request_ms INTEGER NOT NULL DEFAULT 0")
+            }
+
+            // Retroactive tombstone strictly from DELETE events in the log (not projection flag)
+            db.execSQL(
+                """
+                UPDATE group_events 
+                SET is_tombstoned = 1, body = '', payload = NULL 
+                WHERE event_id IN (
+                    SELECT target_event_id 
+                    FROM group_events 
+                    WHERE kind IN ('DELETE', 'delete') AND target_event_id IS NOT NULL
+                )
+                """.trimIndent(),
+            )
+            db.execSQL(
+                """
+                UPDATE group_messages 
+                SET deleted = 1, body = '' 
+                WHERE message_id IN (
+                    SELECT target_event_id 
+                    FROM group_events 
+                    WHERE kind IN ('DELETE', 'delete') AND target_event_id IS NOT NULL
+                )
+                """.trimIndent(),
+            )
+
+            val groupIds = mutableListOf<String>()
+            db.rawQuery("SELECT group_id FROM groups", null).use { cursor ->
+                while (cursor.moveToNext()) {
+                    groupIds.add(cursor.getString(0))
+                }
+            }
+            for (groupId in groupIds) {
+                rebuildMembershipIntervals(db, groupId)
+            }
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
+    }
+
+    private fun getTableColumns(db: SQLiteDatabase, tableName: String): Set<String> {
+        val columns = mutableSetOf<String>()
+        db.rawQuery("PRAGMA table_info($tableName)", null).use { cursor ->
+            while (cursor.moveToNext()) {
+                val nameIdx = cursor.getColumnIndex("name")
+                if (nameIdx >= 0) columns.add(cursor.getString(nameIdx))
+            }
+        }
+        return columns
     }
 
     private fun createReceiptLookupIndex(db: SQLiteDatabase) {
@@ -479,6 +619,25 @@ class GroupDatabaseHelper(
         try {
             db.insertOrThrow(TABLE_GROUPS, null, groupValues(group))
             members.forEach { db.insertOrThrow(TABLE_MEMBERS, null, memberValues(it)) }
+            members.filter { it.status in setOf("ACTIVE", "RESTRICTED") }.forEach { member ->
+                val intervalValues = ContentValues().apply {
+                    put("group_id", group.groupId)
+                    put("device_id", member.deviceId)
+                    put("joined_epoch", member.joinedEpoch)
+                    if (member.removedEpoch != null) {
+                        put("removed_epoch", member.removedEpoch)
+                    } else {
+                        putNull("removed_epoch")
+                    }
+                    put("created_at_ms", member.createdAtMs)
+                }
+                db.insertWithOnConflict(
+                    TABLE_MEMBERSHIP_INTERVALS,
+                    null,
+                    intervalValues,
+                    SQLiteDatabase.CONFLICT_REPLACE,
+                )
+            }
             initialEpochKey?.let {
                 db.insertOrThrow(TABLE_EPOCH_KEYS, null, epochKeyValues(it))
             }
@@ -852,6 +1011,7 @@ class GroupDatabaseHelper(
                         SQLiteDatabase.CONFLICT_REPLACE,
                     ) != -1L,
                 )
+                updateMembershipIntervalsLocked(db, groupId, member, expectedEpoch, System.currentTimeMillis())
             }
             authorSequences.forEach { (deviceId, snapshotSequence) ->
                 val existingSequence = db.query(
@@ -872,8 +1032,10 @@ class GroupDatabaseHelper(
                     ContentValues().apply {
                         put("group_id", groupId)
                         put("device_id", deviceId)
-                        put("last_author_seq", maxOf(existingSequence, snapshotSequence))
-                        put("last_event_id", expectedControlHead)
+                        put(
+                            "last_author_seq",
+                            maxOf(existingSequence, snapshotSequence),
+                        )
                         put("updated_at_ms", System.currentTimeMillis())
                     },
                     SQLiteDatabase.CONFLICT_REPLACE,
@@ -955,6 +1117,9 @@ class GroupDatabaseHelper(
                     keyMaterial = cursor.blob("key_material"),
                     createdAtMs = cursor.long("created_at_ms"),
                     expiresAtMs = cursor.nullableLong("expires_at_ms"),
+                    suite = if (cursor.hasColumn("suite")) cursor.string("suite") else "2pchat-epoch-aes256gcm-ed25519-v1",
+                    controlHead = if (cursor.hasColumn("control_head")) cursor.nullableString("control_head") else null,
+                    rosterHash = if (cursor.hasColumn("roster_hash")) cursor.nullableString("roster_hash") else null,
                 )
             }
         }
@@ -1423,6 +1588,73 @@ class GroupDatabaseHelper(
             "1",
         ).use { cursor -> if (cursor.moveToFirst()) cursor.toMessage() else null }
 
+    fun tombstoneEvent(groupId: String, eventId: String): Boolean {
+        val db = safeWritableDatabase
+        db.beginTransaction()
+        try {
+            val values = ContentValues().apply {
+                put("body", enc(""))
+                putNull("payload")
+                put("is_tombstoned", 1)
+            }
+            val rows = db.update(
+                TABLE_EVENTS,
+                values,
+                "group_id = ? AND event_id = ?",
+                arrayOf(groupId, eventId),
+            )
+            rebuildMaterializedMessage(db, groupId, eventId, newMessageUnread = null)
+            db.execSQL(
+                "UPDATE $TABLE_GROUPS SET pinned_event_id = NULL WHERE group_id = ? AND pinned_event_id = ?",
+                arrayOf(groupId, eventId),
+            )
+            db.setTransactionSuccessful()
+            return rows > 0
+        } finally {
+            db.endTransaction()
+        }
+    }
+
+    fun getDeleteEventForTarget(groupId: String, targetEventId: String): StoredGroupEvent? =
+        safeReadableDatabase.query(
+            TABLE_EVENTS,
+            null,
+            "group_id = ? AND target_event_id = ? AND kind IN (?, ?)",
+            arrayOf(groupId, targetEventId, StoredGroupEventKind.DELETE.name, "delete"),
+            null,
+            null,
+            null,
+            "1",
+        ).use { cursor -> if (cursor.moveToFirst()) cursor.toEvent() else null }
+
+    fun listActiveMediaEvents(excludingEventId: String? = null): List<Pair<String, String>> {
+        val selection = if (excludingEventId != null) {
+            "is_tombstoned = 0 AND kind IN (?, ?) AND event_id != ?"
+        } else {
+            "is_tombstoned = 0 AND kind IN (?, ?)"
+        }
+        val args = if (excludingEventId != null) {
+            arrayOf("MEDIA", StoredGroupEventKind.MESSAGE.name, excludingEventId)
+        } else {
+            arrayOf("MEDIA", StoredGroupEventKind.MESSAGE.name)
+        }
+        val result = mutableListOf<Pair<String, String>>()
+        safeReadableDatabase.query(
+            TABLE_EVENTS,
+            arrayOf("group_id", "event_id"),
+            selection,
+            args,
+            null,
+            null,
+            null,
+        ).use { cursor ->
+            while (cursor.moveToNext()) {
+                result.add(cursor.getString(0) to cursor.getString(1))
+            }
+        }
+        return result
+    }
+
     fun enqueueOutbox(task: StoredOutboxTask): Boolean {
         require(task.taskId.isNotBlank() && task.recipientDeviceId.isNotBlank())
         return safeWritableDatabase.insertWithOnConflict(
@@ -1643,6 +1875,135 @@ class GroupDatabaseHelper(
             StoredOutboxState.RETRY.name,
         ),
     )
+
+    fun enqueueAwaitingEpochKeyIntent(
+        groupId: String,
+        kind: String,
+        payload: org.json.JSONObject,
+        targetEventId: String?,
+        createdAtMs: Long = System.currentTimeMillis(),
+    ): String {
+        val taskId = "intent-$groupId-$createdAtMs-${java.util.UUID.randomUUID()}"
+        val intentJson = org.json.JSONObject().apply {
+            put("kind", kind)
+            put("payload", payload)
+            if (targetEventId != null) put("target_event_id", targetEventId)
+            put("created_at_ms", createdAtMs)
+        }
+        val task = StoredOutboxTask(
+            taskId = taskId,
+            groupId = groupId,
+            eventId = targetEventId.orEmpty(),
+            recipientDeviceId = "",
+            payload = intentJson.toString().toByteArray(Charsets.UTF_8),
+            state = StoredOutboxState.AWAITING_EPOCH_KEY.name,
+            attempts = 0,
+            nextAttemptMs = 0,
+            createdAtMs = createdAtMs,
+            updatedAtMs = createdAtMs,
+        )
+        enqueueOutbox(task)
+        return taskId
+    }
+
+    fun loadAwaitingEpochKeyTasks(groupId: String): List<StoredOutboxTask> {
+        val result = mutableListOf<StoredOutboxTask>()
+        safeReadableDatabase.query(
+            TABLE_OUTBOX,
+            null,
+            "group_id = ? AND state = ?",
+            arrayOf(groupId, StoredOutboxState.AWAITING_EPOCH_KEY.name),
+            null,
+            null,
+            "created_at_ms ASC",
+        ).use { cursor ->
+            while (cursor.moveToNext()) {
+                result += cursor.toOutboxTask()
+            }
+        }
+        return result
+    }
+
+    fun countAwaitingEpochKeyTasks(groupId: String, olderThanMs: Long? = null): Int {
+        val selection = if (olderThanMs != null) {
+            "group_id = ? AND state = ? AND created_at_ms <= ?"
+        } else {
+            "group_id = ? AND state = ?"
+        }
+        val args = if (olderThanMs != null) {
+            arrayOf(groupId, StoredOutboxState.AWAITING_EPOCH_KEY.name, olderThanMs.toString())
+        } else {
+            arrayOf(groupId, StoredOutboxState.AWAITING_EPOCH_KEY.name)
+        }
+        safeReadableDatabase.rawQuery(
+            "SELECT COUNT(*) FROM $TABLE_OUTBOX WHERE $selection",
+            args,
+        ).use { cursor ->
+            return if (cursor.moveToFirst()) cursor.getInt(0) else 0
+        }
+    }
+
+    fun deleteOutboxTask(taskId: String): Boolean {
+        if (taskId.isBlank()) return false
+        return safeWritableDatabase.delete(TABLE_OUTBOX, "task_id = ?", arrayOf(taskId)) > 0
+    }
+
+    fun drainAwaitingEpochKeyTask(
+        drainingTaskId: String,
+        event: StoredGroupEvent,
+        countAsUnread: Boolean,
+        tasks: List<StoredOutboxTask>,
+    ): Boolean {
+        validateEventForIngest(event)
+        require(
+            tasks.all {
+                it.groupId == event.groupId &&
+                    it.eventId == event.eventId &&
+                    it.taskId.isNotBlank() &&
+                    it.recipientDeviceId.isNotBlank()
+            },
+        ) { "outbox tasks must address the ingested event" }
+        val db = safeWritableDatabase
+        db.beginTransaction()
+        try {
+            if (!insertAndMaterializeEvent(db, event, countAsUnread)) return false
+            tasks.forEach { task ->
+                db.insertWithOnConflict(
+                    TABLE_OUTBOX,
+                    null,
+                    outboxValues(task),
+                    SQLiteDatabase.CONFLICT_IGNORE,
+                )
+            }
+            db.delete(TABLE_OUTBOX, "task_id = ?", arrayOf(drainingTaskId))
+            db.setTransactionSuccessful()
+            return true
+        } finally {
+            db.endTransaction()
+        }
+    }
+
+    fun updateLastKeyRequestMs(groupId: String, timestampMs: Long): Boolean {
+        val values = ContentValues().apply {
+            put("last_key_request_ms", timestampMs)
+            put("updated_at_ms", System.currentTimeMillis())
+        }
+        return safeWritableDatabase.update(
+            TABLE_GROUPS,
+            values,
+            "group_id = ?",
+            arrayOf(groupId),
+        ) > 0
+    }
+
+    fun invalidateDeleteForTarget(groupId: String, targetEventId: String): Boolean {
+        val db = safeWritableDatabase
+        return db.delete(
+            TABLE_EVENTS,
+            "group_id = ? AND target_event_id = ? AND kind IN (?, ?)",
+            arrayOf(groupId, targetEventId, StoredGroupEventKind.DELETE.name, "delete"),
+        ) > 0
+    }
 
     fun listReceipts(groupId: String, eventId: String): List<StoredReceipt> {
         val result = mutableListOf<StoredReceipt>()
@@ -1928,6 +2289,7 @@ class GroupDatabaseHelper(
         description: String? = null,
         avatarUri: String? = null,
         adminOnlyPosting: Boolean? = null,
+        torOnlyGroup: Boolean? = null,
         members: List<StoredGroupMember> = emptyList(),
         ownerLineageCertificate: StoredOwnerLineageCertificate? = null,
         admissionRecipientDeviceId: String? = null,
@@ -1942,9 +2304,9 @@ class GroupDatabaseHelper(
         val db = safeWritableDatabase
         db.beginTransaction()
         try {
-            val currentHead = db.query(
+            val (currentHead, currentTorOnly) = db.query(
                 TABLE_GROUPS,
-                arrayOf("control_head"),
+                arrayOf("control_head", "tor_only_group"),
                 "group_id = ?",
                 arrayOf(groupId),
                 null,
@@ -1953,13 +2315,19 @@ class GroupDatabaseHelper(
                 "1",
             ).use { cursor ->
                 if (!cursor.moveToFirst()) return false
-                if (cursor.isNull(0)) null else cursor.getString(0)
+                val head = if (cursor.isNull(0)) null else cursor.getString(0)
+                val torOnly = if (cursor.hasColumn("tor_only_group") && !cursor.isNull(1)) cursor.getInt(1) != 0 else false
+                head to torOnly
             }
             if (currentHead == newHead) {
                 db.setTransactionSuccessful()
                 return true
             }
             if (currentHead != expectedHead) return false
+            if (currentTorOnly && torOnlyGroup == false) {
+                // Monotonic rule: weakening true -> false is strictly rejected
+                return false
+            }
 
             ownerLineageCertificate?.let { certificate ->
                 val existing = db.query(
@@ -2015,6 +2383,7 @@ class GroupDatabaseHelper(
                 description?.let { put("description", it) }
                 avatarUri?.let { put("avatar_uri", it) }
                 adminOnlyPosting?.let { put("admin_only_posting", if (it) 1 else 0) }
+                torOnlyGroup?.let { put("tor_only_group", if (it) 1 else 0) }
             }
             val updatedRows = db.update(TABLE_GROUPS, groupValues, "group_id = ?", arrayOf(groupId))
             if (updatedRows == 0) {
@@ -2033,6 +2402,7 @@ class GroupDatabaseHelper(
                     memberValues(member),
                     SQLiteDatabase.CONFLICT_REPLACE,
                 )
+                updateMembershipIntervalsLocked(db, groupId, member, currentEpoch, updatedAtMs)
             }
             admissionRecipientDeviceId?.let { recipientDeviceId ->
                 val admitted = db.query(
@@ -2160,8 +2530,21 @@ class GroupDatabaseHelper(
                 )
             StoredGroupEventKind.EDIT.name,
             StoredGroupEventKind.DELETE.name,
-            -> event.targetEventId?.let {
-                rebuildMaterializedMessage(db, event.groupId, it, newMessageUnread = null)
+            -> event.targetEventId?.let { targetId ->
+                if (event.kind == StoredGroupEventKind.DELETE.name) {
+                    val values = ContentValues().apply {
+                        put("body", enc(""))
+                        putNull("payload")
+                        put("is_tombstoned", 1)
+                    }
+                    db.update(
+                        TABLE_EVENTS,
+                        values,
+                        "group_id = ? AND event_id = ?",
+                        arrayOf(event.groupId, targetId),
+                    )
+                }
+                rebuildMaterializedMessage(db, event.groupId, targetId, newMessageUnread = null)
             }
             "PIN",
             "UNPIN",
@@ -2415,7 +2798,7 @@ class GroupDatabaseHelper(
 
         var body = base.body.orEmpty()
         var edited = false
-        var deleted = false
+        var deleted = base.isTombstoned
         var updatedAt = base.receivedAtMs
         db.query(
             TABLE_EVENTS,
@@ -2439,9 +2822,15 @@ class GroupDatabaseHelper(
                         body = mutation.body.orEmpty()
                         edited = true
                     }
-                    StoredGroupEventKind.DELETE.name -> deleted = true
+                    StoredGroupEventKind.DELETE.name -> {
+                        deleted = true
+                        body = ""
+                    }
                 }
             }
+        }
+        if (deleted) {
+            body = ""
         }
 
         val previousUnread = db.query(
@@ -2477,6 +2866,287 @@ class GroupDatabaseHelper(
         )
     }
 
+    fun isMemberActiveAtEpoch(groupId: String, deviceId: String, epoch: Long): Boolean {
+        return safeReadableDatabase.rawQuery(
+            """
+            SELECT 1 FROM $TABLE_MEMBERSHIP_INTERVALS
+            WHERE group_id = ? AND device_id = ?
+              AND joined_epoch <= ?
+              AND (removed_epoch IS NULL OR ? < removed_epoch)
+            LIMIT 1
+            """.trimIndent(),
+            arrayOf(groupId, deviceId, epoch.toString(), epoch.toString()),
+        ).use { cursor -> cursor.moveToFirst() }
+    }
+
+    fun listMembershipIntervals(groupId: String, deviceId: String? = null): List<StoredMembershipInterval> {
+        val result = mutableListOf<StoredMembershipInterval>()
+        val selection = if (deviceId != null) {
+            "group_id = ? AND device_id = ?"
+        } else {
+            "group_id = ?"
+        }
+        val args = if (deviceId != null) {
+            arrayOf(groupId, deviceId)
+        } else {
+            arrayOf(groupId)
+        }
+        safeReadableDatabase.query(
+            TABLE_MEMBERSHIP_INTERVALS,
+            null,
+            selection,
+            args,
+            null,
+            null,
+            "device_id ASC, joined_epoch ASC",
+        ).use { cursor ->
+            while (cursor.moveToNext()) {
+                result.add(
+                    StoredMembershipInterval(
+                        groupId = cursor.string("group_id"),
+                        deviceId = cursor.string("device_id"),
+                        joinedEpoch = cursor.long("joined_epoch"),
+                        removedEpoch = cursor.nullableLong("removed_epoch"),
+                        createdAtMs = cursor.long("created_at_ms"),
+                    ),
+                )
+            }
+        }
+        return result
+    }
+
+    private fun updateMembershipIntervalsLocked(
+        db: SQLiteDatabase,
+        groupId: String,
+        member: StoredGroupMember,
+        currentEpoch: Long?,
+        updatedAtMs: Long,
+    ) {
+        if (member.status in setOf("ACTIVE", "RESTRICTED")) {
+            val hasOpenInterval = db.rawQuery(
+                """
+                SELECT 1 FROM $TABLE_MEMBERSHIP_INTERVALS
+                WHERE group_id = ? AND device_id = ? AND removed_epoch IS NULL
+                LIMIT 1
+                """.trimIndent(),
+                arrayOf(groupId, member.deviceId),
+            ).use { it.moveToFirst() }
+
+            if (!hasOpenInterval) {
+                val joined = currentEpoch ?: member.joinedEpoch
+                val values = ContentValues().apply {
+                    put("group_id", groupId)
+                    put("device_id", member.deviceId)
+                    put("joined_epoch", joined)
+                    putNull("removed_epoch")
+                    put("created_at_ms", updatedAtMs)
+                }
+                db.insertWithOnConflict(
+                    TABLE_MEMBERSHIP_INTERVALS,
+                    null,
+                    values,
+                    SQLiteDatabase.CONFLICT_REPLACE,
+                )
+            }
+        } else if (member.status in setOf("LEFT", "BANNED") || member.removedEpoch != null) {
+            val openJoinedEpoch = db.rawQuery(
+                """
+                SELECT joined_epoch FROM $TABLE_MEMBERSHIP_INTERVALS
+                WHERE group_id = ? AND device_id = ? AND removed_epoch IS NULL
+                ORDER BY joined_epoch DESC LIMIT 1
+                """.trimIndent(),
+                arrayOf(groupId, member.deviceId),
+            ).use { cursor ->
+                if (cursor.moveToFirst()) cursor.getLong(0) else null
+            }
+
+            if (openJoinedEpoch != null) {
+                val removed = member.removedEpoch ?: currentEpoch ?: (openJoinedEpoch + 1)
+                db.execSQL(
+                    """
+                    UPDATE $TABLE_MEMBERSHIP_INTERVALS
+                    SET removed_epoch = ?
+                    WHERE group_id = ? AND device_id = ? AND joined_epoch = ? AND removed_epoch IS NULL
+                    """.trimIndent(),
+                    arrayOf<Any?>(removed, groupId, member.deviceId, openJoinedEpoch),
+                )
+            }
+        }
+    }
+
+    fun rebuildMembershipIntervals(db: SQLiteDatabase, groupId: String) {
+        db.delete(TABLE_MEMBERSHIP_INTERVALS, "group_id = ?", arrayOf(groupId))
+
+        val minEpoch = db.rawQuery(
+            "SELECT COALESCE(MIN(epoch), 0) FROM $TABLE_EPOCH_KEYS WHERE group_id = ?",
+            arrayOf(groupId),
+        ).use { cursor ->
+            if (cursor.moveToFirst()) cursor.getLong(0) else 0L
+        }
+
+        data class MembershipEvent(
+            val kind: String,
+            val epoch: Long,
+            val memberDeviceId: String,
+            val status: String,
+            val nextEpoch: Long?,
+            val timestamp: Long,
+        )
+
+        val controlEvents = mutableListOf<MembershipEvent>()
+        db.query(
+            TABLE_EVENTS,
+            null,
+            "group_id = ? AND kind IN (?, ?, ?, ?)",
+            arrayOf(
+                groupId,
+                "MEMBER_ADDED",
+                "MEMBER_REMOVED",
+                "member_added",
+                "member_removed",
+            ),
+            null,
+            null,
+            EVENT_ASC_ORDER,
+        ).use { cursor ->
+            while (cursor.moveToNext()) {
+                val event = cursor.toEvent()
+                val payloadJson = runCatching {
+                    event.body?.let { org.json.JSONObject(it) }
+                        ?: event.payload?.let { org.json.JSONObject(it.toString(Charsets.UTF_8)).optJSONObject("body") }
+                }.getOrNull()
+
+                val memberDeviceId = payloadJson?.optString("member_device_id")?.takeIf { it.isNotBlank() }
+                if (memberDeviceId != null) {
+                    val status = payloadJson.optString("status")
+                    val nextEpoch = if (payloadJson.has("next_epoch")) payloadJson.optLong("next_epoch") else null
+                    controlEvents.add(
+                        MembershipEvent(
+                            kind = event.kind.uppercase(),
+                            epoch = event.epoch,
+                            memberDeviceId = memberDeviceId,
+                            status = status,
+                            nextEpoch = nextEpoch,
+                            timestamp = event.hlcPhysicalMs,
+                        ),
+                    )
+                }
+            }
+        }
+
+        val firstEventPerDevice = mutableMapOf<String, MembershipEvent>()
+        for (event in controlEvents) {
+            if (event.memberDeviceId !in firstEventPerDevice) {
+                firstEventPerDevice[event.memberDeviceId] = event
+            }
+        }
+
+        val allMembers = mutableListOf<StoredGroupMember>()
+        db.query(
+            TABLE_MEMBERS,
+            null,
+            "group_id = ?",
+            arrayOf(groupId),
+            null,
+            null,
+            null,
+        ).use { cursor ->
+            while (cursor.moveToNext()) {
+                allMembers.add(cursor.toMember())
+            }
+        }
+
+        for (member in allMembers) {
+            val firstEvt = firstEventPerDevice[member.deviceId]
+            if (firstEvt == null || firstEvt.kind != "MEMBER_ADDED") {
+                val initialJoinedEpoch = minOf(member.joinedEpoch, minEpoch)
+                val initialValues = ContentValues().apply {
+                    put("group_id", groupId)
+                    put("device_id", member.deviceId)
+                    put("joined_epoch", initialJoinedEpoch)
+                    putNull("removed_epoch")
+                    put("created_at_ms", member.createdAtMs)
+                }
+                db.insertWithOnConflict(
+                    TABLE_MEMBERSHIP_INTERVALS,
+                    null,
+                    initialValues,
+                    SQLiteDatabase.CONFLICT_REPLACE,
+                )
+            }
+        }
+
+        for (event in controlEvents) {
+            if (event.kind == "MEMBER_ADDED") {
+                val effectiveStatus = if (event.status == "INVITED") "INVITED" else "ACTIVE"
+                if (effectiveStatus == "ACTIVE") {
+                    val fakeMember = StoredGroupMember(
+                        groupId = groupId,
+                        deviceId = event.memberDeviceId,
+                        accountId = "",
+                        displayName = "",
+                        peerName = "",
+                        role = "MEMBER",
+                        permissions = 0,
+                        status = "ACTIVE",
+                        joinedEpoch = event.nextEpoch ?: event.epoch,
+                        createdAtMs = event.timestamp,
+                        updatedAtMs = event.timestamp,
+                    )
+                    updateMembershipIntervalsLocked(db, groupId, fakeMember, event.nextEpoch ?: event.epoch, event.timestamp)
+                }
+            } else if (event.kind == "MEMBER_REMOVED") {
+                val effectiveStatus = if (event.status == "BANNED") "BANNED" else "LEFT"
+                val fakeMember = StoredGroupMember(
+                    groupId = groupId,
+                    deviceId = event.memberDeviceId,
+                    accountId = "",
+                    displayName = "",
+                    peerName = "",
+                    role = effectiveStatus,
+                    permissions = 0,
+                    status = effectiveStatus,
+                    joinedEpoch = 0,
+                    removedEpoch = event.nextEpoch ?: (event.epoch + 1),
+                    createdAtMs = event.timestamp,
+                    updatedAtMs = event.timestamp,
+                )
+                updateMembershipIntervalsLocked(db, groupId, fakeMember, event.nextEpoch ?: (event.epoch + 1), event.timestamp)
+            }
+        }
+    }
+
+    fun rebuildProjections(groupId: String) {
+        val db = safeWritableDatabase
+        db.beginTransaction()
+        try {
+            rebuildMembershipIntervals(db, groupId)
+            rebuildPinnedEvent(db, groupId)
+            db.query(
+                TABLE_EVENTS,
+                arrayOf("event_id"),
+                "group_id = ? AND kind IN (?, ?, ?, ?)",
+                arrayOf(
+                    groupId,
+                    StoredGroupEventKind.MESSAGE.name,
+                    "POLL",
+                    "MEDIA",
+                    "REPLY",
+                ),
+                null,
+                null,
+                EVENT_ASC_ORDER,
+            ).use { cursor ->
+                while (cursor.moveToNext()) {
+                    rebuildMaterializedMessage(db, groupId, cursor.getString(0), newMessageUnread = null)
+                }
+            }
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
+    }
+
     private fun queryOutbox(db: SQLiteDatabase, taskId: String): StoredOutboxTask? =
         db.query(
             TABLE_OUTBOX,
@@ -2502,6 +3172,8 @@ class GroupDatabaseHelper(
         put("metadata_version", group.metadataVersion)
         put("unread_count", group.unreadCount)
         put("admin_only_posting", if (group.adminOnlyPosting) 1 else 0)
+        put("tor_only_group", if (group.torOnlyGroup) 1 else 0)
+        put("last_key_request_ms", group.lastKeyRequestMs)
         put("created_at_ms", group.createdAtMs)
         put("updated_at_ms", group.updatedAtMs)
     }
@@ -2529,6 +3201,9 @@ class GroupDatabaseHelper(
         put("key_material", key.keyMaterial)
         put("created_at_ms", key.createdAtMs)
         putNullableLong("expires_at_ms", key.expiresAtMs)
+        put("suite", key.suite)
+        put("control_head", key.controlHead)
+        put("roster_hash", key.rosterHash)
     }
 
     private fun eventValues(event: StoredGroupEvent) = ContentValues().apply {
@@ -2546,6 +3221,7 @@ class GroupDatabaseHelper(
         put("payload", event.payload)
         put("created_at_ms", event.createdAtMs)
         put("received_at_ms", event.receivedAtMs)
+        put("is_tombstoned", if (event.isTombstoned) 1 else 0)
     }
 
     private fun outboxValues(task: StoredOutboxTask) = ContentValues().apply {
@@ -2612,6 +3288,8 @@ class GroupDatabaseHelper(
         metadataVersion = long("metadata_version"),
         unreadCount = int("unread_count"),
         adminOnlyPosting = int("admin_only_posting") != 0,
+        torOnlyGroup = if (hasColumn("tor_only_group")) int("tor_only_group") != 0 else false,
+        lastKeyRequestMs = if (hasColumn("last_key_request_ms")) long("last_key_request_ms") else 0L,
         createdAtMs = long("created_at_ms"),
         updatedAtMs = long("updated_at_ms"),
     )
@@ -2648,6 +3326,7 @@ class GroupDatabaseHelper(
         payload = nullableBlob("payload"),
         createdAtMs = long("created_at_ms"),
         receivedAtMs = long("received_at_ms"),
+        isTombstoned = if (hasColumn("is_tombstoned")) int("is_tombstoned") != 0 else false,
     )
 
     private fun android.database.Cursor.toMessage() = StoredGroupMessage(
@@ -2688,6 +3367,9 @@ class GroupDatabaseHelper(
         expiresAtMs = long("expires_at_ms"),
         createdAtMs = long("created_at_ms"),
     )
+
+    private fun android.database.Cursor.hasColumn(column: String): Boolean =
+        getColumnIndex(column) >= 0
 
     private fun android.database.Cursor.string(column: String): String =
         getString(getColumnIndexOrThrow(column))
@@ -2763,11 +3445,12 @@ class GroupDatabaseHelper(
 
     companion object {
         const val DATABASE_NAME = "twopchat-groups.db"
-        const val DATABASE_VERSION = 6
+        const val DATABASE_VERSION = 7
         private const val MAX_PAGE_SIZE = 1_000
 
         private const val TABLE_GROUPS = "groups"
         private const val TABLE_MEMBERS = "group_members"
+        private const val TABLE_MEMBERSHIP_INTERVALS = "group_membership_intervals"
         private const val TABLE_EPOCH_KEYS = "group_epoch_keys"
         private const val TABLE_EVENTS = "group_events"
         private const val TABLE_MESSAGES = "group_messages"

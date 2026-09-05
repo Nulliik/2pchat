@@ -22,22 +22,26 @@ data class GroupInviteResponse(
     val memberSigningKey: String,
     val createdAtMs: Long,
     val signatureBase64: String,
+    val supportsV2: Boolean = false,
 ) {
-    fun canonicalForSignature(): String = listOf(
-        "2pchat-group-invite-response-v1",
-        GroupWireProtocol.VERSION.toString(),
-        inviteId,
-        groupId,
-        accepted.toString(),
-        memberFingerprint,
-        memberPeerName,
-        memberDeviceId,
-        memberSigningKey,
-        createdAtMs.toString(),
-    ).joinToString("\n")
+    fun canonicalForSignature(): String = buildList {
+        add("2pchat-group-invite-response-v1")
+        add(GroupWireProtocol.VERSION.toString())
+        add(inviteId)
+        add(groupId)
+        add(accepted.toString())
+        add(memberFingerprint)
+        add(memberPeerName)
+        add(memberDeviceId)
+        add(memberSigningKey)
+        add(createdAtMs.toString())
+        if (supportsV2) {
+            add("supports_v2=true")
+        }
+    }.joinToString("\n")
 
-    fun verify(): Boolean = GroupIdentitySignatures.verify(
-        memberSigningKey,
+    fun verify(expectedSigningKey: String = memberSigningKey): Boolean = GroupIdentitySignatures.verify(
+        expectedSigningKey,
         canonicalForSignature(),
         signatureBase64,
     )
@@ -61,23 +65,56 @@ data class GroupEpochKeyPackage(
     val senderSigningKey: String,
     val createdAtMs: Long,
     val signatureBase64: String,
+    val rosterHash: String? = null,
+    val suite: String? = null,
+) {
+    fun canonicalForSignature(): String = buildList {
+        add("2pchat-group-key-package-v1")
+        add(GroupWireProtocol.VERSION.toString())
+        add(groupId)
+        add(epoch.toString())
+        add(epochSecretBase64)
+        add(recipientDeviceId)
+        add(controlHead)
+        add(senderFingerprint)
+        add(senderDeviceId)
+        add(senderSigningKey)
+        add(createdAtMs.toString())
+        if (!rosterHash.isNullOrBlank()) {
+            add("roster_hash=$rosterHash")
+        }
+        if (!suite.isNullOrBlank()) {
+            add("suite=$suite")
+        }
+    }.joinToString("\n")
+
+    fun verify(expectedSigningKey: String = senderSigningKey): Boolean = GroupIdentitySignatures.verify(
+        expectedSigningKey,
+        canonicalForSignature(),
+        signatureBase64,
+    )
+}
+
+data class GroupKeyRequest(
+    val requestId: String,
+    val groupId: String,
+    val requesterDeviceId: String,
+    val requestedEpochs: List<Long>,
+    val createdAtMs: Long,
+    val signatureBase64: String,
 ) {
     fun canonicalForSignature(): String = listOf(
-        "2pchat-group-key-package-v1",
+        "2pchat-group-key-request-v1",
         GroupWireProtocol.VERSION.toString(),
+        requestId,
         groupId,
-        epoch.toString(),
-        epochSecretBase64,
-        recipientDeviceId,
-        controlHead,
-        senderFingerprint,
-        senderDeviceId,
-        senderSigningKey,
+        requesterDeviceId,
+        requestedEpochs.sorted().joinToString(","),
         createdAtMs.toString(),
     ).joinToString("\n")
 
-    fun verify(): Boolean = GroupIdentitySignatures.verify(
-        senderSigningKey,
+    fun verify(expectedSigningKey: String): Boolean = GroupIdentitySignatures.verify(
+        expectedSigningKey,
         canonicalForSignature(),
         signatureBase64,
     )
@@ -88,7 +125,30 @@ data class GroupSyncRequest(
     val groupId: String,
     val requesterDeviceId: String,
     val cursors: Map<String, Long>,
-)
+    val createdAtMs: Long = 0L,
+    val supportsV2: Boolean = false,
+    val signatureBase64: String = "",
+) {
+    fun canonicalForSignature(): String = buildList {
+        add("2pchat-group-sync-request-v1")
+        add(GroupWireProtocol.VERSION.toString())
+        add(requestId)
+        add(groupId)
+        add(requesterDeviceId)
+        add(createdAtMs.toString())
+        val sortedCursors = cursors.toSortedMap().map { "${it.key}:${it.value}" }.joinToString(",")
+        add(sortedCursors)
+        if (supportsV2) {
+            add("supports_v2=true")
+        }
+    }.joinToString("\n")
+
+    fun verify(expectedSigningKey: String): Boolean = GroupIdentitySignatures.verify(
+        expectedSigningKey,
+        canonicalForSignature(),
+        signatureBase64,
+    )
+}
 
 data class GroupSyncBatch(
     val requestId: String,
@@ -194,6 +254,7 @@ object GroupControlFrames {
         put("member_device_id", response.memberDeviceId)
         put("member_signing_key", response.memberSigningKey)
         put("created_at_ms", response.createdAtMs)
+        if (response.supportsV2) put("supports_v2", true)
         put("signature", response.signatureBase64)
     }
 
@@ -209,6 +270,7 @@ object GroupControlFrames {
             memberSigningKey = json.requiredControlText("member_signing_key", 256),
             createdAtMs = json.requiredControlLong("created_at_ms"),
             signatureBase64 = json.requiredControlText("signature", 256),
+            supportsV2 = json.optBoolean("supports_v2", false),
         )
     }
 
@@ -234,6 +296,12 @@ object GroupControlFrames {
         put("sender_signing_key", keyPackage.senderSigningKey)
         put("created_at_ms", keyPackage.createdAtMs)
         put("signature", keyPackage.signatureBase64)
+        if (!keyPackage.rosterHash.isNullOrBlank()) {
+            put("roster_hash", keyPackage.rosterHash)
+        }
+        if (!keyPackage.suite.isNullOrBlank()) {
+            put("suite", keyPackage.suite)
+        }
     }
 
     fun parseKeyPackage(json: JSONObject): GroupEpochKeyPackage {
@@ -247,6 +315,35 @@ object GroupControlFrames {
             senderFingerprint = json.requiredControlText("sender_fingerprint", 256),
             senderDeviceId = json.requiredControlToken("sender_device_id", 128),
             senderSigningKey = json.requiredControlText("sender_signing_key", 256),
+            createdAtMs = json.requiredControlLong("created_at_ms"),
+            signatureBase64 = json.requiredControlText("signature", 256),
+            rosterHash = json.optString("roster_hash").takeIf { it.isNotBlank() },
+            suite = json.optString("suite").takeIf { it.isNotBlank() },
+        )
+    }
+
+    fun keyRequestToJson(request: GroupKeyRequest): JSONObject = JSONObject().apply {
+        put("type", GroupWireProtocol.TYPE_KEY_REQUEST)
+        put("version", GroupWireProtocol.VERSION)
+        put("request_id", request.requestId)
+        put("group_id", request.groupId)
+        put("requester_device_id", request.requesterDeviceId)
+        put("requested_epochs", JSONArray().apply {
+            request.requestedEpochs.sorted().forEach { put(it) }
+        })
+        put("created_at_ms", request.createdAtMs)
+        put("signature", request.signatureBase64)
+    }
+
+    fun parseKeyRequest(json: JSONObject): GroupKeyRequest {
+        requireFrame(json, GroupWireProtocol.TYPE_KEY_REQUEST)
+        val epochsJson = json.optJSONArray("requested_epochs") ?: JSONArray()
+        val epochs = (0 until epochsJson.length()).map { epochsJson.getLong(it) }
+        return GroupKeyRequest(
+            requestId = json.requiredControlToken("request_id", 128),
+            groupId = json.requiredControlToken("group_id", 128),
+            requesterDeviceId = json.requiredControlToken("requester_device_id", 128),
+            requestedEpochs = epochs,
             createdAtMs = json.requiredControlLong("created_at_ms"),
             signatureBase64 = json.requiredControlText("signature", 256),
         )
@@ -268,11 +365,18 @@ object GroupControlFrames {
         put("request_id", request.requestId)
         put("group_id", request.groupId)
         put("requester_device_id", request.requesterDeviceId)
+        put("created_at_ms", request.createdAtMs)
         put("cursors", JSONObject().apply {
             request.cursors.toSortedMap().forEach { (deviceId, sequence) ->
                 put(deviceId, sequence)
             }
         })
+        if (request.supportsV2) {
+            put("supports_v2", true)
+        }
+        if (request.signatureBase64.isNotBlank()) {
+            put("signature", request.signatureBase64)
+        }
     }
 
     fun parseSyncRequest(json: JSONObject): GroupSyncRequest {
@@ -292,6 +396,9 @@ object GroupControlFrames {
             groupId = json.requiredControlToken("group_id", 128),
             requesterDeviceId = json.requiredControlToken("requester_device_id", 128),
             cursors = cursors,
+            createdAtMs = json.optLong("created_at_ms", 0L),
+            supportsV2 = json.optBoolean("supports_v2", false),
+            signatureBase64 = json.optString("signature").take(256),
         )
     }
 

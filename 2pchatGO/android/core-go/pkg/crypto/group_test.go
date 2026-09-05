@@ -4,7 +4,11 @@ import (
 	"bytes"
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
+	"encoding/json"
+	"os"
 	"testing"
 )
 
@@ -173,3 +177,71 @@ func TestSenderSessionStateZeroize(t *testing.T) {
 		t.Fatalf("Expected skipped keys to be cleared, got %d", len(senderState.SkippedKeys))
 	}
 }
+
+func TestComputeRosterHashKat(t *testing.T) {
+	// Out-of-order test entries to ensure canonical sorting
+	entries := []string{
+		"carol-dev-003:carol-key-abcde",
+		"alice-dev-001:alice-key-12345",
+		"bob-dev-002:bob-key-67890",
+	}
+	expectedHash := "32b2d1e3e8bf3805522fc0dbf7d8b0ab2b304eb91763aa7bc853156a928fce08"
+	actual := ComputeRosterHash(entries)
+	if actual != expectedHash {
+		t.Fatalf("RosterHash KAT mismatch: expected %s, got %s", expectedHash, actual)
+	}
+}
+
+type KatVectorsFile struct {
+	Version           int `json:"version"`
+	RosterHashVectors []struct {
+		Name               string   `json:"name"`
+		Entries            []string `json:"entries"`
+		ExpectedRosterHash string   `json:"expected_roster_hash"`
+	} `json:"roster_hash_vectors"`
+	EventIDVectors []struct {
+		Name                  string `json:"name"`
+		CanonicalForSignature string `json:"canonical_for_signature"`
+		ExpectedEventID       string `json:"expected_event_id"`
+	} `json:"event_id_vectors"`
+}
+
+func TestCryptoVectorsJsonMatches(t *testing.T) {
+	candidatePaths := []string{
+		"../../testdata/group_crypto_test_vectors.json",
+		"testdata/group_crypto_test_vectors.json",
+		"../testdata/group_crypto_test_vectors.json",
+	}
+	var data []byte
+	var err error
+	for _, p := range candidatePaths {
+		data, err = os.ReadFile(p)
+		if err == nil {
+			break
+		}
+	}
+	if err != nil {
+		t.Fatalf("failed to read test vectors file: %v", err)
+	}
+
+	var kat KatVectorsFile
+	if err := json.Unmarshal(data, &kat); err != nil {
+		t.Fatalf("failed to unmarshal test vectors: %v", err)
+	}
+
+	for _, rv := range kat.RosterHashVectors {
+		actual := ComputeRosterHash(rv.Entries)
+		if actual != rv.ExpectedRosterHash {
+			t.Errorf("RosterHash vector %s mismatch: expected %s, got %s", rv.Name, rv.ExpectedRosterHash, actual)
+		}
+	}
+
+	for _, ev := range kat.EventIDVectors {
+		h := sha256.Sum256([]byte(ev.CanonicalForSignature))
+		actual := hex.EncodeToString(h[:])
+		if actual != ev.ExpectedEventID {
+			t.Errorf("EventID vector %s mismatch: expected %s, got %s", ev.Name, ev.ExpectedEventID, actual)
+		}
+	}
+}
+

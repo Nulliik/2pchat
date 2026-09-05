@@ -208,6 +208,12 @@ object NativeBridge {
         }
     }
 
+    const val POLICY_FLAG_ALLOW_LAN = 1 shl 0
+    const val POLICY_FLAG_ALLOW_WAN = 1 shl 1
+    const val POLICY_FLAG_ALLOW_YGGDRASIL = 1 shl 2
+    const val POLICY_FLAG_ALLOW_ONION = 1 shl 3
+    const val POLICY_FLAG_ALLOW_LOCAL_DNS = 1 shl 4
+
     fun setPeerPolicy(peerFP: String, policyFlags: Int): Boolean {
         if (!isLoaded || peerFP.isBlank()) return false
         return try {

@@ -12,7 +12,7 @@ import (
 	"twopchat/core/pkg/transport"
 )
 
-func TestManager_TorOnlyPeer_InternalReconnect_HonorsPeerPolicy(t *testing.T) {
+func TestPeerAuthority_InternalReconnect_HonorsPeerPolicy(t *testing.T) {
 	aliceID, _ := crypto.GenerateIdentityKeyPair()
 	alicePrekeyPriv, alicePrekeyPub, _ := crypto.GenerateX25519Keypair()
 	aliceMgr := NewManager(aliceID, alicePrekeyPriv, alicePrekeyPub, "127.0.0.1:9050", false, EventCallbacks{})
@@ -31,7 +31,7 @@ func TestManager_TorOnlyPeer_InternalReconnect_HonorsPeerPolicy(t *testing.T) {
 	}
 }
 
-func TestManager_TorOnlyPeer_InboundClearnet_Rejected(t *testing.T) {
+func TestPeerAuthority_TorOnlyPeer_InboundClearnet_Rejected(t *testing.T) {
 	aliceID, _ := crypto.GenerateIdentityKeyPair()
 	alicePrekeyPriv, alicePrekeyPub, _ := crypto.GenerateX25519Keypair()
 
@@ -95,7 +95,7 @@ func TestManager_TorOnlyPeer_InboundClearnet_Rejected(t *testing.T) {
 	}
 }
 
-func TestManager_SwitchToStrict_PreservesTorSessions(t *testing.T) {
+func TestPeerAuthority_SwitchToStrict_PreservesTorSessions(t *testing.T) {
 	aliceID, _ := crypto.GenerateIdentityKeyPair()
 	alicePrekeyPriv, alicePrekeyPub, _ := crypto.GenerateX25519Keypair()
 	aliceMgr := NewManager(aliceID, alicePrekeyPriv, alicePrekeyPub, "127.0.0.1:9050", false, EventCallbacks{})
@@ -148,3 +148,73 @@ func TestManager_SwitchToStrict_PreservesTorSessions(t *testing.T) {
 		t.Fatalf("Tor session was incorrectly terminated when switching to Tor Strict")
 	}
 }
+
+// TestUnconfirmedGroupPeerIncomingClearnetRejected verifies that a peer introduced via a group roster
+// with PolicyTorStrict (POLICY_FLAG_ALLOW_ONION) cannot initiate an incoming session over clearnet.
+//
+// SEC-03 Residual Note:
+// Rejection occurs post-handshake, meaning the initiator's endpoint and identity are disclosed
+// during the handshake before connection termination. Protection is against session establishment,
+// not pre-handshake identity leakage.
+func TestPeerAuthority_UnconfirmedGroupPeerIncomingClearnetRejected(t *testing.T) {
+	aliceID, _ := crypto.GenerateIdentityKeyPair()
+	alicePrekeyPriv, alicePrekeyPub, _ := crypto.GenerateX25519Keypair()
+
+	var rejectedCount int32
+	callbacks := EventCallbacks{
+		OnError: func(code int, msg string) {
+			atomic.AddInt32(&rejectedCount, 1)
+		},
+	}
+	aliceMgr := NewManager(aliceID, alicePrekeyPriv, alicePrekeyPub, "127.0.0.1:9050", false, callbacks)
+
+	if err := aliceMgr.StartListener(0); err != nil {
+		t.Fatalf("StartListener failed: %v", err)
+	}
+	defer func() { _ = aliceMgr.StopListener() }()
+
+	alicePort := aliceMgr.Port()
+	aliceAddr := fmt.Sprintf("127.0.0.1:%d", alicePort)
+
+	// Bob is a contact introduced via group roster (GROUP_INFERRED)
+	bobID, _ := crypto.GenerateIdentityKeyPair()
+	bobPrekeyPriv, bobPrekeyPub, _ := crypto.GenerateX25519Keypair()
+	bobFP := crypto.Fingerprint(bobID.Public.Bytes())
+
+	// Roster introduction set peer policy to Tor-only (PolicyFlagAllowOnion = 8)
+	aliceMgr.SetPeerPolicy(bobFP, transport.PolicyTorStrict)
+
+	// Bob dials Alice over clearnet TCP
+	conn, err := net.DialTimeout("tcp", aliceAddr, 2*time.Second)
+	if err != nil {
+		t.Fatalf("Bob failed to connect to Alice's listener: %v", err)
+	}
+	defer conn.Close()
+
+	// Bob completes handshake over clearnet
+	bobSess, err := NewSession(
+		conn,
+		true, // initiator
+		bobID,
+		bobPrekeyPriv,
+		bobPrekeyPub,
+		aliceMgr.Fingerprint(),
+		5*time.Second,
+	)
+	if err != nil {
+		t.Fatalf("Bob NewSession handshake error: %v", err)
+	}
+	_ = bobSess
+
+	time.Sleep(300 * time.Millisecond)
+
+	// Alice must reject the unconfirmed group peer session over clearnet
+	if aliceMgr.IsPeerOnline(bobFP) {
+		t.Fatalf("SECURITY VIOLATION: Unconfirmed group peer established online session over clearnet")
+	}
+
+	if atomic.LoadInt32(&rejectedCount) == 0 {
+		t.Fatalf("Expected OnError callback to fire with rejection for clearnet connection from group-inferred peer")
+	}
+}
+
