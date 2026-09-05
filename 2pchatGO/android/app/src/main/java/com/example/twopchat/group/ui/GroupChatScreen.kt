@@ -383,7 +383,7 @@ fun GroupChatScreen(
         }
     }
 
-    var prefsWallpaperVersion by remember { mutableStateOf(0) }
+    var prefsWallpaperVersion by remember { mutableIntStateOf(0) }
     DisposableEffect(state.groupId) {
         val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
             if (key != null && key.startsWith("group_wallpaper_")) {
@@ -2271,8 +2271,8 @@ private fun MessageTimestampBadge(
     deliveryStatus: GroupDeliveryStatus,
     messageId: String,
     isOverlayOnImage: Boolean,
-    isMine: Boolean = true,
     modifier: Modifier = Modifier,
+    isMine: Boolean = true,
     textColor: Color = Color.Unspecified,
     onClick: (() -> Unit)? = null
 ) {

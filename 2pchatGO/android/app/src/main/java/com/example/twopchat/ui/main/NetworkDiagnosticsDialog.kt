@@ -1172,17 +1172,18 @@ fun NetworkDiagnosticsDialog(
                             }
                         }
 
-                        if (lastSweepResult != null) {
+                        val sweep = lastSweepResult
+                        if (sweep != null) {
                             Spacer(modifier = Modifier.height(8.dp))
                             ConnectionSweepCard(
-                                result = lastSweepResult!!,
+                                result = sweep,
                                 appLanguage = appLanguage,
                                 primaryColor = primaryColor,
                                 surfaceVariant = surfaceVariant,
                                 onSurfaceColor = onSurfaceColor,
                                 onSurfaceVariant = onSurfaceVariant,
                                 onCopy = {
-                                    clipboardManager.setText(AnnotatedString(lastSweepResult!!.formattedLog))
+                                    clipboardManager.setText(AnnotatedString(sweep.formattedLog))
                                     Toast.makeText(
                                         context,
                                         Localizations.tr(

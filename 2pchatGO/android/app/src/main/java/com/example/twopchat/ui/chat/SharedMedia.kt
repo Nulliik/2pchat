@@ -182,7 +182,7 @@ fun SharedMediaScreen(
         }
     }
 
-    var preferenceVersion by remember { mutableStateOf(0) }
+    var preferenceVersion by remember { mutableIntStateOf(0) }
     DisposableEffect(context) {
         val sp = com.example.twopchat.config.P2PPreferences.prefs(context)
         val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->

@@ -25,14 +25,14 @@ internal object GroupE2EControl {
                 check(NativeBridge.initialize())
                 check(NativeBridge.setNickname(arg("name")))
                 P2PPreferences.prefs(context).edit().putString("username_profile", arg("name"))
-                    .putInt(P2PPreferences.LISTENER_PORT, 51001).commit()
+                    .putInt(P2PPreferences.LISTENER_PORT, 51001).apply()
                 P2PMessageRelay.startServer(context)
                 result.put("fingerprint", NativeBridge.getLocalIdentity()?.fingerprint)
                 result.put("port", P2PMessageRelay.listenerPort(context))
             }
             "connect" -> {
                 P2PPreferences.prefs(context).edit()
-                    .putString(P2PPreferences.peerFingerprint(arg("name")), arg("fingerprint")).commit()
+                    .putString(P2PPreferences.peerFingerprint(arg("name")), arg("fingerprint")).apply()
                 P2PMessageRelay.injectLocalDiscoveryCandidate(arg("name"), arg("fingerprint"), arg("endpoint"))
                 result.put("accepted", NativeBridge.connectPeer(arg("endpoint"), arg("fingerprint")))
             }

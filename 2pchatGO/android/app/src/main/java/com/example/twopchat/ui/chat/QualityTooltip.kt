@@ -32,9 +32,9 @@ import kotlinx.coroutines.launch
 fun QualityTooltipBubble(
     isHd: Boolean,
     appLanguage: String,
+    modifier: Modifier = Modifier,
     arrowAtTop: Boolean = true,
     arrowEndPadding: Dp = 18.dp,
-    modifier: Modifier = Modifier
 ) {
     val bubbleColor = Color(0xFA242426)
     Column(

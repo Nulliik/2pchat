@@ -35,7 +35,7 @@ fun CurrencyRatesScreen(
     onUnlock: () -> Unit
 ) {
     val context = LocalContext.current
-    var clickCount by remember { mutableStateOf(0) }
+    var clickCount by remember { mutableIntStateOf(0) }
     var inputAmount by remember { mutableStateOf("") }
     var resultAmount by remember { mutableStateOf("0.00") }
     var fromCurrency by remember { mutableStateOf("USD") }

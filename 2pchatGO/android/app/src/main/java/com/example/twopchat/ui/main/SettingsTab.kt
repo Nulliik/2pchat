@@ -76,7 +76,7 @@ fun SettingsTab(
     var showUpdateDialog by remember { mutableStateOf(false) }
     var updateResult by remember { mutableStateOf<UpdateCheckResult?>(null) }
     var isDownloadingApk by remember { mutableStateOf(false) }
-    var downloadProgress by remember { mutableStateOf(0f) }
+    var downloadProgress by remember { mutableFloatStateOf(0f) }
     var downloadStatusText by remember { mutableStateOf("") }
     
     // Profile photo states
@@ -122,7 +122,7 @@ fun SettingsTab(
     var showSetPasscodeDialog by remember { mutableStateOf(false) }
     var showDisablePasscodeDialog by remember { mutableStateOf(false) }
     var showAutolockDialog by remember { mutableStateOf(false) }
-    var autolockMinutes by remember { mutableStateOf(sharedPrefs.getInt("passcode_autolock_minutes", 1)) }
+    var autolockMinutes by remember { mutableIntStateOf(sharedPrefs.getInt("passcode_autolock_minutes", 1)) }
     var showDeleteAccountDialog by remember { mutableStateOf(false) }
     var showSetDuressDialog by remember { mutableStateOf(false) }
     var showSeedBackupDialog by remember { mutableStateOf(false) }

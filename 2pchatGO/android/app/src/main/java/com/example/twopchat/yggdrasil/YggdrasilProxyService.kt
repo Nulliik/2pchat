@@ -17,7 +17,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
-import kotlin.concurrent.thread
+import kotlinx.coroutines.*
 
 private const val TAG = "YggdrasilProxyService"
 private const val PROXY_NOTIFICATION_ID = 2002
@@ -76,7 +76,10 @@ class YggdrasilProxyService : Service() {
     private var started = AtomicBoolean()
     private var publicPeerPoolPruned = AtomicBoolean()
     private lateinit var config: ConfigurationProxy
-    private var updateThread: Thread? = null
+    // Serialize engine access and lifecycle commands away from the UI thread.
+    private val serviceScope = CoroutineScope(SupervisorJob() + yggdrasilServiceDispatcher)
+    private var startJob: Job? = null
+    private var updateJob: Job? = null
     private var multicastLock: WifiManager.MulticastLock? = null
     private var userStack: YggdrasilUserSpaceStack? = null
 
@@ -113,7 +116,10 @@ class YggdrasilProxyService : Service() {
 
     override fun onDestroy() {
         isProxyActive = false
-        stop(stopService = false)
+        serviceScope.launch {
+            stop(stopService = false)
+            serviceScope.cancel()
+        }
         super.onDestroy()
     }
 
@@ -123,6 +129,11 @@ class YggdrasilProxyService : Service() {
             SafeLog.d(TAG, "Intent is null")
             return START_NOT_STICKY
         }
+        serviceScope.launch { handleCommand(intent) }
+        return if ((intent.action ?: ACTION_STOP) == ACTION_STOP) START_NOT_STICKY else START_STICKY
+    }
+
+    private fun handleCommand(intent: Intent): Int {
         val preferences = yggdrasilPrefs(this)
         val enabled = preferences.getBoolean(PREF_KEY_ENABLED, false)
         return when (intent.action ?: ACTION_STOP) {
@@ -149,6 +160,9 @@ class YggdrasilProxyService : Service() {
                     SafeLog.d(TAG, "Yggdrasil is disabled in settings; ignoring ACTION_CONNECT")
                     stop(stopService = true)
                     return START_NOT_STICKY
+                }
+                if (startJob?.isActive == true) {
+                    return START_STICKY
                 }
                 if (started.get()) {
                     connect()
@@ -206,15 +220,19 @@ class YggdrasilProxyService : Service() {
             return
         }
 
-        try {
-            startProxyEngine()
-        } catch (error: Throwable) {
-            SafeLog.e(TAG, "Unable to start Yggdrasil proxy service", error)
-            stop(stopService = false)
+        startJob = serviceScope.launch {
+            try {
+                startProxyEngine()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                SafeLog.e(TAG, "Unable to start Yggdrasil proxy service", error)
+                stop(stopService = false)
+            }
         }
     }
 
-    private fun startProxyEngine() {
+    private suspend fun startProxyEngine() {
         val notification = createServiceNotification(this, State.Enabled)
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
@@ -261,10 +279,7 @@ class YggdrasilProxyService : Service() {
         var address = ygg.addressString
         for (i in 1..10) {
             if (!address.isNullOrBlank()) break
-            try { Thread.sleep(100L) } catch (_: InterruptedException) {
-                Thread.currentThread().interrupt()
-                // intentionally ignored: backoff while waiting for Yggdrasil address initialization
-            }
+            delay(100L)
             address = ygg.addressString
         }
         if (address.isNullOrBlank()) {
@@ -286,9 +301,11 @@ class YggdrasilProxyService : Service() {
             yggLog(applicationContext, "Failed to initialize YggdrasilUserSpaceStack", "ERROR", e)
         }
 
-        updateThread = thread(name = "Yggdrasil-Proxy-Updater") {
+        updateJob = serviceScope.launch {
             try {
                 updater()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (e: Throwable) {
                 yggLog(applicationContext, "Yggdrasil-Proxy-Updater thread terminated with error", "ERROR", e)
             }
@@ -303,6 +320,10 @@ class YggdrasilProxyService : Service() {
     }
 
     private fun stop(stopService: Boolean = true) {
+        startJob?.cancel()
+        startJob = null
+        updateJob?.cancel()
+        updateJob = null
         yggLog(applicationContext, "Stopping Yggdrasil PROXY service...")
         isProxyActive = false
         userStack?.stop()
@@ -315,10 +336,6 @@ class YggdrasilProxyService : Service() {
             }
             yggdrasil = null
         }
-
-        updateThread?.interrupt()
-        try { updateThread?.join(1_500) } catch (_: InterruptedException) { Thread.currentThread().interrupt() }
-        updateThread = null
 
         var intent = Intent(STATE_INTENT)
         intent.putExtra("type", "state")
@@ -350,20 +367,16 @@ class YggdrasilProxyService : Service() {
     }
 
     private fun isProxyHealthy(): Boolean =
-        started.get() && updateThread?.isAlive == true && userStack != null
+        started.get() && updateJob?.isActive == true && userStack != null
 
-    private fun updater() {
-        try {
-            Thread.sleep(500)
-        } catch (_: InterruptedException) {
-            return
-        }
+    private suspend fun updater() {
+        delay(500)
         var lastStateUpdate = 0L
         var lastLoggedState = ""
         var lastLoggedPeers = -1
         var lastLogTime = 0L
         val probeStartedAt = System.currentTimeMillis()
-        updates@ while (started.get()) {
+        updates@ while (currentCoroutineContext().isActive && started.get()) {
             val ygg = yggdrasil ?: break@updates
             val treeJSON = runCatching { ygg.treeJSON }.getOrNull()
             if ((application as? GlobalApplication)?.needUiUpdates() == true) {
@@ -414,14 +427,7 @@ class YggdrasilProxyService : Service() {
                 publicPeerPoolPruned.set(true)
             }
 
-            if (Thread.currentThread().isInterrupted) {
-                break@updates
-            }
-            try {
-                Thread.sleep(1000)
-            } catch (_: InterruptedException) {
-                break@updates
-            }
+            delay(1_000)
         }
     }
 

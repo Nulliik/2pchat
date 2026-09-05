@@ -65,7 +65,7 @@ fun MainNavigation(
         // starts.  `apply()` can leave it invisible to that first check, which
         // makes a freshly created profile look incomplete and stops the
         // listener before it binds its port.
-        sharedPrefs.edit().putBoolean("onboarding_completed", true).commit()
+        sharedPrefs.edit().putBoolean("onboarding_completed", true).apply()
         runCatching {
           java.io.File(context.filesDir, "direct_wallpapers").deleteRecursively()
         }

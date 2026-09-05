@@ -85,7 +85,7 @@ fun ImageCropper(
         // Initial scale: image must fully cover the crop circle
         val fitScale = max(cropDiameter / imageWidth, cropDiameter / imageHeight)
 
-        var userScale by remember { mutableStateOf(1.0f) }
+        var userScale by remember { mutableFloatStateOf(1.0f) }
         var userOffset by remember { mutableStateOf(Offset.Zero) }
 
         // Gestures detection

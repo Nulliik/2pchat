@@ -67,6 +67,7 @@ fun MainScreen(
     onThemeChanged: (Boolean) -> Unit,
     useCerulean: Boolean,
     onAccentChanged: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
     accentScheme: String = if (useCerulean) "cerulean" else "mint",
     onAccentSchemeChanged: (String) -> Unit = {},
     useAmoled: Boolean,
@@ -75,10 +76,9 @@ fun MainScreen(
     onLanguageChanged: (String) -> Unit,
     onIconChanged: (String) -> Unit,
     onDeleteAccount: () -> Unit,
-    modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
-    var selectedTab by remember { mutableStateOf(0) }
+    var selectedTab by remember { mutableIntStateOf(0) }
     var localFingerprint by remember { mutableStateOf("Loading...") }
     var showLogsDialog by remember { mutableStateOf(false) }
     var showRadarView by remember { mutableStateOf(true) }
@@ -105,7 +105,7 @@ fun MainScreen(
         mutableStateOf(sharedPrefs.getStringSet("active_chats", emptySet()) ?: emptySet())
     }
     var totalUnreadCount by remember {
-        mutableStateOf(mainActiveChatsSet.sumOf { sharedPrefs.getInt("unread_count_$it", 0) })
+        mutableIntStateOf(mainActiveChatsSet.sumOf { sharedPrefs.getInt("unread_count_$it", 0) })
     }
     val groupSummaries by GroupChatCoordinator.summaries.collectAsState()
     val combinedUnreadCount = totalUnreadCount + groupSummaries.sumOf { it.unreadCount }

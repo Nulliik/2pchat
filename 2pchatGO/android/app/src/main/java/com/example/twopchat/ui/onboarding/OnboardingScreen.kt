@@ -52,7 +52,7 @@ fun OnboardingScreen(
     val context = LocalContext.current
     val sharedPrefs = remember { P2PPreferences.prefs(context) }
     
-    var currentStep by remember { mutableStateOf(1) }
+    var currentStep by remember { mutableIntStateOf(1) }
     var nickname by remember { mutableStateOf("") }
     var profilePhotoUri by remember { mutableStateOf<String?>(null) }
     var profileBitmap by remember { mutableStateOf<Bitmap?>(null) }

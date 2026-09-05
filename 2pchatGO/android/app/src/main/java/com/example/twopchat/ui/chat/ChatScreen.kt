@@ -101,7 +101,7 @@ fun ChatScreen(
     modifier: Modifier = Modifier,
 ) {
     var activeFullscreenImages by remember { mutableStateOf<List<String>>(emptyList()) }
-    var activeFullscreenImageIndex by remember { mutableStateOf(0) }
+    var activeFullscreenImageIndex by remember { mutableIntStateOf(0) }
     var activeFullscreenBitmapOverrides by remember { mutableStateOf<Map<String, Bitmap>>(emptyMap()) }
     var activeFullscreenVideo by remember { mutableStateOf<String?>(null) }
     var activeFullscreenCaption by remember { mutableStateOf<String?>(null) }
@@ -180,7 +180,7 @@ fun ChatScreen(
     var viewedStickerMessage by remember { mutableStateOf<Message?>(null) }
     var stickerPackRequestInProgress by remember { mutableStateOf(false) }
     var stickerPackRequestError by remember { mutableStateOf(StickerPackRequestError.NONE) }
-    var stickerPackPreviewRevision by remember { mutableStateOf(0) }
+    var stickerPackPreviewRevision by remember { mutableIntStateOf(0) }
     var showGifLibrary by remember { mutableStateOf(false) }
     var gifLibraryLoading by remember { mutableStateOf(false) }
     var storedGifs by remember { mutableStateOf<List<StoredGif>>(emptyList()) }

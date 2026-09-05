@@ -232,7 +232,7 @@ object SecureStorage {
         SecurityUtils.zeroize(cipherBytes)
         SecurityUtils.zeroize(packed)
 
-        sharedPrefs.edit().putString("db_passphrase_enc", encString).commit()
+        sharedPrefs.edit().putString("db_passphrase_enc", encString).apply()
         return b64Passphrase
     }
 
@@ -335,7 +335,7 @@ object SecureStorage {
             SecurityUtils.zeroize(cipherBytes)
             SecurityUtils.zeroize(packed)
 
-            sharedPrefs.edit().putString(PREF_GO_STORAGE_KEY_ENC, encString).commit()
+            sharedPrefs.edit().putString(PREF_GO_STORAGE_KEY_ENC, encString).apply()
         } catch (e: Exception) {
             SafeLog.e("SecureStorage", "Failed to persist encrypted go storage key", e)
         }
@@ -345,7 +345,7 @@ object SecureStorage {
 
     @Synchronized
     fun clearGoStorageKey(context: android.content.Context) {
-        P2PPreferences.prefs(context).edit().remove(PREF_GO_STORAGE_KEY_ENC).commit()
+        P2PPreferences.prefs(context).edit().remove(PREF_GO_STORAGE_KEY_ENC).apply()
     }
 
     private const val BINARY_VERSION: Byte = 1

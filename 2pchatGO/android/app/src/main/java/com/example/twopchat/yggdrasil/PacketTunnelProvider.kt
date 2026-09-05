@@ -21,6 +21,7 @@ import java.util.Date
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.concurrent.thread
+import kotlinx.coroutines.*
 
 private const val TAG = "PacketTunnelProvider"
 private const val PREF_YGG_RUNTIME_IP = "yggdrasil_runtime_ip"
@@ -92,7 +93,11 @@ open class PacketTunnelProvider: VpnService() {
 
     private var readerThread: Thread? = null
     private var writerThread: Thread? = null
-    private var updateThread: Thread? = null
+    // Serialize engine access and lifecycle commands away from the UI thread.
+    private val serviceScope = CoroutineScope(SupervisorJob() + yggdrasilServiceDispatcher)
+    private var startJob: Job? = null
+    private var restartJob: Job? = null
+    private var updateJob: Job? = null
 
     private var parcel: ParcelFileDescriptor? = null
     private var readerStream: FileInputStream? = null
@@ -121,22 +126,27 @@ open class PacketTunnelProvider: VpnService() {
 
     override fun onDestroy() {
         isTunnelActive = false
-        // Finish our side of the VPN before Service teardown. Calling stopSelf()
-        // from onDestroy() can leave VpnService.Callback bound to an already
-        // destroyed service until the system notices the closed TUN descriptor.
-        stop(stopService = false)
+        // Queue cleanup before any replacement service enters native code, without
+        // blocking the Android callback on packet worker joins. Avoid stopSelf()
+        // here: Android has already initiated destruction of this service.
+        serviceScope.launch {
+            stop(stopService = false)
+            serviceScope.cancel()
+        }
         super.onDestroy()
     }
 
     override fun onRevoke() {
         SafeLog.i(TAG, "VPN permission revoked by system or another VPN connected -> transitioning Yggdrasil to Proxy mode so it coexists with the user's VPN")
         isTunnelActive = false
-        stop(stopService = true)
-        // Automatically switch to Proxy mode so the user does not lose Yggdrasil mesh connectivity when their external VPN connects
-        P2PPreferences.setYggdrasilMode(this, P2PPreferences.YggdrasilMode.PROXY)
-        val enabled = yggdrasilPrefs(this).getBoolean(PREF_KEY_ENABLED, false)
-        if (enabled) {
-            YggdrasilCoordinator.start(this, P2PPreferences.YggdrasilMode.PROXY)
+        serviceScope.launch {
+            stop(stopService = true)
+            // Automatically switch to Proxy mode so the user does not lose Yggdrasil mesh connectivity when their external VPN connects
+            P2PPreferences.setYggdrasilMode(this@PacketTunnelProvider, P2PPreferences.YggdrasilMode.PROXY)
+            val enabled = yggdrasilPrefs(this@PacketTunnelProvider).getBoolean(PREF_KEY_ENABLED, false)
+            if (enabled) {
+                YggdrasilCoordinator.start(this@PacketTunnelProvider, P2PPreferences.YggdrasilMode.PROXY)
+            }
         }
     }
 
@@ -145,6 +155,11 @@ open class PacketTunnelProvider: VpnService() {
             SafeLog.d(TAG, "Intent is null")
             return START_NOT_STICKY
         }
+        serviceScope.launch { handleCommand(intent) }
+        return if ((intent.action ?: ACTION_STOP) == ACTION_STOP) START_NOT_STICKY else START_STICKY
+    }
+
+    private fun handleCommand(intent: Intent): Int {
         val preferences = yggdrasilPrefs(this)
         val enabled = preferences.getBoolean(PREF_KEY_ENABLED, false)
         return when (intent.action ?: ACTION_STOP) {
@@ -171,6 +186,9 @@ open class PacketTunnelProvider: VpnService() {
                     SafeLog.d(TAG, "Yggdrasil is disabled in settings; ignoring ACTION_CONNECT")
                     stop(stopService = true)
                     return START_NOT_STICKY
+                }
+                if (startJob?.isActive == true) {
+                    return START_STICKY
                 }
                 if (isTunnelHealthy()) {
                     connect()
@@ -231,22 +249,28 @@ open class PacketTunnelProvider: VpnService() {
     }
 
     private fun start() {
+        restartJob?.cancel()
+        restartJob = null
         if (!started.compareAndSet(false, true)) {
             return
         }
 
-        try {
-            startTunnel()
-        } catch (error: Throwable) {
-            // A native/config/VPN setup failure used to leave `started=true`.
-            // Every later reconnect was then ignored as an already running
-            // tunnel even though no usable TUN workers existed.
-            SafeLog.e(TAG, "Unable to start Yggdrasil tunnel", error)
-            stop(stopService = false)
+        startJob = serviceScope.launch {
+            try {
+                startTunnel()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                // A native/config/VPN setup failure used to leave `started=true`.
+                // Every later reconnect was then ignored as an already running
+                // tunnel even though no usable TUN workers existed.
+                SafeLog.e(TAG, "Unable to start Yggdrasil tunnel", error)
+                stop(stopService = false)
+            }
         }
     }
 
-    private fun startTunnel() {
+    private suspend fun startTunnel() {
         // A network callback may run before Android has granted VPN consent,
         // or after it revoked a previous grant. Avoid starting native Yggdrasil
         // when Builder.establish() cannot create its TUN descriptor.
@@ -341,10 +365,7 @@ open class PacketTunnelProvider: VpnService() {
                 yggLog(applicationContext, "builder.establish() threw on attempt $attempt/3", "WARN", e)
             }
             yggLog(applicationContext, "VPN establish returned null on attempt $attempt/3, waiting for kernel FD release...", "WARN")
-            try { Thread.sleep(350L) } catch (_: InterruptedException) {
-                Thread.currentThread().interrupt()
-                // intentionally ignored: retry delay before re-attempting establish()
-            }
+            delay(350L)
         }
         parcel = establishedParcel
         val parcel = parcel
@@ -371,9 +392,11 @@ open class PacketTunnelProvider: VpnService() {
                 yggLog(applicationContext, "Yggdrasil-Writer thread terminated with error", "ERROR", e)
             }
         }
-        updateThread = thread(name = "Yggdrasil-Updater") {
+        updateJob = serviceScope.launch {
             try {
                 updater()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (e: Throwable) {
                 yggLog(applicationContext, "Yggdrasil-Updater thread terminated with error", "ERROR", e)
             }
@@ -389,6 +412,12 @@ open class PacketTunnelProvider: VpnService() {
     }
 
     private fun stop(stopService: Boolean = true) {
+        restartJob?.cancel()
+        restartJob = null
+        startJob?.cancel()
+        startJob = null
+        updateJob?.cancel()
+        updateJob = null
         yggLog(applicationContext, "Stopping Yggdrasil SYSTEM VPN (TUN)...")
         isTunnelActive = false
         val wasStarted = started.getAndSet(false)
@@ -401,7 +430,7 @@ open class PacketTunnelProvider: VpnService() {
 
         // БАГ 2 ИСПРАВЛЕН: Сначала прерываем потоки, потом закрываем стримы.
         // Если закрыть стримы раньше — потоки reader/writer получат NPE или IOException.
-        val threads = listOfNotNull(readerThread, writerThread, updateThread)
+        val threads = listOfNotNull(readerThread, writerThread)
         threads.forEach(Thread::interrupt)
 
         // Закрываем стримы после того, как потоки прерваны
@@ -418,7 +447,6 @@ open class PacketTunnelProvider: VpnService() {
         }
         readerThread = null
         writerThread = null
-        updateThread = null
 
         var intent = Intent(STATE_INTENT)
         intent.putExtra("type", "state")
@@ -456,14 +484,10 @@ open class PacketTunnelProvider: VpnService() {
             parcel?.fileDescriptor?.valid() == true &&
             readerThread?.isAlive == true &&
             writerThread?.isAlive == true &&
-            updateThread?.isAlive == true
+            updateJob?.isActive == true
 
-    private fun updater() {
-        try {
-            Thread.sleep(500)
-        } catch (_: InterruptedException) {
-            return
-        }
+    private suspend fun updater() {
+        delay(500)
         // Publish immediately: a 10-second blank period made a successful
         // fresh connection look failed on phones.
         var lastStateUpdate = 0L
@@ -471,16 +495,15 @@ open class PacketTunnelProvider: VpnService() {
         var lastLoggedPeers = -1
         var lastLogTime = 0L
         val probeStartedAt = System.currentTimeMillis()
-        updates@ while (started.get()) {
+        updates@ while (currentCoroutineContext().isActive && started.get()) {
             if (readerThread?.isAlive != true || writerThread?.isAlive != true) {
                 SafeLog.w(TAG, "Tunnel packet worker stopped unexpectedly; rebuilding it")
                 if (started.get()) {
                     stop(stopService = false)
-                    try { Thread.sleep(500L) } catch (_: InterruptedException) {
-                        Thread.currentThread().interrupt()
-                        // intentionally ignored: backoff before restarting packet worker
+                    restartJob = serviceScope.launch {
+                        delay(500L)
+                        start()
                     }
-                    start()
                 }
                 return
             }
@@ -537,21 +560,9 @@ open class PacketTunnelProvider: VpnService() {
                 publicPeerPoolPruned.set(true)
             }
 
-            if (Thread.currentThread().isInterrupted) {
-                break@updates
-            }
             val isStable = publicPeerPoolPruned.get()
-            if (sleep(isStable)) return
+            delay(if (isStable) 5_000L else 1_500L)
         }
-    }
-
-    private fun sleep(isStable: Boolean = false): Boolean {
-        try {
-            Thread.sleep(if (isStable) 5000L else 1500L)
-        } catch (e: InterruptedException) {
-            return true
-        }
-        return false
     }
 
     private fun writer() {

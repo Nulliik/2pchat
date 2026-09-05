@@ -740,7 +740,7 @@ object P2PPreferences {
                 }
             }
         }
-        editor.commit()
+        editor.apply()
     }
 
     fun getPeerFingerprint(context: Context, peerName: String): String? {
@@ -1076,10 +1076,9 @@ object P2PPreferences {
         if (endpoint.isNotBlank() && (existingPending.isNullOrBlank() || existingPending == fingerprint)) {
             editor.putString(pendingPeerEndpoint(peerName), endpoint)
         }
-        // The session callback is synchronous. Persist the security boundary before
-        // the core can process any application frames or another sender can race it.
-        // commit() is intentional here: we must ensure the block is written before returning.
-        editor.commit()
+        // apply() publishes the block in memory before this synchronous callback
+        // returns, so subsequent frames and senders see it without waiting for disk I/O.
+        editor.apply()
     }
 
     internal fun acceptPendingPeerIdentity(context: Context, peerName: String): AcceptedPeerIdentity? {

@@ -73,10 +73,10 @@ fun TabNavigationRow(
     primaryColor: Color,
     surfaceColor: Color,
     onSurfaceColor: Color,
+    modifier: Modifier = Modifier,
     unreadCount: Int = 0,
     hasAppUpdate: Boolean = false,
     backgroundColor: Color = surfaceColor,
-    modifier: Modifier = Modifier
 ) {
     NavigationBar(
         containerColor = backgroundColor,

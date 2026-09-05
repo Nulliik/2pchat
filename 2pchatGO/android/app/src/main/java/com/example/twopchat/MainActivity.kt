@@ -568,10 +568,10 @@ fun PasscodeUnlockScreen(
     var inputPin by remember { mutableStateOf("") }
     var showError by remember { mutableStateOf(false) }
     val lockPrefs = remember { context.getSharedPreferences("2pchat_lock_state", android.content.Context.MODE_PRIVATE) }
-    var failedAttempts by remember { mutableStateOf(lockPrefs.getInt("failed_attempts", 0)) }
-    var lockoutUntil by remember { mutableStateOf(lockPrefs.getLong("lockout_until", 0L)) }
+    var failedAttempts by remember { mutableIntStateOf(lockPrefs.getInt("failed_attempts", 0)) }
+    var lockoutUntil by remember { mutableLongStateOf(lockPrefs.getLong("lockout_until", 0L)) }
     var lockoutTimeRemaining by remember {
-        mutableStateOf(((lockoutUntil - System.currentTimeMillis()).coerceAtLeast(0L) / 1000L).toInt())
+        mutableIntStateOf(((lockoutUntil - System.currentTimeMillis()).coerceAtLeast(0L) / 1000L).toInt())
     }
 
     fun triggerKeyHaptic() {

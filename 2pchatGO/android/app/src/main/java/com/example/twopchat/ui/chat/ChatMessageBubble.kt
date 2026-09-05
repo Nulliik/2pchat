@@ -1,5 +1,6 @@
 package com.example.twopchat.ui.chat
 
+import androidx.compose.runtime.mutableFloatStateOf
 import android.graphics.Bitmap
 import com.example.twopchat.media.*
 import android.os.Build
@@ -124,7 +125,7 @@ internal fun ChatMessageBubble(
     onHighlightFinished: () -> Unit = {},
 ) {
     val isHighlighted = msg.id == highlightedMessageId
-    var highlightAlpha by remember(msg.id, isHighlighted) { mutableStateOf(if (isHighlighted) 0.5f else 0.0f) }
+    var highlightAlpha by remember(msg.id, isHighlighted) { mutableFloatStateOf(if (isHighlighted) 0.5f else 0.0f) }
     val formattedTime = remember(msg.id, msg.status, msg.sentAtEpochMs, appLanguage) {
         MessageTimestampFormatter.format(msg, appLanguage)
     }
@@ -1739,9 +1740,9 @@ fun LinkifiedText(
     textColor: Color,
     linkColor: Color,
     fontSize: androidx.compose.ui.unit.TextUnit,
+    modifier: Modifier = Modifier,
     lineHeight: androidx.compose.ui.unit.TextUnit = androidx.compose.ui.unit.TextUnit.Unspecified,
     fontWeight: FontWeight? = null,
-    modifier: Modifier = Modifier
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val myUsername = remember(context) {

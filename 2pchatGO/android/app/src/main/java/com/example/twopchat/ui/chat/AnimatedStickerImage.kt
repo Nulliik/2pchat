@@ -147,6 +147,7 @@ internal fun AnimatedStickerImage(
         modifier = modifier.semantics { this.contentDescription = contentDescription },
         contentAlignment = Alignment.Center,
     ) {
+        val bitmap = staticBitmap
         when {
             drawable != null && shouldAnimate -> AndroidView(
                 factory = { context ->
@@ -166,8 +167,8 @@ internal fun AnimatedStickerImage(
                 },
                 modifier = Modifier.fillMaxSize(),
             )
-            staticBitmap != null -> Image(
-                bitmap = staticBitmap!!.asImageBitmap(),
+            bitmap != null -> Image(
+                bitmap = bitmap.asImageBitmap(),
                 contentDescription = contentDescription,
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Fit,
