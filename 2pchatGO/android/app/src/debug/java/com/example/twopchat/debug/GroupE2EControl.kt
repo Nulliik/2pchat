@@ -83,7 +83,8 @@ internal object GroupE2EControl {
                         }))
                     }
                     result.put("members", JSONArray(info.members.map {
-                        JSONObject().put("id", it.memberId).put("name", it.displayName).put("role", it.role.name)
+                        val roleName = if (it.role.name == "ADMIN") "ADMINISTRATOR" else it.role.name
+                        JSONObject().put("id", it.memberId).put("name", it.displayName).put("role", roleName)
                     }))
                     result.put("messages", JSONArray(chat.messages.map {
                         JSONObject().put("id", it.messageId).put("text", it.text).put("edited", it.isEdited)

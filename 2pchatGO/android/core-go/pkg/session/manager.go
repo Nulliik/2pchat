@@ -215,12 +215,17 @@ func (m *Manager) ApplyPolicy(p transport.NetworkPolicy) {
 }
 
 // SetPeerPolicy stores a contact-specific NetworkPolicy keyed by peer fingerprint.
+// A zero-value policy clears the contact-specific override, inheriting global policy.
 func (m *Manager) SetPeerPolicy(peerFP string, p transport.NetworkPolicy) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	cleanFP := strings.TrimSpace(peerFP)
 	if cleanFP != "" {
-		m.peerPolicies[cleanFP] = p
+		if p == (transport.NetworkPolicy{}) {
+			delete(m.peerPolicies, cleanFP)
+		} else {
+			m.peerPolicies[cleanFP] = p
+		}
 	}
 }
 
@@ -451,7 +456,7 @@ func (m *Manager) connectPeerInternal(endpoint, expectedFingerprint string, cont
 	rawEndpoints := strings.Split(endpoint, ",")
 	m.mu.RLock()
 	effectivePolicy := m.policy
-	if contactPolicy != nil {
+	if contactPolicy != nil && *contactPolicy != (transport.NetworkPolicy{}) {
 		effectivePolicy = effectivePolicy.Intersect(*contactPolicy)
 	} else if expectedFingerprint != "" {
 		if storedPolicy, ok := m.peerPolicies[expectedFingerprint]; ok {

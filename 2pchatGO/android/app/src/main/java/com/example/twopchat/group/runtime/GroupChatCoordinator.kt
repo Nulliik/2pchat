@@ -225,7 +225,15 @@ object GroupChatCoordinator {
         val receivedAtMs: Long = System.currentTimeMillis(),
     )
 
+    internal data class PendingRosterSnapshotRecord(
+        val senderPeerName: String,
+        val json: JSONObject,
+        val snapshot: GroupRosterSnapshot,
+        val receivedAtMs: Long = System.currentTimeMillis(),
+    )
+
     private val pendingKeyPackages = ConcurrentHashMap<String, MutableList<PendingKeyPackageRecord>>()
+    private val pendingRosterSnapshots = ConcurrentHashMap<String, MutableList<PendingRosterSnapshotRecord>>()
     private val pendingEpochEvents = ConcurrentHashMap<String, MutableList<PendingGroupEventRecord>>()
     private val pendingOutgoingEpochEvents = ConcurrentHashMap<String, MutableList<PendingOutgoingEvent>>()
     private val pendingTombstones = ConcurrentHashMap<String, MutableList<PendingTombstoneRecord>>()
@@ -2656,6 +2664,7 @@ object GroupChatCoordinator {
                 applySerializedControl(group, event, payload)
                 drainStoredControlChain(group.groupId)
                 drainPendingKeyPackages(group.groupId)
+                drainPendingRosterSnapshots(group.groupId)
             }
             maybeProcessControlProposal(group, event, payload, author)
             if (acknowledge) {
@@ -2763,6 +2772,7 @@ object GroupChatCoordinator {
             applySerializedControl(group, event, payload)
             drainStoredControlChain(group.groupId)
             drainPendingKeyPackages(group.groupId)
+            drainPendingRosterSnapshots(group.groupId)
         } else {
             applyApplicationProjection(event)
         }
@@ -3097,7 +3107,7 @@ object GroupChatCoordinator {
         keyPackage: GroupEpochKeyPackage,
         control: StoredGroupEvent,
     ) {
-        require(isCanonicalControlEvent(group, control.eventId)) {
+        require(isCanonicalControlEvent(group, control.eventId) || control.controlHead == group.controlHead) {
             "epoch key package refers to a losing control fork"
         }
         val isCurrentOwner = sender.deviceId == group.ownerDeviceId
@@ -3227,6 +3237,57 @@ object GroupChatCoordinator {
                 applyKeyPackageWithControl(group, sender, item.senderPeerName, item.keyPackage, control)
             }.onFailure { error ->
                 SafeLog.w(TAG, "Failed applying drained key package for group $groupId, epoch ${item.keyPackage.epoch}: ${error.message}")
+            }
+        }
+        drainPendingRosterSnapshots(groupId)
+    }
+
+    private fun bufferPendingRosterSnapshot(
+        groupId: String,
+        senderPeerName: String,
+        json: JSONObject,
+        snapshot: GroupRosterSnapshot,
+    ) {
+        val list = pendingRosterSnapshots.computeIfAbsent(groupId) { mutableListOf() }
+        synchronized(list) {
+            val now = System.currentTimeMillis()
+            list.removeAll { (now - it.receivedAtMs) > PENDING_BUFFER_TTL_MS }
+            if (list.none { it.snapshot.controlHead == snapshot.controlHead && it.snapshot.pageIndex == snapshot.pageIndex }) {
+                if (list.size >= MAX_PENDING_BUFFER_PER_GROUP) {
+                    list.removeAt(0)
+                }
+                list.add(PendingRosterSnapshotRecord(senderPeerName, json, snapshot, now))
+            }
+        }
+    }
+
+    private suspend fun drainPendingRosterSnapshots(groupId: String) {
+        val list = pendingRosterSnapshots[groupId] ?: return
+        val group = db().getGroup(groupId) ?: return
+        val now = System.currentTimeMillis()
+        val ready = mutableListOf<PendingRosterSnapshotRecord>()
+        synchronized(list) {
+            list.removeAll { (now - it.receivedAtMs) > PENDING_BUFFER_TTL_MS }
+            val iterator = list.iterator()
+            while (iterator.hasNext()) {
+                val item = iterator.next()
+                if (item.snapshot.epoch < group.currentEpoch) {
+                    iterator.remove()
+                } else if (item.snapshot.controlHead == group.controlHead && item.snapshot.epoch == group.currentEpoch) {
+                    ready.add(item)
+                    iterator.remove()
+                }
+            }
+        }
+        ready.sortBy { it.snapshot.pageIndex }
+        for (item in ready) {
+            runCatching {
+                receiveRosterSnapshot(item.senderPeerName, item.json)
+            }.onFailure { error ->
+                SafeLog.w(
+                    TAG,
+                    "Failed applying drained roster snapshot for group $groupId, epoch ${item.snapshot.epoch}, page ${item.snapshot.pageIndex}: ${error.message}",
+                )
             }
         }
     }
@@ -3425,15 +3486,25 @@ object GroupChatCoordinator {
         return pendingTombstones[groupId]?.size ?: 0
     }
 
+    internal fun getPendingRosterSnapshotsCount(groupId: String): Int {
+        return pendingRosterSnapshots[groupId]?.size ?: 0
+    }
+
     private suspend fun receiveRosterSnapshot(senderPeerName: String, json: JSONObject) {
         val snapshot = GroupControlFrames.parseRosterSnapshot(json)
         val group = db().getGroup(snapshot.groupId) ?: return
         require(snapshot.recipientDeviceId == group.localDeviceId)
-        require(snapshot.controlHead == group.controlHead) {
-            "roster snapshot is not for the current control head"
+        if (snapshot.epoch < group.currentEpoch) {
+            SafeLog.d(TAG, "Ignoring obsolete roster snapshot for group ${group.groupId} epoch ${snapshot.epoch} < current ${group.currentEpoch}")
+            return
         }
-        require(snapshot.epoch == group.currentEpoch) {
-            "roster snapshot is not for the current group epoch"
+        if (snapshot.controlHead != group.controlHead || snapshot.epoch != group.currentEpoch) {
+            SafeLog.d(
+                TAG,
+                "Buffering out-of-order roster snapshot for group ${group.groupId} epoch ${snapshot.epoch} waiting for control head ${snapshot.controlHead}",
+            )
+            bufferPendingRosterSnapshot(group.groupId, senderPeerName, json, snapshot)
+            return
         }
         require(snapshot.createdAtMs <= System.currentTimeMillis() + MAX_CLOCK_SKEW_MS)
         val owner = db().getMember(group.groupId, group.ownerDeviceId)
@@ -3573,6 +3644,8 @@ object GroupChatCoordinator {
             ),
         )
         refreshGroup(group.groupId)
+        drainPendingKeyPackages(group.groupId)
+        drainPendingEventsForEpoch(group.groupId, snapshot.epoch)
     }
 
     private fun receiveAttachmentRequest(senderPeerName: String, json: JSONObject) {
@@ -4830,11 +4903,17 @@ object GroupChatCoordinator {
                 if (advanced) break
             }
             if (!advanced) {
-                scope.launch { drainPendingKeyPackages(groupId) }
+                scope.launch {
+                    drainPendingKeyPackages(groupId)
+                    drainPendingRosterSnapshots(groupId)
+                }
                 return
             }
         }
-        scope.launch { drainPendingKeyPackages(groupId) }
+        scope.launch {
+            drainPendingKeyPackages(groupId)
+            drainPendingRosterSnapshots(groupId)
+        }
     }
 
     private fun applyApplicationProjection(@Suppress("UNUSED_PARAMETER") event: GroupWireEvent) {
