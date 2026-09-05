@@ -66,6 +66,49 @@ object UpdateSecurityPolicy {
     }
 
     /**
+     * Validates that an update/asset URL belongs to the authorized repository release artifacts.
+     */
+    fun isValidAssetUrl(
+        rawUrl: String,
+        expectedOwner: String = "kodzyfox",
+        expectedRepo: String = "2pchat-releases",
+    ): Boolean {
+        if (!isValidUpdateUrl(rawUrl)) return false
+        val url = try {
+            URL(rawUrl)
+        } catch (_: Throwable) {
+            return false
+        }
+        val path = url.path.trimStart('/')
+
+        if (url.host == "api.github.com") {
+            return path.startsWith("repos/$expectedOwner/$expectedRepo/")
+        }
+        if (url.host == "github.com") {
+            return path.startsWith("$expectedOwner/$expectedRepo/")
+        }
+        if (url.host == "raw.githubusercontent.com") {
+            return path.startsWith("$expectedOwner/$expectedRepo/")
+        }
+        if (url.host == "objects.githubusercontent.com" || url.host == "github-releases.githubusercontent.com") {
+            // Ephemeral CDN download links from authorized GitHub releases
+            return true
+        }
+        return false
+    }
+
+    /**
+     * Validates every redirect hop during update asset download.
+     */
+    fun validateRedirectHop(
+        redirectUrl: String,
+        expectedOwner: String = "kodzyfox",
+        expectedRepo: String = "2pchat-releases",
+    ): Boolean {
+        return isValidUpdateUrl(redirectUrl) && isValidAssetUrl(redirectUrl, expectedOwner, expectedRepo)
+    }
+
+    /**
      * Rejects updates with versionCode <= current installed versionCode (downgrade prevention).
      */
     fun isDowngrade(currentVersionCode: Long, candidateVersionCode: Long): Boolean {
@@ -81,14 +124,17 @@ object UpdateSecurityPolicy {
         context: Context?,
         connectTimeoutMs: Int = DEFAULT_CONNECT_TIMEOUT_MS,
         readTimeoutMs: Int = DEFAULT_READ_TIMEOUT_MS,
+        torEnabledOverride: Boolean? = null,
+        torRunningOverride: Boolean? = null,
+        proxyConfigOverride: com.example.twopchat.config.ResolvedProxyConfig? = null,
     ): Result<HttpURLConnection> {
         if (!isValidUpdateUrl(rawUrl)) {
             return Result.failure(SecurityException("Untrusted or insecure update URL: $rawUrl"))
         }
 
         val ctx = context
-        val isTorEnabled = ctx?.let { P2PPreferences.isTorEnabled(it) } ?: false
-        val isTorRunning = TorManager.isTorRunning.value
+        val isTorEnabled = torEnabledOverride ?: (ctx?.let { P2PPreferences.isTorEnabled(it) } ?: false)
+        val isTorRunning = torRunningOverride ?: TorManager.isTorRunning.value
 
         if (isTorEnabled && !isTorRunning) {
             return Result.failure(
@@ -98,12 +144,12 @@ object UpdateSecurityPolicy {
 
         return try {
             val urlObj = URL(rawUrl)
-            val effectiveProxy = ctx?.let { ProxyConfig.getEffectiveProxyConfig(it) }
+            val effectiveProxy = proxyConfigOverride ?: ctx?.let { ProxyConfig.getEffectiveProxyConfig(it) }
 
             val conn = if (effectiveProxy != null && effectiveProxy.enabled) {
                 val socksProxy = Proxy(
                     Proxy.Type.SOCKS,
-                    InetSocketAddress(effectiveProxy.host, effectiveProxy.port)
+                    InetSocketAddress.createUnresolved(effectiveProxy.host, effectiveProxy.port)
                 )
                 urlObj.openConnection(socksProxy) as HttpURLConnection
             } else {
@@ -128,6 +174,7 @@ interface ApkSignerVerifier {
     fun signerDigests(apk: File): List<ByteArray>?
     fun currentAppSignerDigests(): List<ByteArray>
     fun versionCodeOf(apk: File): Long?
+    fun packageNameOf(apk: File): String? = null
 }
 
 /**
@@ -136,6 +183,7 @@ interface ApkSignerVerifier {
 class UpdateVerifier(
     private val signer: ApkSignerVerifier? = null,
     private val currentVersionCode: Long,
+    private val expectedPackageName: String? = null,
 ) {
     sealed class Result {
         object Ok : Result()
@@ -147,8 +195,12 @@ class UpdateVerifier(
             return Result.Rejected("empty-or-missing-file")
         }
 
-        // If a signer verifier is provided, verify certificates
+        // If a signer verifier is provided, verify certificates & metadata
         if (signer != null) {
+            val pkg = signer.packageNameOf(apk)
+            if (expectedPackageName != null && pkg != null && pkg != expectedPackageName) {
+                return Result.Rejected("foreign-package-name")
+            }
             val archive = signer.signerDigests(apk) ?: return Result.Rejected("unreadable-signature")
             val expected = signer.currentAppSignerDigests()
             if (archive.none { a -> expected.any { it.contentEquals(a) } }) {
