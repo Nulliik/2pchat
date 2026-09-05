@@ -2,12 +2,14 @@ package com.example.twopchat.group.runtime
 
 import com.example.twopchat.group.crypto.EpochAeadGroupCrypto
 import com.example.twopchat.group.crypto.GroupCryptoProvider
+import com.example.twopchat.group.crypto.GroupIdentitySignatures
 import com.example.twopchat.group.crypto.ProtectedGroupPayload
 import com.example.twopchat.group.model.GroupRole
 import com.example.twopchat.group.protocol.GroupControlFrames
 import com.example.twopchat.group.protocol.GroupEpochKeyPackage
 import com.example.twopchat.group.protocol.GroupEventKind
 import com.example.twopchat.group.protocol.GroupInviteResponse
+import com.example.twopchat.group.protocol.GroupSyncRequest
 import com.example.twopchat.group.protocol.GroupWireEvent
 import com.example.twopchat.group.protocol.GroupWireProtocol
 import com.example.twopchat.group.storage.StoredGroupEpochKey
@@ -550,6 +552,106 @@ class GroupSuiteV2HardeningTest {
             assertEquals("PROCESSED", resultDrained)
         }
         assertTrue(pendingEventsBuffer.isEmpty())
+    }
+
+    @Test
+    fun existingMemberAnnouncesV2CapabilityAfterUpgrade_OwnerCanRotate() {
+        val prevSigner = GroupIdentitySignatures.testSigner
+        val prevVerifier = GroupIdentitySignatures.testVerifier
+        try {
+            GroupIdentitySignatures.testSigner = { payload ->
+                val md = java.security.MessageDigest.getInstance("SHA-256")
+                java.util.Base64.getEncoder().encodeToString(md.digest(payload.toByteArray(Charsets.UTF_8)))
+            }
+            GroupIdentitySignatures.testVerifier = { key, payload, sig ->
+                val md = java.security.MessageDigest.getInstance("SHA-256")
+                val expected = java.util.Base64.getEncoder().encodeToString(md.digest(payload.toByteArray(Charsets.UTF_8)))
+                key.isNotBlank() && sig == expected
+            }
+
+            val ownerDeviceId = "dev-alice-owner"
+            val ownerSigningKey = "alice-signing-key"
+            val memberDeviceId = "dev-bob-member"
+            val memberSigningKey = "bob-signing-key"
+
+            data class MemberCapability(
+                val deviceId: String,
+                val signingKey: String,
+                var supportsV2: Boolean,
+            )
+
+            val roster = mutableMapOf(
+                ownerDeviceId to MemberCapability(ownerDeviceId, ownerSigningKey, supportsV2 = true),
+                memberDeviceId to MemberCapability(memberDeviceId, memberSigningKey, supportsV2 = false),
+            )
+
+            fun canOwnerRotateToV2(): Boolean = roster.values.all { it.supportsV2 }
+
+            // 1. Initially Bob is on legacy v1 client (supportsV2 = false).
+            // Owner checks if group can be upgraded to v2.
+            assertFalse(
+                "Owner cannot rotate group to v2 while existing active member Bob is v1-only",
+                canOwnerRotateToV2(),
+            )
+
+            // 2. Bob upgrades app to v2-capable client.
+            // Bob creates a GroupSyncRequest announcing supportsV2 = true inside signed canonical envelope.
+            val syncRequest = GroupSyncRequest(
+                requestId = "req-sync-upgrade-01",
+                groupId = "group-upgrade-1",
+                requesterDeviceId = memberDeviceId,
+                cursors = mapOf(memberDeviceId to 10L),
+                createdAtMs = 123456L,
+                supportsV2 = true,
+                signatureBase64 = "",
+            )
+            val canonical = syncRequest.canonicalForSignature()
+            assertTrue("Canonical wire form must bind supports_v2=true", canonical.contains("supports_v2=true"))
+
+            val signedSyncRequest = syncRequest.copy(
+                signatureBase64 = GroupIdentitySignatures.sign(canonical),
+            )
+            val isSignatureValid = signedSyncRequest.verify(memberSigningKey)
+            assertTrue("Owner verifies Bob's signature on sync request", isSignatureValid)
+
+            // 3. Owner processes verified sync request and updates Bob's capability
+            if (isSignatureValid && signedSyncRequest.supportsV2) {
+                roster[memberDeviceId]?.supportsV2 = true
+            }
+
+            // 4. Now all active members support v2
+            assertTrue("All active members now announce v2 capability", canOwnerRotateToV2())
+
+            // 5. Owner can now successfully rotate epoch to SUITE_V2
+            val activeEntries = roster.values.map { it.deviceId to it.signingKey }
+            val epoch2RosterHash = GroupWireProtocol.computeRosterHashFromEntries(activeEntries)
+
+            val v2KeyPackage = GroupEpochKeyPackage(
+                groupId = "group-upgrade-1",
+                epoch = 2L,
+                epochSecretBase64 = java.util.Base64.getEncoder().encodeToString(ByteArray(32) { 0x77 }),
+                recipientDeviceId = memberDeviceId,
+                controlHead = "ctrl-upgrade-to-v2",
+                senderFingerprint = "fp-alice",
+                senderDeviceId = ownerDeviceId,
+                senderSigningKey = ownerSigningKey,
+                createdAtMs = 124000L,
+                signatureBase64 = "",
+                rosterHash = epoch2RosterHash,
+                suite = GroupWireProtocol.SUITE_V2,
+            )
+            val signedV2Pkg = v2KeyPackage.copy(
+                signatureBase64 = GroupIdentitySignatures.sign(v2KeyPackage.canonicalForSignature()),
+            )
+
+            // 6. Member Bob receives v2 key package, verifies owner signature and rosterHash
+            assertTrue("Bob verifies v2 key package from owner", signedV2Pkg.verify(ownerSigningKey))
+            assertEquals(GroupWireProtocol.SUITE_V2, signedV2Pkg.suite)
+            assertEquals(epoch2RosterHash, signedV2Pkg.rosterHash)
+        } finally {
+            GroupIdentitySignatures.testSigner = prevSigner
+            GroupIdentitySignatures.testVerifier = prevVerifier
+        }
     }
 }
 

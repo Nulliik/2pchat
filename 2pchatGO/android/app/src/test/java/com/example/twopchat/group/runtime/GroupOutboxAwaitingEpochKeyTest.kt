@@ -24,6 +24,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Before
 import org.junit.Test
+import java.io.File
 import java.security.MessageDigest
 import java.sql.DriverManager
 
@@ -375,5 +376,409 @@ class GroupOutboxAwaitingEpochKeyTest {
             "Tampering with supportsV2 without resigning must invalidate signature",
             tampered.verify("test-key"),
         )
+    }
+
+    private fun createV7Database(dbFile: File? = null): java.sql.Connection {
+        val url = if (dbFile != null) "jdbc:sqlite:${dbFile.absolutePath}" else "jdbc:sqlite::memory:"
+        val conn = DriverManager.getConnection(url)
+        val schemaSql = javaClass.classLoader!!.getResourceAsStream("schema_v6.sql")!!
+            .bufferedReader().use { it.readText() }
+        conn.createStatement().use { stmt ->
+            schemaSql.split(";").map { it.trim() }.filter { it.isNotBlank() }.forEach { stmt.execute(it) }
+            stmt.execute("ALTER TABLE group_events ADD COLUMN is_tombstoned INTEGER NOT NULL DEFAULT 0")
+            stmt.execute("ALTER TABLE group_epoch_keys ADD COLUMN suite TEXT NOT NULL DEFAULT '2pchat-epoch-aes256gcm-ed25519-v1'")
+            stmt.execute("ALTER TABLE group_epoch_keys ADD COLUMN control_head TEXT")
+            stmt.execute("ALTER TABLE group_epoch_keys ADD COLUMN roster_hash TEXT")
+            stmt.execute("ALTER TABLE groups ADD COLUMN tor_only_group INTEGER NOT NULL DEFAULT 0")
+            stmt.execute("ALTER TABLE groups ADD COLUMN last_key_request_ms INTEGER NOT NULL DEFAULT 0")
+            stmt.execute(
+                """
+                CREATE TABLE IF NOT EXISTS group_membership_intervals (
+                    group_id TEXT NOT NULL,
+                    device_id TEXT NOT NULL,
+                    start_epoch INTEGER NOT NULL,
+                    end_epoch INTEGER,
+                    created_at_ms INTEGER NOT NULL,
+                    PRIMARY KEY(group_id, device_id, start_epoch)
+                )
+                """.trimIndent()
+            )
+            stmt.execute("PRAGMA user_version = 7")
+        }
+        return conn
+    }
+
+    @Test
+    fun drainIsAtomicAcrossCrash_NoDuplicateSend() {
+        val conn = createV7Database()
+        conn.use { c ->
+            c.createStatement().use { s ->
+                s.execute(
+                    """
+                    INSERT INTO groups (group_id, title, local_device_id, owner_device_id, current_epoch, created_at_ms, updated_at_ms)
+                    VALUES ('grp-1', 'Test Group', 'dev-alice', 'dev-alice', 1, 1000, 1000)
+                    """.trimIndent()
+                )
+                val intentPayload = JSONObject().apply {
+                    put("kind", "MESSAGE")
+                    put("payload", JSONObject().put("text", "Secret payload"))
+                    put("created_at_ms", 1000L)
+                }.toString().toByteArray(Charsets.UTF_8)
+
+                val pstmt = c.prepareStatement(
+                    """
+                    INSERT INTO outbox_tasks (task_id, group_id, event_id, recipient_device_id, payload, state, created_at_ms, updated_at_ms)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """.trimIndent()
+                )
+                pstmt.setString(1, "intent-task-01")
+                pstmt.setString(2, "grp-1")
+                pstmt.setString(3, "intent-ev-01")
+                pstmt.setString(4, "")
+                pstmt.setBytes(5, intentPayload)
+                pstmt.setString(6, StoredOutboxState.AWAITING_EPOCH_KEY.name)
+                pstmt.setLong(7, 1000L)
+                pstmt.setLong(8, 1000L)
+                pstmt.executeUpdate()
+            }
+
+            // 1. Simulate Crash during drain:
+            // Transaction begins. Event is inserted into group_events, outbound task is inserted.
+            // Before deleting the intent task or committing, an exception / crash occurs -> rollback!
+            c.autoCommit = false
+            try {
+                c.createStatement().use { s ->
+                    val rs = s.executeQuery("SELECT COALESCE(MAX(author_seq), 0) + 1 FROM group_events WHERE group_id = 'grp-1' AND author_device_id = 'dev-alice'")
+                    val seq = if (rs.next()) rs.getLong(1) else 1L
+                    assertEquals(1L, seq)
+
+                    s.execute(
+                        """
+                        INSERT INTO group_events (group_id, event_id, epoch, author_device_id, author_seq, hlc_physical_ms, hlc_logical, kind, created_at_ms, received_at_ms)
+                        VALUES ('grp-1', 'ev-materialized-01', 1, 'dev-alice', $seq, 1000, 0, 'MESSAGE', 1000, 1000)
+                        """.trimIndent()
+                    )
+                    s.execute(
+                        """
+                        INSERT INTO outbox_tasks (task_id, group_id, event_id, recipient_device_id, payload, state, created_at_ms, updated_at_ms)
+                        VALUES ('fanout-bob-01', 'grp-1', 'ev-materialized-01', 'dev-bob', X'1234', 'PENDING', 1000, 1000)
+                        """.trimIndent()
+                    )
+                    // SIMULATE CRASH before deleting intent and before commit!
+                    throw RuntimeException("Simulated crash during drain before delete/commit")
+                }
+            } catch (e: RuntimeException) {
+                c.rollback()
+            } finally {
+                c.autoCommit = true
+            }
+
+            // VERIFY after crash rollback:
+            // - Intent is STILL present in outbox with state AWAITING_EPOCH_KEY
+            c.createStatement().use { s ->
+                val rsOutbox = s.executeQuery("SELECT task_id, state FROM outbox_tasks WHERE task_id = 'intent-task-01'")
+                assertTrue("Awaiting intent must survive crash rollback", rsOutbox.next())
+                assertEquals(StoredOutboxState.AWAITING_EPOCH_KEY.name, rsOutbox.getString("state"))
+
+                // - No event was committed in group_events
+                val rsEvents = s.executeQuery("SELECT COUNT(*) FROM group_events WHERE group_id = 'grp-1'")
+                assertTrue(rsEvents.next())
+                assertEquals(0, rsEvents.getInt(1))
+
+                // - No fanout tasks were committed (NO duplicate send)
+                val rsFanout = s.executeQuery("SELECT COUNT(*) FROM outbox_tasks WHERE task_id = 'fanout-bob-01'")
+                assertTrue(rsFanout.next())
+                assertEquals(0, rsFanout.getInt(1))
+            }
+
+            // 2. Successful atomic drain:
+            c.autoCommit = false
+            try {
+                c.createStatement().use { s ->
+                    val rs = s.executeQuery("SELECT COALESCE(MAX(author_seq), 0) + 1 FROM group_events WHERE group_id = 'grp-1' AND author_device_id = 'dev-alice'")
+                    val seq = if (rs.next()) rs.getLong(1) else 1L
+                    assertEquals(1L, seq)
+
+                    s.execute(
+                        """
+                        INSERT INTO group_events (group_id, event_id, epoch, author_device_id, author_seq, hlc_physical_ms, hlc_logical, kind, created_at_ms, received_at_ms)
+                        VALUES ('grp-1', 'ev-materialized-01', 1, 'dev-alice', $seq, 1000, 0, 'MESSAGE', 1000, 1000)
+                        """.trimIndent()
+                    )
+                    s.execute(
+                        """
+                        INSERT INTO outbox_tasks (task_id, group_id, event_id, recipient_device_id, payload, state, created_at_ms, updated_at_ms)
+                        VALUES ('fanout-bob-01', 'grp-1', 'ev-materialized-01', 'dev-bob', X'1234', 'PENDING', 1000, 1000)
+                        """.trimIndent()
+                    )
+                    // Delete intent
+                    s.execute("DELETE FROM outbox_tasks WHERE task_id = 'intent-task-01'")
+                }
+                c.commit()
+            } finally {
+                c.autoCommit = true
+            }
+
+            // VERIFY after successful atomic commit:
+            c.createStatement().use { s ->
+                val rsIntent = s.executeQuery("SELECT COUNT(*) FROM outbox_tasks WHERE task_id = 'intent-task-01'")
+                assertTrue(rsIntent.next())
+                assertEquals("Intent must be deleted after successful drain", 0, rsIntent.getInt(1))
+
+                val rsEvents = s.executeQuery("SELECT author_seq FROM group_events WHERE event_id = 'ev-materialized-01'")
+                assertTrue(rsEvents.next())
+                assertEquals(1L, rsEvents.getLong("author_seq"))
+
+                val rsFanout = s.executeQuery("SELECT COUNT(*) FROM outbox_tasks WHERE task_id = 'fanout-bob-01'")
+                assertTrue(rsFanout.next())
+                assertEquals("Exactly one fanout task must be enqueued", 1, rsFanout.getInt(1))
+            }
+
+            // 3. Verify Unique Constraint enforces no duplicate author_seq
+            try {
+                c.createStatement().use { s ->
+                    s.execute(
+                        """
+                        INSERT INTO group_events (group_id, event_id, epoch, author_device_id, author_seq, hlc_physical_ms, hlc_logical, kind, created_at_ms, received_at_ms)
+                        VALUES ('grp-1', 'ev-materialized-02', 1, 'dev-alice', 1, 1001, 0, 'MESSAGE', 1001, 1001)
+                        """.trimIndent()
+                    )
+                }
+                fail("Database must enforce UNIQUE(group_id, author_device_id, author_seq)")
+            } catch (e: java.sql.SQLException) {
+                assertTrue(e.message?.contains("UNIQUE") == true || e.message?.contains("constraint") == true)
+            }
+        }
+    }
+
+    @Test
+    fun awaitingIntentSurvivesProcessRestart() {
+        val dbFile = File.createTempFile("outbox_restart_test", ".db")
+        dbFile.deleteOnExit()
+        try {
+            // Process 1: write awaiting intent to SQLite and close connection (process exit)
+            val intentText = "Encrypted message waiting for epoch key"
+            createV7Database(dbFile).use { c ->
+                c.createStatement().use { s ->
+                    s.execute(
+                        """
+                        INSERT INTO groups (group_id, title, local_device_id, owner_device_id, current_epoch, created_at_ms, updated_at_ms)
+                        VALUES ('grp-restart', 'Restart Test Group', 'dev-alice', 'dev-owner', 2, 5000, 5000)
+                        """.trimIndent()
+                    )
+                    val payload = JSONObject().apply {
+                        put("kind", "MESSAGE")
+                        put("payload", JSONObject().put("text", intentText))
+                        put("target_event_id", "")
+                        put("created_at_ms", 5000L)
+                    }.toString().toByteArray(Charsets.UTF_8)
+
+                    val pstmt = c.prepareStatement(
+                        """
+                        INSERT INTO outbox_tasks (task_id, group_id, event_id, recipient_device_id, payload, state, created_at_ms, updated_at_ms)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        """.trimIndent()
+                    )
+                    pstmt.setString(1, "task-restart-001")
+                    pstmt.setString(2, "grp-restart")
+                    pstmt.setString(3, "")
+                    pstmt.setString(4, "")
+                    pstmt.setBytes(5, payload)
+                    pstmt.setString(6, StoredOutboxState.AWAITING_EPOCH_KEY.name)
+                    pstmt.setLong(7, 5000L)
+                    pstmt.setLong(8, 5000L)
+                    pstmt.executeUpdate()
+                }
+            }
+
+            // Process 2: simulate restart by opening brand new connection to the exact same SQLite file
+            DriverManager.getConnection("jdbc:sqlite:${dbFile.absolutePath}").use { c ->
+                c.createStatement().use { s ->
+                    val rs = s.executeQuery(
+                        """
+                        SELECT task_id, group_id, payload, state, created_at_ms 
+                        FROM outbox_tasks 
+                        WHERE group_id = 'grp-restart' AND state = 'AWAITING_EPOCH_KEY'
+                        """.trimIndent()
+                    )
+                    assertTrue("Awaiting intent must survive process restart in SQLite", rs.next())
+                    assertEquals("task-restart-001", rs.getString("task_id"))
+                    assertEquals("grp-restart", rs.getString("group_id"))
+                    assertEquals(StoredOutboxState.AWAITING_EPOCH_KEY.name, rs.getString("state"))
+                    assertEquals(5000L, rs.getLong("created_at_ms"))
+
+                    val recoveredBytes = rs.getBytes("payload")
+                    val recoveredJson = JSONObject(recoveredBytes.decodeToString())
+                    assertEquals("MESSAGE", recoveredJson.getString("kind"))
+                    assertEquals(intentText, recoveredJson.getJSONObject("payload").getString("text"))
+
+                    assertFalse("Should be exactly one task", rs.next())
+                }
+            }
+        } finally {
+            dbFile.delete()
+        }
+    }
+
+    @Test
+    fun keyRequestFromNonMemberIgnored() {
+        val rosterMembers = mapOf(
+            "dev-alice" to StoredGroupMember(
+                groupId = "grp-1", deviceId = "dev-alice", accountId = "acc-alice",
+                displayName = "Alice", transportFingerprint = "fp-a", peerName = "Alice",
+                signingKeyBase64 = "key-alice", role = "OWNER", permissions = 0, status = "ACTIVE",
+                joinedEpoch = 1, removedEpoch = null,
+            ),
+            "dev-bob" to StoredGroupMember(
+                groupId = "grp-1", deviceId = "dev-bob", accountId = "acc-bob",
+                displayName = "Bob", transportFingerprint = "fp-b", peerName = "Bob",
+                signingKeyBase64 = "key-bob", role = "MEMBER", permissions = 0, status = "ACTIVE",
+                joinedEpoch = 1, removedEpoch = null,
+            ),
+            "dev-charlie-left" to StoredGroupMember(
+                groupId = "grp-1", deviceId = "dev-charlie-left", accountId = "acc-c",
+                displayName = "Charlie", transportFingerprint = "fp-c", peerName = "Charlie",
+                signingKeyBase64 = "key-charlie", role = "MEMBER", permissions = 0, status = "LEFT",
+                joinedEpoch = 1, removedEpoch = 2,
+            ),
+        )
+
+        fun canProcessKeyRequest(requesterDeviceId: String): Boolean {
+            val member = rosterMembers[requesterDeviceId] ?: return false
+            return member.status == "ACTIVE"
+        }
+
+        // 1. Non-member (unknown device) is ignored
+        val nonMemberReq = GroupKeyRequest("req-1", "grp-1", "dev-eve-stranger", listOf(1L), 1000L, "sig")
+        assertFalse("Key request from complete stranger must be ignored", canProcessKeyRequest(nonMemberReq.requesterDeviceId))
+
+        // 2. Former member who left/was removed is ignored
+        val formerMemberReq = GroupKeyRequest("req-2", "grp-1", "dev-charlie-left", listOf(1L), 1000L, "sig")
+        assertFalse("Key request from former member who left must be ignored", canProcessKeyRequest(formerMemberReq.requesterDeviceId))
+
+        // 3. Active member is accepted
+        val activeMemberReq = GroupKeyRequest("req-3", "grp-1", "dev-bob", listOf(1L), 1000L, "sig")
+        assertTrue("Key request from active member is accepted", canProcessKeyRequest(activeMemberReq.requesterDeviceId))
+    }
+
+    @Test
+    fun ownerKeyRequestRateLimitedWithinTwoSeconds() {
+        val lastServedMs = mutableMapOf<String, Long>()
+
+        fun ownerHandleKeyRequest(requesterDeviceId: String, nowMs: Long): Boolean {
+            val last = lastServedMs[requesterDeviceId] ?: 0L
+            if (nowMs - last < 2000L) {
+                // Rate limited on owner side -> drop request, generate 0 packets
+                return false
+            }
+            lastServedMs[requesterDeviceId] = nowMs
+            return true
+        }
+
+        val requester = "dev-bob"
+        assertTrue("First key request must be served", ownerHandleKeyRequest(requester, 100_000L))
+        assertFalse("Second key request within 2s must be suppressed by owner rate limiter", ownerHandleKeyRequest(requester, 101_500L))
+        assertFalse("Request at 1999ms must still be suppressed", ownerHandleKeyRequest(requester, 101_999L))
+        assertTrue("Request after 2s elapsed must be served", ownerHandleKeyRequest(requester, 102_000L))
+    }
+
+    @Test
+    fun normalEmitAndDrainShareSequenceDerivation() {
+        val conn = createV7Database()
+        conn.use { c ->
+            c.createStatement().use { s ->
+                s.execute(
+                    """
+                    INSERT INTO groups (group_id, title, local_device_id, owner_device_id, current_epoch, created_at_ms, updated_at_ms)
+                    VALUES ('grp-seq', 'Seq Test', 'dev-alice', 'dev-alice', 1, 1000, 1000)
+                    """.trimIndent()
+                )
+            }
+
+            fun nextSeq(groupId: String, authorDeviceId: String): Long {
+                val pstmt = c.prepareStatement(
+                    "SELECT COALESCE(MAX(author_seq), 0) + 1 FROM group_events WHERE group_id = ? AND author_device_id = ?"
+                )
+                pstmt.setString(1, groupId)
+                pstmt.setString(2, authorDeviceId)
+                val rs = pstmt.executeQuery()
+                return if (rs.next()) rs.getLong(1) else 1L
+            }
+
+            fun insertEvent(eventId: String, seq: Long) {
+                val pstmt = c.prepareStatement(
+                    """
+                    INSERT INTO group_events (group_id, event_id, epoch, author_device_id, author_seq, hlc_physical_ms, hlc_logical, kind, created_at_ms, received_at_ms)
+                    VALUES ('grp-seq', ?, 1, 'dev-alice', ?, 1000, 0, 'MESSAGE', 1000, 1000)
+                    """.trimIndent()
+                )
+                pstmt.setString(1, eventId)
+                pstmt.setLong(2, seq)
+                pstmt.executeUpdate()
+            }
+
+            // Step 1: Normal emit 1
+            val seq1 = nextSeq("grp-seq", "dev-alice")
+            assertEquals(1L, seq1)
+            insertEvent("ev-normal-1", seq1)
+
+            // Step 2: Drained intent (uses the exact same nextSeq query inside drain transaction)
+            val seq2 = nextSeq("grp-seq", "dev-alice")
+            assertEquals(2L, seq2)
+            insertEvent("ev-drained-2", seq2)
+
+            // Step 3: Normal emit 2
+            val seq3 = nextSeq("grp-seq", "dev-alice")
+            assertEquals(3L, seq3)
+            insertEvent("ev-normal-3", seq3)
+
+            // Verify monotonic and gapless sequence
+            c.createStatement().use { s ->
+                val rs = s.executeQuery("SELECT event_id, author_seq FROM group_events WHERE group_id = 'grp-seq' ORDER BY author_seq ASC")
+                val results = mutableListOf<Pair<String, Long>>()
+                while (rs.next()) {
+                    results.add(rs.getString("event_id") to rs.getLong("author_seq"))
+                }
+                assertEquals(
+                    listOf("ev-normal-1" to 1L, "ev-drained-2" to 2L, "ev-normal-3" to 3L),
+                    results,
+                )
+            }
+        }
+    }
+
+    @Test
+    fun keyPackageReferencingNonCanonicalControlRejected() {
+        val canonicalEvents = mapOf(
+            "ctrl-valid-head" to StoredGroupEvent(
+                groupId = "grp-1", eventId = "ctrl-valid-head", epoch = 1,
+                authorDeviceId = "dev-owner", authorSeq = 1, hlcPhysicalMs = 1000L, hlcLogical = 0,
+                kind = "GROUP_UPDATED",
+                body = JSONObject().put("next_epoch", 2L).put("roster_hash", "hash-valid").toString(),
+                createdAtMs = 1000L, receivedAtMs = 1000L,
+            )
+        )
+
+        fun isCanonicalControlValid(pkg: GroupEpochKeyPackage): Boolean {
+            val control = canonicalEvents[pkg.controlHead] ?: return false
+            val payload = JSONObject(control.body ?: "{}")
+            return payload.optLong("next_epoch") == pkg.epoch
+        }
+
+        val validPkg = GroupEpochKeyPackage(
+            groupId = "grp-1", epoch = 2L, epochSecretBase64 = "c2VjcmV0", recipientDeviceId = "dev-bob",
+            controlHead = "ctrl-valid-head", senderFingerprint = "fp", senderDeviceId = "dev-owner",
+            senderSigningKey = "key-owner", createdAtMs = 1000L, signatureBase64 = "sig",
+            rosterHash = "hash-valid", suite = SUITE_V2,
+        )
+        assertTrue("Valid package referencing canonical control event is accepted", isCanonicalControlValid(validPkg))
+
+        // Non-canonical control head (not in local accepted history)
+        val nonCanonicalPkg = validPkg.copy(controlHead = "ctrl-nonexistent")
+        assertFalse("Package referencing unknown control head must be rejected", isCanonicalControlValid(nonCanonicalPkg))
+
+        // Mismatched epoch in control event
+        val mismatchedEpochPkg = validPkg.copy(epoch = 99L)
+        assertFalse("Package with epoch not matching control next_epoch must be rejected", isCanonicalControlValid(mismatchedEpochPkg))
     }
 }

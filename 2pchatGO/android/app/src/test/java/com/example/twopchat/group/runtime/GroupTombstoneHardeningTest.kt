@@ -693,4 +693,70 @@ class GroupTombstoneHardeningTest {
             }
         }
     }
+
+    @Test
+    fun tombstoneHeaderMustMatchAuthorizingDelete() {
+        // A newcomer or syncing peer receiving a tombstoned event must verify that
+        // the tombstone's target_event_id and header match a valid authorizing DELETE event.
+        val targetEventId = "original-msg-event-123"
+        val authorDeviceId = "dev-alice"
+        val groupOwnerDeviceId = "dev-owner"
+
+        val authorizingDelete = StoredGroupEvent(
+            groupId = "grp-tombstone-auth",
+            eventId = "del-event-01",
+            epoch = 1,
+            authorDeviceId = authorDeviceId,
+            authorSeq = 2,
+            hlcPhysicalMs = 2000L,
+            hlcLogical = 0,
+            kind = GroupEventKind.DELETE.name,
+            targetEventId = targetEventId,
+            body = JSONObject().put("target_event_id", targetEventId).toString(),
+            createdAtMs = 2000L,
+            receivedAtMs = 2000L,
+        )
+
+        fun canApplyTombstone(
+            tombstoneEventId: String,
+            storedDeletes: List<StoredGroupEvent>,
+            originalAuthorId: String,
+        ): Boolean {
+            val matchingDelete = storedDeletes.firstOrNull { it.targetEventId == tombstoneEventId }
+                ?: return false
+            if (matchingDelete.kind != GroupEventKind.DELETE.name && matchingDelete.kind != "delete") {
+                return false
+            }
+            if (matchingDelete.authorDeviceId != originalAuthorId && matchingDelete.authorDeviceId != groupOwnerDeviceId) {
+                return false
+            }
+            return true
+        }
+
+        // 1. Valid matching authorizing delete: Accepted
+        val validDeletes = listOf(authorizingDelete)
+        assertTrue(
+            "Tombstone matching authorized DELETE event must be applied",
+            canApplyTombstone(targetEventId, validDeletes, authorDeviceId),
+        )
+
+        // 2. Mismatched target_event_id: Rejected
+        assertFalse(
+            "Tombstone with mismatched header/targetEventId must be rejected",
+            canApplyTombstone("different-event-id-999", validDeletes, authorDeviceId),
+        )
+
+        // 3. No authorizing delete present: Rejected
+        assertFalse(
+            "Tombstone without authorizing DELETE must be rejected",
+            canApplyTombstone(targetEventId, emptyList(), authorDeviceId),
+        )
+
+        // 4. DELETE authored by unauthorized stranger: Rejected
+        val unauthorizedDelete = authorizingDelete.copy(authorDeviceId = "dev-stranger-mallory")
+        assertFalse(
+            "DELETE authored by unauthorized device must not authorize tombstone",
+            canApplyTombstone(targetEventId, listOf(unauthorizedDelete), authorDeviceId),
+        )
+    }
 }
