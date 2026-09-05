@@ -356,6 +356,15 @@ object AppUpdateManager {
         return try {
             if (!apkFile.exists() || apkFile.length() <= 0) return false
 
+            val currentVc = getCurrentVersionCode(context)
+            val verification = UpdateVerifier(
+                currentVersionCode = currentVc,
+                expectedPackageName = context.packageName
+            ).verify(apkFile)
+            if (verification !is UpdateVerifier.Result.Ok) {
+                return false
+            }
+
             val authority = "${context.packageName}.fileprovider"
             val apkUri = FileProvider.getUriForFile(context, authority, apkFile)
 
