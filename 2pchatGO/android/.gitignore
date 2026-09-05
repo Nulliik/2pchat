@@ -12,4 +12,6 @@ core-go/bin/
 *.test
 *.prof
 *.log
+egress_reports/
+*.pcap
 
