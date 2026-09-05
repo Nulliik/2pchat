@@ -126,11 +126,11 @@ func TestRedTeamZeroizationAudit(t *testing.T) {
 
 // TestRedTeamYamuxMaxFrameBounds tests that oversized frames cannot exhaust memory.
 func TestRedTeamYamuxMaxFrameBounds(t *testing.T) {
-	// Frame size > MaxFrameSize (16MB) must be rejected
+	// Frame size > MaxFrameSize (2MB) must be rejected
 	var oversizedBuf bytes.Buffer
-	oversizedBuf.Write([]byte{0x01, 0x00, 0x00, 0x01}) // 16MB + 1 byte length header
+	oversizedBuf.Write([]byte{0x00, 0x20, 0x00, 0x01}) // 2MB + 1 byte length header
 
-	_, err := transport.ReadFromStream(&oversizedBuf, 16*1024*1024)
+	_, err := transport.ReadFromStream(&oversizedBuf, transport.MaxFrameSize)
 	if err == nil {
 		t.Errorf("Expected rejection of frame exceeding MaxFrameSize")
 	}

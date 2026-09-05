@@ -11,8 +11,8 @@ import (
 const (
 	// FrameHeaderSize is 4 bytes (big-endian uint32 length prefix).
 	FrameHeaderSize = 4
-	// MaxFrameSize is 16 MB.
-	MaxFrameSize = 16 * 1024 * 1024
+	// MaxFrameSize is 2 MB (SEC-04 DoS mitigation; max application message / file chunk is 256 KB).
+	MaxFrameSize = 2 * 1024 * 1024
 	// MaxHandshakeSize is 16 KB.
 	MaxHandshakeSize = 16 * 1024
 	// InitialChunkSize limits upfront allocation before payload bytes arrive.
