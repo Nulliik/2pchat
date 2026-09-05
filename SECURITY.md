@@ -36,18 +36,20 @@ In-scope security topics:
 
 ---
 
-## Supported Versions
+## Maintenance scope
+
+The former 1.4.x support table did not match the application version declared in Gradle. This repository does not establish a maintained-release support window; include the exact APK version and commit in reports.
 
 | Version | Supported |
 | :--- | :--- |
-| `1.4.x` (Go Core v1.4 / Android) | :white_check_mark: |
-| `< 1.4.0` | :x: |
+| Primary Android source (`2pchatGO/android`) | Current development target |
+| Previous Chaquopy client | Compatibility tree; not the release CI target |
 
 ---
 
 ## Security Invariants & Hardening Guidelines
 
-2PChat enforces the following security invariants across its codebase:
-1. **Zero-Trust Networking:** All peer communications are End-to-End Encrypted (E2EE) using Double Ratchet session keys. Trackers and relays only see obfuscated hashes and blind tokens.
-2. **Memory Hygiene:** Sensitive private keys, pre-keys, and intermediate Diffie-Hellman secrets are zeroized in RAM immediately after use.
+The following are engineering goals; their implementation and residual limits must be evaluated per client:
+1. **Zero-Trust Networking:** Pairwise sessions use authenticated encryption; groups use epoch encryption over pairwise transport. Discovery and routing can expose network metadata.
+2. **Memory Hygiene:** Minimize secret lifetimes and clear buffers where supported. Managed runtimes and library copies prevent a blanket guarantee of immediate RAM zeroization.
 3. **No Central Servers:** No central authentication, message storage, or contact directories exist. All discovery is decentralized (BEP 15, mDNS, Tor v3, Yggdrasil).

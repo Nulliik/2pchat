@@ -1,13 +1,13 @@
 # P2P Encrypted Messenger
 
-A modular, transport-agnostic encrypted messenger scaffold. Supports direct IPv4/IPv6
-and Yggdrasil IPv6 addresses out of the box with a simple CLI chat. Designed so new
-transports (Tor, Meshtastic, LoRa, Bluetooth, I2P) and a Kivy GUI can be added later.
+Python reference implementation with CLI, Kivy GUI and FastAPI backend. Supports direct IPv4/IPv6, Yggdrasil and proxy routing. The primary Android client uses a Go core; see the [repository overview](../README.md).
+
+Commands below run from the repository root with your virtual environment active.
 
 ## Quick start
 
 ```bash
-python -m pip install -r requirements.txt
+python -m pip install -r messenger/requirements.txt
 ```
 
 ### Start a listener
@@ -142,7 +142,7 @@ warn you if a different fingerprint later tries to reuse it.
 Typical flow when you and a friend want to chat:
 
 1. Each person opens **Identity → Show** (GUI) or runs `python -m
-   messenger.app.cli_chat --command show-identity --port 4444` (CLI) and shares
+   messenger.app.cli_chat --show-identity` (CLI) and shares
    the displayed fingerprint/QR out of band.
 2. You start listening or rendezvous and dial your friend using their address,
    providing a label for them:
@@ -222,60 +222,15 @@ unchanged.
 See [ROADMAP.md](./ROADMAP.md) for the current status and planned work.
 
 
-## Web UI (React + TypeScript + FastAPI)
+## Web backend
 
-A minimal browser UI is available for automated frontend testing. It includes a
-Telegram-style header/presence chip, destination/settings controls (host/bind/port), chat log, and composer
-backed by a FastAPI WebSocket endpoint.
+The FastAPI backend is present:
 
-One-command launcher (recommended):
-
-```bash
-python -m messenger.app.web_launcher
-```
-
-This starts both backend (`:8000`) and frontend (`:5173`) together.
-Use `Ctrl+C` to stop both. Add `--install` to auto-run `npm install` first.
-
-Manual backend start (if needed):
-
-```bash
+```sh
 python -m messenger.app.web_api
 ```
 
-Windows notes:
-
-- If you run the file directly (for example `python messenger/app/web_api.py`) and see
-  `ModuleNotFoundError: No module named "messenger"`, start it as a module from the
-  repository root instead:
-
-  ```powershell
-  cd C:\path\to\2pchat
-  python -m messenger.app.web_api
-  ```
-
-- One-command launcher on Windows (from repo root):
-
-  ```powershell
-  python -m messenger.app.web_launcher --install
-  ```
-
-- Alternative with uvicorn:
-
-  ```powershell
-  cd C:\path\to\2pchat
-  python -m uvicorn messenger.app.web_api:app --host 0.0.0.0 --port 8000
-  ```
-
-Start frontend (new terminal):
-
-```bash
-cd webui
-npm install
-npm run dev -- --host 0.0.0.0 --port 5173
-```
-
-Open `http://localhost:5173`. The UI connects to `ws://localhost:8000/ws/chat`.
+The WebSocket endpoint is `/ws/chat`. The React `webui/` directory is absent from this checkout. `web_launcher` still expects that directory, so it cannot start a complete browser UI until the frontend is supplied.
 
 ## Kivy GUI
 
@@ -365,7 +320,7 @@ This repository now includes a concrete PyInstaller setup for the Kivy GUI:
 ./scripts/build_macos.sh
 ```
 
-The CI workflow runs on tag pushes like `v1.0.0` (or manual dispatch), builds
+The CI workflow runs on tag pushes like `desktop-v1.0.0` (or manual dispatch), builds
 for both Windows and macOS, and uploads release artifacts.
 
 ### Install macOS release artifact (simplest path)
@@ -386,29 +341,11 @@ open /Applications/2PChat.app
 
 This keeps installation to one zip download plus drag-and-drop.
 
-## Security posture and gaps
+## Security scope
 
-The current stack delivers X25519-based forward secrecy with HKDF key
-derivation, replay protection, TOFU fingerprints, and header obfuscation to keep
-identifiers off the wire. The **ROADMAP.md** includes a gap list against
-standard “must-have” criteria; notable items to evaluate or add include:
+Signed Ed25519 handshakes, session metadata and Double Ratchet are implemented; they are no longer future roadmap items. See [PROTOCOL.md](../docs/PROTOCOL.md) for exact versions and legacy compatibility, and [SECURITY.md](../SECURITY.md) for reporting.
 
-- An **AES-GCM** AEAD path for environments that require NIST-standard
-  primitives alongside the existing SecretBox/XSalsa20-Poly1305.
-- **Identity-bound signatures** (e.g., Ed25519/ECDSA) on session setup to bind
-  long-term keys beyond TOFU fingerprints and improve MITM resistance.
-- **Session IDs/key versioning** and explicit salts for downgrade detection plus
-  clearer out-of-band verification UX (QR/safety numbers).
-- **DoS/rate limiting** during handshakes and reconnect storms, and hooks for
-  hardware-backed/non-extractable identity keys where available.
-- **Logging hygiene** reviews to ensure verbose mode never emits key material or
-  plaintext.
-
-Upcoming hardening (tracked in the roadmap) includes identity-signed
-handshakes, explicit session IDs with key-versioning, pre-crypto rate limiting
-for inbound handshakes, reconnect backoff to avoid storming peers, and a logging
-pass that keeps packet sizes/versions visible without leaking key material or
-plaintext.
+TOFU on first contact still requires out-of-band identity verification. Group epoch encryption has different security properties from pairwise ratcheting; see [GROUP_CHAT_PROTOCOL.md](../docs/GROUP_CHAT_PROTOCOL.md).
 
 ## Testing and linting
 

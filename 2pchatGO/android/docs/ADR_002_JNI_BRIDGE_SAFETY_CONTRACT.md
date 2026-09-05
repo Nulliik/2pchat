@@ -37,6 +37,7 @@ Improper JNI handling can lead to critical defects:
 - Discarded intermediate progress updates do not allocate C strings or cross JNI.
 
 ## Consequences
-- Guaranteed zero JNI thread leaks or memory exhaustion under load.
-- Absolute deadlock freedom during simultaneous bidirectional messaging and peer state changes.
-- Smooth 60 FPS UI performance during gigabyte-scale background file transfers.
+
+These are implementation invariants and review requirements. They reduce attachment/reference leaks, lock reentrancy risk and callback pressure; they do not prove deadlock freedom, bounded memory under every workload or 60 FPS. Validate changes with Go concurrency tests, Android JNI tests and measured device workloads.
+
+Build and validation commands: [Android README](../README.md).

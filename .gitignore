@@ -226,11 +226,6 @@ outbox.json
 .2pchat_gui.pid
 Launch_2PChat_GUI.log
 
-# Android local/IDE files
-Android_App/.DS_Store
-Android_App/.idea/
-Android_App/android/local.properties
-
 # Android build outputs and machine-local configuration
 2PChat android/android/.gradle/
 2PChat android/android/.kotlin/
@@ -242,3 +237,8 @@ Android_App/android/local.properties
 2PChat android/android/app/src/main/python/
 *.apk
 *.aab
+
+# Local inspection artifacts
+/__tmp_*
+/tools/temp-ui.xml
+/.playwright-mcp/

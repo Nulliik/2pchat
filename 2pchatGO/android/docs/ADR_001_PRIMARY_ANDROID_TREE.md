@@ -1,37 +1,25 @@
-# ADR 001: 2pchatGO/android as the Primary Android Client
+# ADR 001: Primary Android tree
 
-## Status
-**Accepted** (2026-08-31)
-
-## Context
-The repository historically contained two Android client source trees:
-1. `2PChat android/android` — Legacy client utilizing Chaquopy (embedded Python interpreter for networking).
-2. `2pchatGO/android` — Modern client utilizing a compiled native Go core (`core-go/` compiled to `lib2pcore.so` via CGO/JNI).
-
-Maintaining parallel Android trees introduces severe maintenance risks, divergence of security patches, ambiguity in CI release gates, and developer friction.
+Status: accepted 2026-08-31; factual description updated 2026-09-05.
 
 ## Decision
-We establish **`2pchatGO/android`** as the single authoritative, primary Android application for 2PChat.
 
-The legacy `2PChat android` tree is hereby frozen and marked as archived.
+`2pchatGO/android` is the primary Android client and the target of `.github/workflows/android-release.yml`.
 
-## Comparison Matrix
+`2PChat android/android` is the previous Chaquopy client. It remains in the repository for compatibility and comparison; the release workflow does not build it. The earlier statement that this tree was frozen is not an accurate description of the repository: it contains later group and compatibility changes.
 
-| Dimension | Legacy Tree (`2PChat android/android`) | Primary Tree (`2pchatGO/android`) |
-|---|---|---|
-| **Core Architecture** | Python 3 (Chaquopy JNI embedding) | Native Go Core (`lib2pcore.so` via CGO/JNI) |
-| **Performance & Threading** | Restricted by Python Global Interpreter Lock (GIL) | Native goroutines, 0% GIL, hardware-accelerated crypto |
-| **Cryptography** | Python `cryptography` library / PyNaCl | Pure Go (`golang.org/x/crypto`), X3DH, Double Ratchet, memory zeroization |
-| **Network Engine** | Python `asyncio` / socket loops | Adaptive Go dialer, BEP 15 UDP & HTTP trackers, LAN beacons, UPnP, STUN, hole punching |
-| **Tor v3 Integration** | External binary spawn / SOCKS proxy | Tor control protocol integration + native fallback DNS |
-| **Yggdrasil Integration** | Standalone process / Python bridge | User-space Proxy & VPN PacketTunnelProvider with Go interop |
-| **Group Messaging** | Basic broadcast | Full Epoch-based Group Chat Coordinator with pairwise ratchet chains |
-| **Storage & Security** | SQLite / SharedPreferences | SQLCipher (AES-256 encrypted database), encrypted SharedPreferences |
-| **UI Framework** | Jetpack Compose + Material 3 | Jetpack Compose + Material 3, Motion system, Media viewer |
-| **Application ID** | `com.example.twopchat` | `com.example.twopchat.go` / `com.example.twopchat` |
-| **Active CI & Release** | Deprecated / Frozen | **Primary Release Target (`./gradlew assembleDebug` / `assembleRelease`)** |
+## Comparison
+
+| Area | Previous client | Primary client |
+| --- | --- | --- |
+| Native integration | Chaquopy, root Python package copied at build time | Go CGO/JNI, `lib2pcore.so` |
+| UI and group runtime | Kotlin / Compose | Kotlin / Compose |
+| Group storage | SQLCipher, schema v6 | SQLCipher, schema v7 |
+| Group cryptography | Python bridge for signatures | Native Go bridge for signatures |
+| Release CI | Not selected | Selected |
+
+No speedup or stronger cryptographic guarantee follows solely from the choice of implementation language. Group encryption uses epoch AES-GCM/Ed25519, not per-member group ratchet chains or MLS.
 
 ## Consequences
-- All new features, bug fixes, security hardening, and audits will be made strictly in `2pchatGO/android`.
-- CI release pipelines build exclusively from `2pchatGO/android`.
-- The legacy `2PChat android` directory remains in the repository solely for historical reference and is excluded from active build pipelines.
+
+Default Android feature work targets the primary tree. Compatibility work must explicitly identify whether both trees are involved. Do not remove the previous tree without migrating its references and tests. Build commands are maintained in [Android README](../README.md).

@@ -15,8 +15,8 @@ Treat the numeric values below as starting points for interfaces without an esta
 
 | Category | When to Use |
 | --- | --- |
-| [Grouping & Alignment](grouping-and-alignment.md) | Space vs separators, alignment edges, logical properties, importance ordering |
-| [Spacing & Adaptivity](spacing-and-adaptivity.md) | Spacing between targets, layout margins, progressive disclosure, full-bleed content, breakpoints, i18n growth |
+| Grouping & Alignment (companion file absent) | Space vs separators, alignment edges, logical properties, importance ordering |
+| Spacing & Adaptivity (companion file absent) | Spacing between targets, layout margins, progressive disclosure, full-bleed content, breakpoints, i18n growth |
 
 ## Core Principles
 

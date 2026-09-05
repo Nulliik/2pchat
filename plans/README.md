@@ -1,10 +1,11 @@
-# Animation & Motion Implementation Plans
+# Планы и исторические замечания
 
-This directory contains self-contained motion improvement plans created in accordance with `SKILL.md` and `SKILLanim.md`.
+Актуализировано 2026-09-05. Эти документы сохраняют исходные предложения и не являются автоматически действующим списком задач.
 
-## Recommended Execution Order
+| Документ | Текущий статус |
+| --- | --- |
+| [001: Motion enhancements](001-motion-enhancements.md) | Исторический план: `webui/` отсутствует; Android-часть требует сверки с выбранным деревом |
+| [002: Motion audit](002-motion-audit-improvements.md) | Частично реализован: `MotionTokens.kt` уже существует; не создавать его повторно |
+| [003: Список багов](003-bug-list.md) | Исторический список по lint/ручному аудиту; номера строк и счётчики не являются свежим lint-отчётом |
 
-| Plan | Title | Target Scope | Status |
-| --- | --- | --- | --- |
-| [001-motion-enhancements.md](file:///Users/kodzy/Documents/GitHub/2pchat/plans/001-motion-enhancements.md) | Motion & Animation Enhancements for 2PChat (WebUI & Android) | WebUI CSS/React & Android Jetpack Compose | PROPOSED |
-| [002-motion-audit-improvements.md](file:///Users/kodzy/Documents/GitHub/2pchat/plans/002-motion-audit-improvements.md) | Comprehensive Motion & Animation Audit Improvements | Android Jetpack Compose Motion System | PROPOSED |
+Основной Android-клиент: [2pchatGO/android](../2pchatGO/android/README.md). Текущие направления — [roadmap](../messenger/ROADMAP.md). Перед выполнением пункта необходимо подтвердить его наличие в текущем коде.

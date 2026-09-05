@@ -1,4 +1,6 @@
 # Отчёт об устранении уязвимостей сетевого транспорта и реализации NetworkPolicy
+
+> Статус документа уточнён 2026-09-05. Отчёт об отдельном изменении сетевой политики. Числа тестов относятся к описанному запуску, а не к постоянной гарантии качества.
 **Проект:** 2PChat (Android + Go Core)  
 **Дата:** 5 сентября 2026 г.  
 **Статус:** Реализовано и верифицировано (100% тестов пройдены)  
@@ -27,7 +29,7 @@
 ### 2.1 Авторитет политики контакта в ядре Go (Вопрос 1)
 * **Проблема:** До правок политика контакта (`policyFlags`) передавалась только точечно в `ConnectPeerWithPolicy`. При фоновом автореконнекте (`connectPeerInternal`) или входящем подключении через слушающий сокет ядро использовало общую глобальную политику, что создавало уязвимость: контакт `TOR_ONLY` мог связаться или переподключиться по незащищённому clearnet TCP.
 * **Решение:**
-  * В [`core-go/pkg/session/manager.go`](file:///Users/kodzy/Documents/GitHub/2pchat/2pchatGO/android/core-go/pkg/session/manager.go) добавлено хранилище политик пиров:
+  * В [`core-go/pkg/session/manager.go`](../core-go/pkg/session/manager.go) добавлено хранилище политик пиров:
     ```go
     peerPolicies map[string]transport.NetworkPolicy
     ```
@@ -47,7 +49,7 @@
 ### 2.2 Обработка конфликтов политик в UI (Вопрос 2)
 * **Проблема:** Если глобально активирован `Tor Strict` (`AllowOnion = true`, остальные `false`), а для контакта выставлен `DIRECT_ONLY` (`AllowLAN | AllowWAN`) или `YGGDRASIL_ONLY`, их пересечение даёт пустое множество (`IsDenyAll() == true`). Без специального события пользователь видел бы бесконечную попытку подключения без объяснения причин.
 * **Решение:**
-  * В [`app/src/main/java/com/example/twopchat/tor/TransportEventManager.kt`](file:///Users/kodzy/Documents/GitHub/2pchat/2pchatGO/android/app/src/main/java/com/example/twopchat/tor/TransportEventManager.kt) добавлено событие:
+  * В [`app/src/main/java/com/example/twopchat/tor/TransportEventManager.kt`](../app/src/main/java/com/example/twopchat/tor/TransportEventManager.kt) добавлено событие:
     ```kotlin
     data class PolicyConflict(
         val peerName: String,
@@ -55,7 +57,7 @@
         val globalPolicy: String
     ) : TransportEvent()
     ```
-  * В [`NativeBridgeImpl.kt`](file:///Users/kodzy/Documents/GitHub/2pchat/2pchatGO/android/app/src/main/java/com/example/twopchat/bridge/NativeBridgeImpl.kt) в методе `reconnectPeerSession` добавлена проверка конфликта:
+  * В [`NativeBridgeImpl.kt`](../app/src/main/java/com/example/twopchat/bridge/NativeBridgeImpl.kt) в методе `reconnectPeerSession` добавлена проверка конфликта:
     ```kotlin
     val isTorStrict = ProxyConfig.getEffectiveProxyConfig(context).enabled &&
         P2PPreferences.isTorStrictMode(context)
@@ -71,18 +73,18 @@
 ### 2.3 Валидация битовых флагов политики на границе JNI (Вопрос 3)
 * **Проблема:** Передача сырого `jint` через JNI без проверки маски несла риски некорректных внутренних состояний и паник при некорректных флагах.
 * **Решение:**
-  * В [`core-go/pkg/transport/policy.go`](file:///Users/kodzy/Documents/GitHub/2pchat/2pchatGO/android/core-go/pkg/transport/policy.go) реализована функция `ValidateFlags(flags int) error`:
+  * В [`core-go/pkg/transport/policy.go`](../core-go/pkg/transport/policy.go) реализована функция `ValidateFlags(flags int) error`:
     - Проверяет маску `PolicyAllFlagsMask = 0x1F` (отклоняет нераспределённые биты).
     - Запрещает `flags != 0`, не разрешающие ни один транспорт (deny-all).
     - Запрещает `AllowLocalDNS` без `AllowLAN` или `AllowWAN`.
     - Запрещает `AllowWAN` без `AllowLAN`.
     - Запрещает одиночный `AllowYggdrasil` без clearnet или Tor.
-  * В [`core-go/cmd/lib2pcore/main.go`](file:///Users/kodzy/Documents/GitHub/2pchat/2pchatGO/android/core-go/cmd/lib2pcore/main.go) валидация встроена во все нативные методы JNI: `nativeApplyPolicy`, `nativeConnectPeer`, `nativeProbePeer`, `nativeSetPeerPolicy`.
+  * В [`core-go/cmd/lib2pcore/main.go`](../core-go/cmd/lib2pcore/main.go) валидация встроена во все нативные методы JNI: `nativeApplyPolicy`, `nativeConnectPeer`, `nativeProbePeer`, `nativeSetPeerPolicy`.
 
 ### 2.4 Защита от DNS-утечек до системного резолвера (Вопрос 4)
 * **Проблема:** Если диалер вызывал `net.Resolver` до оценки флага `AllowLocalDNS`, ОС Android отправляла UDP-запрос к системному DNS провайдера, раскрывая посещаемые домены.
 * **Решение:**
-  * В [`core-go/pkg/transport/dialer.go`](file:///Users/kodzy/Documents/GitHub/2pchat/2pchatGO/android/core-go/pkg/transport/dialer.go) в `DialContext` добавлена проверка хоста перед любым вызовом резолвера:
+  * В [`core-go/pkg/transport/dialer.go`](../core-go/pkg/transport/dialer.go) в `DialContext` добавлена проверка хоста перед любым вызовом резолвера:
     ```go
     isIP := net.ParseIP(host) != nil
     isOnion := strings.HasSuffix(strings.ToLower(host), ".onion")
@@ -112,7 +114,7 @@
 ### 2.6 Бэкфилл в миграции базы данных v14 (Вопрос 6)
 * **Проблема:** Ранее при миграции v13 $\rightarrow$ v14 колонка `transport_policy` заполнялась дефолтным нулём (`AUTO`). Контакты, с которыми пользователь общался строго по Tor, могли незаметно переключиться на clearnet при получении обычного IP.
 * **Решение:**
-  * В [`ChatDatabaseHelper.kt`](file:///Users/kodzy/Documents/GitHub/2pchat/2pchatGO/android/app/src/main/java/com/example/twopchat/data/ChatDatabaseHelper.kt) в блоке `oldVersion < 14` добавлен SQL-запрос:
+  * В [`ChatDatabaseHelper.kt`](../app/src/main/java/com/example/twopchat/data/ChatDatabaseHelper.kt) в блоке `oldVersion < 14` добавлен SQL-запрос:
     ```kotlin
     db.execSQL(
         "UPDATE $TABLE_PEERS SET $KEY_TRANSPORT_POLICY = 2 " +

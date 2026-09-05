@@ -1,12 +1,12 @@
 # Групповые чаты 2PChat: фактическая Android-реализация
 
-Статус: групповой runtime реализован и подключён к Android-приложению.
+Сверено 2026-09-05. Основная область документа — `2pchatGO/android`; различия предыдущего Chaquopy-клиента указаны отдельно.
 
 - версия JSON wire-протокола: `1`;
-- версия отдельной SQLCipher-схемы групп: `3`;
+- версия отдельной SQLCipher-схемы групп: `7` в Go-клиенте, `6` в Chaquopy-клиенте;
 - транспорт: существующие аутентифицированные pairwise-сессии 2PChat;
 - модель доставки: реплицируемый журнал событий, durable outbox и anti-entropy;
-- криптографический suite: `2pchat-epoch-aes256gcm-ed25519-v1`.
+- криптографические suites: `2pchat-epoch-aes256gcm-ed25519-v2` и совместимость с v1.
 
 Документ описывает текущий код, а не желаемую архитектуру. В частности, это
 уже не только набор моделей: `GroupChatCoordinator` обрабатывает групповые
@@ -62,16 +62,16 @@ content-addressed вложения, outbox и anti-entropy. Заменить н�
 - изменение названия и описания;
 - локальный журнал административных действий;
 - offline-first отправка, retry, ACK, синхронизация после reconnect;
-- уведомления, счётчик непрочитанных и cursor-пагинация истории.
+- уведомления, счётчик непрочитанных и cursor-пагинация истории;
+- приглашения по capability-ссылке, опросы, typing presence и локальный mute.
 
 Не реализованы как законченные пользовательские функции:
 
 - RFC 9420 MLS;
-- публичные группы, username/link join и управляемые invite links;
+- публичный каталог групп и username join;
 - настоящий multi-device account: `device_id` сейчас детерминирован от одного
   transport fingerprint;
-- поиск, mute-настройки группы, topics/threads и broadcast channels;
-- UI/отправка typing presence, хотя wire enum `TYPING` существует;
+- topics/threads и broadcast channels;
 - серверная или иерархическая инфраструктура для сотен тысяч участников;
 - Byzantine-safe согласование при злонамеренном fork владельца.
 
@@ -117,8 +117,7 @@ Runtime различает:
 - `peer_name` — транспортное имя контакта;
 - Ed25519 verification key — ключ подписи событий устройства.
 
-Локальный Ed25519 private key остаётся в канонической Python identity
-реализации. Kotlin получает verification key и вызывает bridge для подписи.
+Локальный Ed25519 private key обслуживается криптографическим bridge: Go NativeBridge в основном клиенте, Python identity в Chaquopy-клиенте. Kotlin получает verification key и вызывает bridge для подписи.
 
 Для входящего события недостаточно ключа из самого envelope. Runtime находит
 автора в принятом roster и требует одновременно:
@@ -744,7 +743,7 @@ Outbox запускается:
 
 Периодический worker имеет ограничение `NetworkType.CONNECTED` и минимальный
 Android-интервал 15 минут. Перед обращением к group runtime worker запускает
-Python/Chaquopy, инициализирует `PythonBridge` и требует доступную
+bridge клиента: `NativeBridge` в Go-дереве или `PythonBridge` в Chaquopy-дереве и требует доступную
 криптографическую identity; исключение, вышедшее из `doWork`, возвращает
 WorkManager `Result.retry`. Если startup recovery ранее не завершился,
 `runAntiEntropy` повторяет `reconcileDurableState` перед outbox/sync. Ошибка
@@ -759,7 +758,7 @@ WorkManager `Result.retry`. Если startup recovery ранее не завер
 ### Serialized control: полный roster fan-out
 
 `GROUP_UPDATED`, `MEMBER_ADDED`, `MEMBER_REMOVED`, `ROLE_CHANGED`,
-`MEMBER_RESTRICTED` и `OWNERSHIP_TRANSFERRED` не ограничиваются HRW-16.
+`MEMBER_RESTRICTED` и `OWNERSHIP_TRANSFERRED` не ограничиваются HRW-репликами.
 Исходный owner создаёт durable outbox-задачу каждому participating member,
 активному в эпохе control event. Это полный fan-out по активному roster — вплоть
 до общего лимита 10 000 участников.
@@ -771,55 +770,17 @@ WorkManager `Result.retry`. Если startup recovery ранее не завер
 управления — `O(N)` outbox/rekey и отсутствие Telegram-подобной
 масштабируемости control plane.
 
-### Обычные события до 128 получателей
+### Обычные события
 
-Каждое обычное событие получает durable outbox-задачу для каждого активного
-получателя. Это полная репликация с быстрым real-time fan-out. Serialized
-control при этом всегда следует правилу полного roster fan-out выше.
+До 32 получателей создаются прямые durable outbox-задачи. Для больших групп выбираются три стабильные HRW-реплики author feed и до трёх подключённых соседей детерминированного кольца. Каждый первый получатель ретранслирует событие один раз; идемпотентность журнала препятствует повторному применению.
 
-### Обычные события более чем для 128 получателей
+Serialized membership control сохраняет полный fan-out. Пропуски восстанавливает anti-entropy. Лимит roster 10 000 — ограничение модели и парсера, а не результат испытания 10 000 устройств. Ротация ключа и изменения членства остаются O(N).
 
-Для каждого author feed по `author_device_id` выбираются 16 стабильных реплик
-методом highest random weight (rendezvous hashing). Все события одного автора
-поэтому имеют одинаковый основной replica set. Выбор:
-
-- детерминирован;
-- не зависит от порядка входного roster;
-- минимально меняется при исчезновении узла.
-
-Кроме HRW-16 событие отправляется всем сейчас подключённым peers, но общий
-непосредственный fan-out ограничен 128 получателями. Офлайн-участники
-восстанавливают пропуски через anti-entropy после подключения.
-
-Чтобы реплики не умножали fan-out, только первая HRW-реплика author feed
-является primary relay. Когда она впервые сохраняет событие, она создаёт
-durable relay-задачи для остальных назначенных/подключённых получателей.
-Остальные реплики событие повторно не ретранслируют. В малой группе исходный
-автор делает полный fan-out, а получатели не relay-ят его дальше.
-
-Target обычной привилегированной операции и owner для `control_proposal`
-принудительно добавляются в recipients, даже если HRW их не выбрал. Сами
-serialized controls используют полный fan-out, описанный выше.
-
-Runtime использует `ReplicaPlanner.aggregateDelivery` для UI storage quorum до
-трёх получателей, но автоматическая замена failed replica по результату ACK не
-подключена. HRW-16 задаёт размещение, primary relay и последующий repair, а не
-consensus/quorum из 16 узлов.
-
-Это peer-to-peer масштабирование, а не эквивалент Telegram server fan-out.
-Модель и симуляция проверяют HRW на roster из 10 000 участников, а wire/parser
-ограничивают roster тем же числом. Но реальная группа такого размера всё ещё
-имеет дорогие pairwise sync, хранение roster, rekey `O(N)` и зависимость от
-доступности мобильных реплик. Для десятков/сотен тысяч подписчиков понадобятся
-долгоживущие недоверенные storage relays или иерархический gossip, leases,
-backpressure, retention и агрегированное состояние прочтения.
+Подробнее о моделировании и границах сетевой проверки: [аудит переноса](GROUP_PORT_AUDIT_2026-09-05.md).
 
 ## 13. Anti-entropy и восстановление gaps
 
-При установлении pairwise-сессии клиент запускает sync непосредственно с этим
-participating member. Периодический worker выбирает не более трёх подключённых
-participating peers на группу; если их больше, используется детерминированный
-HRW-выбор по group ID и local device ID.
+На группу допускается один sync-сеанс и один ожидаемый ответ. Курсоры отправляются последовательно; ответ связывается с request ID, группой и аутентифицированным пиром. Таймаут ожидания — 15 секунд; после отсутствия ответа или трёх пакетов без прогресса выбирается другой пир. Периодический путь рассматривает до трёх пиров, постепенно меняя выбор. Reconnect повторяет ключевой пакет только для подключившегося участника.
 
 - roster feed IDs разбиваются по 256 cursors на request;
 - cursor — последний непрерывный author sequence, а не просто максимум;
@@ -954,7 +915,7 @@ ciphertext blocks другой группы. Для каждой пары `(grou
 Автор всегда является seed. Дополнительные 16 seed-реплик выбираются по
 `author_device_id` из того же participating candidate set, что и HRW-доставка
 обычных событий. Поэтому attachment placement **совпадает с author-feed
-HRW-16**, а не вычисляется отдельно по media `event_id`. Периодический repair
+HRW-3**, а не вычисляется отдельно по media `event_id`. Периодический repair
 просматривает до 1000 последних событий и запрашивает недостающие блоки media
 objects, назначенных локальному устройству. Явная загрузка из UI также
 возобновляет отсутствующие блоки.
@@ -1064,7 +1025,7 @@ control операции, runtime повторно использует уже �
 
 Startup recovery имеет явный флаг незавершённости. Он снимается только после
 успешного прохода control chains и `reconcileDurableState`. Периодический
-worker перед recovery поднимает и проверяет Python crypto bridge; если identity
+worker перед recovery поднимает и проверяет crypto bridge выбранного клиента; если identity
 недоступна или наружу выходит другая ошибка worker, WorkManager возвращает
 `Result.retry`. `runAntiEntropy` сам ещё раз запускает durable recovery, если
 предыдущая попытка не сняла флаг; локально перехваченная ошибка reconcile
@@ -1119,9 +1080,9 @@ sender outbox и anti-entropy.
 | окно допустимого скачка author sequence | 4096 |
 | HLC logical counter | 0–1 000 000; затем physical `+1 ms`, logical `0` |
 | owner lineage transitions | 128 |
-| полный direct fan-out обычного event | 128 recipients |
+| полный direct fan-out обычного event | 32 recipients |
 | serialized control fan-out | весь активный roster, максимум 10 000 members |
-| HRW replicas большой группы | 16 |
+| HRW replicas большой группы | 3 |
 | periodic anti-entropy peers на группу | 3 |
 | due outbox batch runtime | 200 |
 | SQL query page | 1000 |
@@ -1207,7 +1168,7 @@ Android instrumented:
 - AES-GCM round trip, nonce uniqueness, AAD/key boundary и tamper rejection;
 - canonical event/invite/control/roster codecs и hostile bounds;
 - attachment request/block frames;
-- SQLCipher v3 schema/migration, restart persistence, dedup, cursor paging и
+- SQLCipher schema/migration (v7 Go / v6 Chaquopy), restart persistence, dedup, cursor paging и
   unread;
 - durable owner lineage и multipage roster pages после reopen, CAS control
   head, атомарные control/invite/snapshot/outbox операции;

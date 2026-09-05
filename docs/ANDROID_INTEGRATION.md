@@ -1,40 +1,36 @@
-# Android Integration
+# Android integration
 
-`Android_App/android` now uses the root Python messenger library as its source of truth.
+Updated against the repository on 2026-09-05.
 
-## How it works
+## Primary client: Go
 
-- The Android app keeps only the Android-specific bridge in `android/app/src/main/python/discovery_bridge.py`.
-- During Android builds, Gradle runs `syncMessengerPython`.
-- That task copies the current root Python package pieces from `messenger/` into `android/app/build/generated/python/main/messenger`.
-- Chaquopy includes that generated directory in the Python sources for the APK.
+[2pchatGO/android](../2pchatGO/android/README.md) is the release CI target. Kotlin calls `NativeBridge` / `bridge/NativeBridgeImpl`; native sources are in `core-go/`. Gradle's `buildGoCoreBinaries` task builds the JNI library when an NDK is available. Configure the NDK explicitly; see the Android README.
 
-## What to edit
+Group runtime, SQLCipher storage, ACL and Compose UI remain in Kotlin. Python tests check reference behavior and selected interoperability contracts; they do not replace Go or Android tests.
 
-- Edit shared protocol, session, discovery, crypto, and transport logic in the root package under `messenger/core` and `messenger/utils`.
-- Edit Android-specific Kotlin or bridge glue in `Android_App/android/app/src/main/java` and `Android_App/android/app/src/main/python/discovery_bridge.py`.
+## Previous client: Chaquopy
 
-## What not to do
+The actual directory is `2PChat android/android` (the old `Android_App/android` path no longer exists).
 
-- Do not reintroduce a second hand-maintained copy of `messenger` under `android/app/src/main/python/messenger`.
-- Do not patch Android protocol behavior only in the bridge if the same behavior belongs in the shared Python library.
+- Edit shared Python code and bridge glue in root `messenger/`, including `discovery_bridge.py` and `bootstrap.py`.
+- `syncCanonicalPythonCore` in `2PChat android/android/app/build.gradle.kts` copies the package and bridge entrypoints to `app/build/generated/python/main`.
+- `forbidDuplicatedPythonCore` prevents a second maintained Python copy under `app/src/main/python`.
+- Edit this client's Kotlin code under `2PChat android/android/app/src/main/java` only when working on compatibility with that client.
+
+Chaquopy runtime defaults to Python `3.11`; this is independent of the desktop interpreter. Overrides: `-PchaquopyRuntimePython`, `-PchaquopyBuildPython`, `CHAQUOPY_PYTHON_VERSION`, `CHAQUOPY_BUILD_PYTHON`.
 
 ## Validation
 
-Recommended checks after Python protocol changes:
+From repository root:
 
-1. `python -m pytest`
-2. `cd Android_App/android`
-3. `./gradlew.bat testDebugUnitTest`
-4. `./gradlew.bat assembleDebug`
+```sh
+python -m pip install -r messenger/requirements.txt
+python -m pytest
+```
 
-## Chaquopy Python selection
+For primary Android, follow its [build and test guide](../2pchatGO/android/README.md). To validate the previous client in PowerShell:
 
-The Android build defaults to Python `3.11`, matching the main repository environment.
-
-If a developer needs a different local interpreter path or version, override it without editing shared build files:
-
-- Gradle property: `-PchaquopyRuntimePython=3.11`
-- Gradle property: `-PchaquopyBuildPython=C:/Path/To/python.exe`
-- Environment variable: `CHAQUOPY_PYTHON_VERSION=3.11`
-- Environment variable: `CHAQUOPY_BUILD_PYTHON=C:/Path/To/python.exe`
+```powershell
+Set-Location '2PChat android/android'
+.\gradlew.bat testDebugUnitTest assembleDebug
+```

@@ -1,5 +1,7 @@
 # 📱 Подробный отчет о модернизации UI/UX мобильного приложения 2PChat
 
+> Статус документа уточнён 2026-09-05. Исторический отчёт об UI предыдущего Android-клиента. Python pytest не проверяет отрисовку и поведение Compose.
+
 ## 📝 Общая информация
 
 - **Проект**: 2PChat (P2P Encrypted Messenger)
@@ -26,7 +28,7 @@
 ## 🛠️ 2. Детальный перечень внесенных изменений
 
 ### 🎨 А. Оптимизация системы тем и токенов Material3
-**Файл**: [`Theme.kt`](file:///Users/kodzy/Documents/GitHub/2pchat/2PChat%20android/android/app/src/main/java/com/example/twopchat/theme/Theme.kt)
+**Файл**: [`Theme.kt`](../2PChat%20android/android/app/src/main/java/com/example/twopchat/theme/Theme.kt)
 
 - **Внедренные токены**: `outline`, `outlineVariant`, `surfaceContainer`, `surfaceContainerHigh`.
 - **Эффект**:
@@ -36,7 +38,7 @@
 ---
 
 ### 👥 Б. Очистка списка участников и ролей в группах
-**Файл**: [`GroupInfoScreen.kt`](file:///Users/kodzy/Documents/GitHub/2pchat/2PChat%20android/android/app/src/main/java/com/example/twopchat/group/ui/GroupInfoScreen.kt)
+**Файл**: [`GroupInfoScreen.kt`](../2PChat%20android/android/app/src/main/java/com/example/twopchat/group/ui/GroupInfoScreen.kt)
 
 1. **Единая палитра ролей (Правило 60/30/10)**:
    - Ранее роли именовались ядовитыми бордовыми, синими и салатовыми прямоугольниками.
@@ -55,7 +57,7 @@
 ---
 
 ### ✉️ В. Безопасные отступы жестовой навигации (Thumb Zone & Insets)
-**Файл**: [`GroupChatScreen.kt`](file:///Users/kodzy/Documents/GitHub/2pchat/2PChat%20android/android/app/src/main/java/com/example/twopchat/group/ui/GroupChatScreen.kt)
+**Файл**: [`GroupChatScreen.kt`](../2PChat%20android/android/app/src/main/java/com/example/twopchat/group/ui/GroupChatScreen.kt)
 
 - **Адаптация ввода (Composer)**:
   - К контейнеру ввода сообщений `GroupComposer` добавлен модификатор `.navigationBarsPadding()`.
@@ -64,7 +66,7 @@
 ---
 
 ### 💬 Г. Выравнивание сетки главного экрана
-**Файл**: [`ChatsTab.kt`](file:///Users/kodzy/Documents/GitHub/2pchat/2PChat%20android/android/app/src/main/java/com/example/twopchat/ui/main/ChatsTab.kt)
+**Файл**: [`ChatsTab.kt`](../2PChat%20android/android/app/src/main/java/com/example/twopchat/ui/main/ChatsTab.kt)
 
 - **8-Point Grid Alignment**:
   - Заголовки секций `ГРУППЫ` и `АКТИВНЫЕ СОЕДИНЕНИЯ` приведены к единому стандарту: шрифт `12.sp`, `FontWeight.SemiBold`, цвет `onSurfaceVariant` с `70% opacity`, отступы `top = 16.dp, bottom = 8.dp`.

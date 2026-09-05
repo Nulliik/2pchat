@@ -1,6 +1,8 @@
 # Plan 002: Comprehensive Motion & Animation Improvements for 2PChat
 
-**Commit**: `HEAD`  
+> Актуализация 2026-09-05: Частично реализованный план. MotionTokens.kt уже существует в обоих Android-деревьях; дальнейшие пункты требуют повторной проверки, а не повторного создания компонента.
+
+**Commit**: исходный commit аудита не зафиксирован
 **Scope**: 
 - `2PChat android/android/app/src/main/java/com/example/twopchat/theme/MotionTokens.kt` [NEW]
 - `2PChat android/android/app/src/main/java/com/example/twopchat/ui/main/ChatsTab.kt`
@@ -23,7 +25,7 @@ Audit against `SKILL.md` and `SKILLanim.md` revealed high-leverage opportunities
 ## Step 1: Create Centralized Motion Tokens (`MotionTokens.kt`)
 
 ### [NEW] `MotionTokens.kt`
-Path: [MotionTokens.kt](file:///Users/kodzy/Documents/GitHub/2pchat/2PChat%20android/android/app/src/main/java/com/example/twopchat/theme/MotionTokens.kt)
+Path: [MotionTokens.kt](../2PChat%20android/android/app/src/main/java/com/example/twopchat/theme/MotionTokens.kt)
 
 Create standardized motion specs:
 ```kotlin
@@ -71,7 +73,7 @@ object MotionTokens {
 ## Step 2: GPU Layer Acceleration in `ChatsTab.kt`
 
 ### [MODIFY] `ChatsTab.kt`
-Path: [ChatsTab.kt](file:///Users/kodzy/Documents/GitHub/2pchat/2PChat%20android/android/app/src/main/java/com/example/twopchat/ui/main/ChatsTab.kt#L841-L847)
+Path: [ChatsTab.kt](../2PChat%20android/android/app/src/main/java/com/example/twopchat/ui/main/ChatsTab.kt)
 
 Replace raw layout modifiers during scale/opacity animation with `graphicsLayer`:
 
@@ -101,7 +103,7 @@ Card(
 ## Step 3: Symmetric Drawer Animation in `GroupChatScreen.kt`
 
 ### [MODIFY] `GroupChatScreen.kt`
-Path: [GroupChatScreen.kt](file:///Users/kodzy/Documents/GitHub/2pchat/2PChat%20android/android/app/src/main/java/com/example/twopchat/group/ui/GroupChatScreen.kt#L3220-L3224)
+Path: [GroupChatScreen.kt](../2PChat%20android/android/app/src/main/java/com/example/twopchat/group/ui/GroupChatScreen.kt)
 
 Ensure symmetrical spring-driven enter and exit for the attachment drawer:
 
@@ -126,7 +128,7 @@ AnimatedVisibility(
 ## Step 4: Reduced Motion Support Helper
 
 ### [NEW] `ReducedMotionHelper.kt`
-Path: [ReducedMotionHelper.kt](file:///Users/kodzy/Documents/GitHub/2pchat/2PChat%20android/android/app/src/main/java/com/example/twopchat/theme/ReducedMotionHelper.kt)
+Path: [ReducedMotionHelper.kt](../2PChat%20android/android/app/src/main/java/com/example/twopchat/theme/ReducedMotionHelper.kt)
 
 ```kotlin
 package com.example.twopchat.theme

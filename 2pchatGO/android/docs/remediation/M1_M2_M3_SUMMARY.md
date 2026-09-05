@@ -1,5 +1,7 @@
 # Сводный инженерный отчёт: Ремедиация стабильности и конкурентности (Задачи M1, M2, M3)
 
+> Статус документа уточнён 2026-09-05. Исторический отчёт об отдельной ремедиации. Количество файлов, строки и результаты тестов относятся к описанному изменению; это не новый прогон всей системы.
+
 > **Для кого**: Техническая команда, ведущие инженеры, QA  
 > **Проект**: 2pchat (Android + Core Go)  
 > **Дата**: Сентябрь 2026  
@@ -48,7 +50,7 @@
 5. **Безопасная остановка**: Метод `shutdown()` корректно отменяет скоуп и все активные Job при разрыве сессии или закрытии приложения.
 
 #### Тестовое подтверждение
-Разработан тестовый набор [`NativeBridgeImplFlushTest.kt`](file:///Users/kodzy/Documents/GitHub/2pchat/2pchatGO/android/app/src/test/java/com/example/twopchat/bridge/NativeBridgeImplFlushTest.kt):
+Разработан тестовый набор [`NativeBridgeImplFlushTest.kt`](../../app/src/test/java/com/example/twopchat/bridge/NativeBridgeImplFlushTest.kt):
 - Проверена строгая очередность и отсутствие дубликатов при сбоях сети с последующим успехом.
 - Проверен лимит 5 попыток при постоянных сбоях.
 - Проверено вытеснение старых сообщений при переполнении очереди.
@@ -78,7 +80,7 @@ while (System.currentTimeMillis() - start < timeoutMs) {
 4. **Контроль главного потока**: Внедрён `StrictMode` в `GlobalApplication` и отладочный assert `assertNotMainThreadInDebug()`, защищающий от регрессий и блокировок UI.
 
 #### Тестовое подтверждение
-Разработан тестовый набор [`AwaitPeerOnlineTest.kt`](file:///Users/kodzy/Documents/GitHub/2pchat/2pchatGO/android/app/src/test/java/com/example/twopchat/bridge/AwaitPeerOnlineTest.kt):
+Разработан тестовый набор [`AwaitPeerOnlineTest.kt`](../../app/src/test/java/com/example/twopchat/bridge/AwaitPeerOnlineTest.kt):
 - Проверено мгновенное возобновление при подключении пира через 300 мс (не дожидаясь лимита 800 мс).
 - Проверено одновременное корректное пробуждение нескольких параллельных корутин, ожидающих одного контакта.
 - Проверено безопасное завершение при отмене сессий (`shutdownAllSessions`).
@@ -97,7 +99,7 @@ while (System.currentTimeMillis() - start < timeoutMs) {
 
 #### Реализованное решение
 1. **Создан автоматический скрипт проверки CI/CD**:
-   [`scripts/check_empty_catch.sh`](file:///Users/kodzy/Documents/GitHub/2pchat/2pchatGO/android/scripts/check_empty_catch.sh) на базе регулярных выражений и проверки комментариев. Завершается с ошибкой `exit 1`, если в кодовой базе обнаружен хотя бы один необоснованный пустой `catch`.
+   [`scripts/check_empty_catch.sh`](../../scripts/check_empty_catch.sh) на базе регулярных выражений и проверки комментариев. Завершается с ошибкой `exit 1`, если в кодовой базе обнаружен хотя бы один необоснованный пустой `catch`.
 2. **Аудит и рефакторинг 28 файлов**:
    - **Корутины**: Внедрено строгое правило проброса отмены:
      ```kotlin

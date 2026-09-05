@@ -2,6 +2,8 @@
 
 Исходный документ: `GROUP_CHATS_ANALYSIS_AND_IMPROVEMENTS_2026.md` из Downloads/Telegram Desktop. Его рекомендации проверены по исходникам; сроки, обещания ускорения и предложения новых функций не считаются подтверждёнными результатами.
 
+> Исторический срез переноса: указанная ниже схема v6 относится к моменту проверки. Текущий Go-клиент уже использует v7; актуальная спецификация — [GROUP_CHAT_PROTOCOL.md](GROUP_CHAT_PROTOCOL.md). Журналы запусков являются локальными артефактами и не входят в Git.
+
 ## Где находится реализация
 
 Групповой runtime, SQLCipher, ACL и Compose остаются в Kotlin. В старом дереве `2PChat android/android` подписи делегируются `PythonBridge`, в `2pchatGO/android` — `NativeBridge` и Go. Отдельного Python runtime групп в `messenger` нет.

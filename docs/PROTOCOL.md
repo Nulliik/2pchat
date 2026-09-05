@@ -3,6 +3,8 @@
 This document describes the current on-the-wire behavior of the Python
 reference implementation.
 
+Reviewed 2026-09-05 against the local reference code and protocol tests. Android group frames are specified separately in [GROUP_CHAT_PROTOCOL.md](GROUP_CHAT_PROTOCOL.md); native integration is described in [ANDROID_INTEGRATION.md](ANDROID_INTEGRATION.md).
+
 ## Scope
 
 The protocol has four layers:

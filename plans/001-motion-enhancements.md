@@ -1,6 +1,8 @@
 # Plan 001: Motion & Animation Enhancements for 2PChat (WebUI & Android)
 
-**Commit**: `HEAD`  
+> Актуализация 2026-09-05: Исторический план. Каталог webui отсутствует; рекомендации к нему сейчас неприменимы. Android-пути относятся к предыдущему клиенту.
+
+**Commit**: исходный commit аудита не зафиксирован
 **Scope**: `webui/src/styles.css`, `webui/src/App.tsx`, `2PChat android/android/app/src/main/java/com/example/twopchat/ui/chat/SwipeToReplyContainer.kt`, `2PChat android/android/app/src/main/java/com/example/twopchat/ui/chat/ChatMessageBubble.kt`
 
 ---
@@ -16,7 +18,7 @@ This plan details precise, high-leverage motion improvements across both clients
 ## Step 1: WebUI Interactive Press Feedback & Smooth State Transitions
 
 ### Target File: `webui/src/styles.css`
-Link: [styles.css](file:///Users/kodzy/Documents/GitHub/2pchat/webui/src/styles.css)
+Link: `styles.css` (исторический путь: `webui/src/styles.css`)
 
 #### 1.1 Add Global Easing & Motion Tokens
 ```css
@@ -86,7 +88,7 @@ Link: [styles.css](file:///Users/kodzy/Documents/GitHub/2pchat/webui/src/styles.
 ## Step 2: Android Swipe-to-Reply Spring Physics Refinement
 
 ### Target File: `SwipeToReplyContainer.kt`
-Link: [SwipeToReplyContainer.kt](file:///Users/kodzy/Documents/GitHub/2pchat/2PChat%20android/android/app/src/main/java/com/example/twopchat/ui/chat/SwipeToReplyContainer.kt#L53)
+Link: [SwipeToReplyContainer.kt](../2PChat%20android/android/app/src/main/java/com/example/twopchat/ui/chat/SwipeToReplyContainer.kt)
 
 #### Current Code Excerpt (Lines 53, 60):
 ```kotlin
@@ -110,7 +112,7 @@ offsetX.animateTo(
 ## Step 3: Android Message Arrival Scale Entrance Refinement
 
 ### Target File: `ChatMessageBubble.kt`
-Link: [ChatMessageBubble.kt](file:///Users/kodzy/Documents/GitHub/2pchat/2PChat%20android/android/app/src/main/java/com/example/twopchat/ui/chat/ChatMessageBubble.kt)
+Link: [ChatMessageBubble.kt](../2PChat%20android/android/app/src/main/java/com/example/twopchat/ui/chat/ChatMessageBubble.kt)
 
 #### Target Code Adjustment:
 Ensure entrance scale starts at `0.96f` instead of `0.8f` or `0.0f`, paired with an expedited 180ms ease-out duration:
