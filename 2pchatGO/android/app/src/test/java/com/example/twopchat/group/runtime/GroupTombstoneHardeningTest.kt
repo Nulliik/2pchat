@@ -1,5 +1,10 @@
 package com.example.twopchat.group.runtime
 
+import com.example.twopchat.group.model.ConversationId
+import com.example.twopchat.group.model.GroupMember
+import com.example.twopchat.group.model.GroupRole
+import com.example.twopchat.group.model.GroupRolePolicy
+import com.example.twopchat.group.model.UserId
 import com.example.twopchat.group.protocol.GroupEventKind
 import com.example.twopchat.group.protocol.GroupWireEvent
 import com.example.twopchat.group.protocol.GroupWireProtocol
@@ -696,67 +701,189 @@ class GroupTombstoneHardeningTest {
 
     @Test
     fun tombstoneHeaderMustMatchAuthorizingDelete() {
-        // A newcomer or syncing peer receiving a tombstoned event must verify that
-        // the tombstone's target_event_id and header match a valid authorizing DELETE event.
         val targetEventId = "original-msg-event-123"
         val authorDeviceId = "dev-alice"
-        val groupOwnerDeviceId = "dev-owner"
+        val authorAccountId = "acc-alice"
+        val conversationId = ConversationId("grp-tombstone-auth")
 
-        val authorizingDelete = StoredGroupEvent(
+        val authorMember = GroupMember(
+            groupId = conversationId,
+            userId = UserId(authorAccountId),
+            role = GroupRole.MEMBER,
+            permissions = GroupRolePolicy.defaultPermissions(GroupRole.MEMBER),
+            joinedEpoch = 1,
+        )
+        val moderatorMember = GroupMember(
+            groupId = conversationId,
+            userId = UserId("acc-moderator"),
+            role = GroupRole.ADMINISTRATOR,
+            permissions = GroupRolePolicy.defaultPermissions(GroupRole.ADMINISTRATOR),
+            joinedEpoch = 1,
+        )
+        val ownerMember = GroupMember(
+            groupId = conversationId,
+            userId = UserId("acc-owner"),
+            role = GroupRole.OWNER,
+            permissions = GroupRolePolicy.defaultPermissions(GroupRole.OWNER),
+            joinedEpoch = 1,
+        )
+        val otherRegularMember = GroupMember(
+            groupId = conversationId,
+            userId = UserId("acc-mallory-regular"),
+            role = GroupRole.MEMBER,
+            permissions = GroupRolePolicy.defaultPermissions(GroupRole.MEMBER),
+            joinedEpoch = 1,
+        )
+
+        val targetOriginal = StoredGroupEvent(
+            groupId = "grp-tombstone-auth",
+            eventId = targetEventId,
+            epoch = 1,
+            authorDeviceId = authorDeviceId,
+            authorSeq = 5,
+            hlcPhysicalMs = 100_000L,
+            hlcLogical = 1,
+            kind = GroupEventKind.MESSAGE.name,
+            body = "Secret text",
+            createdAtMs = 100_000L,
+            receivedAtMs = 100_000L,
+        )
+
+        fun canApplyTombstone(
+            target: StoredGroupEvent,
+            deleteEvent: StoredGroupEvent,
+            deletePayload: JSONObject,
+            actor: GroupMember,
+        ): Boolean {
+            if (deleteEvent.kind != GroupEventKind.DELETE.name && deleteEvent.kind != "delete") {
+                return false
+            }
+            if (deleteEvent.targetEventId != target.eventId) {
+                return false
+            }
+            if (deletePayload.optString("target_event_id") != target.eventId) {
+                return false
+            }
+            // Verify all header fields to ensure replica cannot corrupt newcomer's hash chain
+            if (deletePayload.has("target_author_device_id") &&
+                deletePayload.getString("target_author_device_id") != target.authorDeviceId
+            ) {
+                return false
+            }
+            if (deletePayload.has("target_author_sequence") &&
+                deletePayload.getLong("target_author_sequence") != target.authorSeq
+            ) {
+                return false
+            }
+            if (deletePayload.has("target_previous_author_event") &&
+                deletePayload.getString("target_previous_author_event") != "ev-msg-prev-4"
+            ) {
+                return false
+            }
+            if (deletePayload.has("target_hlc_physical_ms") &&
+                deletePayload.getLong("target_hlc_physical_ms") != target.hlcPhysicalMs
+            ) {
+                return false
+            }
+            if (deletePayload.has("target_hlc_logical") &&
+                deletePayload.getInt("target_hlc_logical") != target.hlcLogical
+            ) {
+                return false
+            }
+
+            // Authorization check strictly through GroupRolePolicy
+            val decision = GroupRolePolicy.canDeleteMessage(actor, UserId(authorAccountId))
+            return decision.allowed
+        }
+
+        fun createDeletePayload(
+            targetId: String = targetEventId,
+            authorDev: String = authorDeviceId,
+            seq: Long = 5,
+            prev: String = "ev-msg-prev-4",
+            hlcPhys: Long = 100_000L,
+            hlcLog: Int = 1,
+        ) = JSONObject().apply {
+            put("target_event_id", targetId)
+            put("target_author_device_id", authorDev)
+            put("target_author_sequence", seq)
+            put("target_previous_author_event", prev)
+            put("target_hlc_physical_ms", hlcPhys)
+            put("target_hlc_logical", hlcLog)
+        }
+
+        val validDeleteEvent = StoredGroupEvent(
             groupId = "grp-tombstone-auth",
             eventId = "del-event-01",
             epoch = 1,
             authorDeviceId = authorDeviceId,
-            authorSeq = 2,
-            hlcPhysicalMs = 2000L,
+            authorSeq = 6,
+            hlcPhysicalMs = 105_000L,
             hlcLogical = 0,
             kind = GroupEventKind.DELETE.name,
             targetEventId = targetEventId,
-            body = JSONObject().put("target_event_id", targetEventId).toString(),
-            createdAtMs = 2000L,
-            receivedAtMs = 2000L,
+            body = createDeletePayload().toString(),
+            createdAtMs = 105_000L,
+            receivedAtMs = 105_000L,
         )
 
-        fun canApplyTombstone(
-            tombstoneEventId: String,
-            storedDeletes: List<StoredGroupEvent>,
-            originalAuthorId: String,
-        ): Boolean {
-            val matchingDelete = storedDeletes.firstOrNull { it.targetEventId == tombstoneEventId }
-                ?: return false
-            if (matchingDelete.kind != GroupEventKind.DELETE.name && matchingDelete.kind != "delete") {
-                return false
-            }
-            if (matchingDelete.authorDeviceId != originalAuthorId && matchingDelete.authorDeviceId != groupOwnerDeviceId) {
-                return false
-            }
-            return true
-        }
-
-        // 1. Valid matching authorizing delete: Accepted
-        val validDeletes = listOf(authorizingDelete)
+        // 1. Positive: Author deletes own message
         assertTrue(
-            "Tombstone matching authorized DELETE event must be applied",
-            canApplyTombstone(targetEventId, validDeletes, authorDeviceId),
+            "Original author can delete own message",
+            canApplyTombstone(targetOriginal, validDeleteEvent, createDeletePayload(), authorMember),
         )
 
-        // 2. Mismatched target_event_id: Rejected
-        assertFalse(
-            "Tombstone with mismatched header/targetEventId must be rejected",
-            canApplyTombstone("different-event-id-999", validDeletes, authorDeviceId),
+        // 2. Positive: Moderator / Admin deletes message via GroupRolePolicy
+        assertTrue(
+            "Moderator can delete message via GroupRolePolicy",
+            canApplyTombstone(targetOriginal, validDeleteEvent, createDeletePayload(), moderatorMember),
         )
 
-        // 3. No authorizing delete present: Rejected
-        assertFalse(
-            "Tombstone without authorizing DELETE must be rejected",
-            canApplyTombstone(targetEventId, emptyList(), authorDeviceId),
+        // 3. Positive: Owner deletes message via GroupRolePolicy
+        assertTrue(
+            "Owner can delete message via GroupRolePolicy",
+            canApplyTombstone(targetOriginal, validDeleteEvent, createDeletePayload(), ownerMember),
         )
 
-        // 4. DELETE authored by unauthorized stranger: Rejected
-        val unauthorizedDelete = authorizingDelete.copy(authorDeviceId = "dev-stranger-mallory")
+        // 4. Negative: Regular member tries to delete someone else's message
         assertFalse(
-            "DELETE authored by unauthorized device must not authorize tombstone",
-            canApplyTombstone(targetEventId, listOf(unauthorizedDelete), authorDeviceId),
+            "Regular member cannot delete another member's message under GroupRolePolicy",
+            canApplyTombstone(targetOriginal, validDeleteEvent, createDeletePayload(), otherRegularMember),
+        )
+
+        // 5. Negative: Mismatched target_author_sequence
+        val badSeqPayload = createDeletePayload(seq = 4L)
+        assertFalse(
+            "Tombstone with mismatched target_author_sequence must be rejected",
+            canApplyTombstone(targetOriginal, validDeleteEvent, badSeqPayload, authorMember),
+        )
+
+        // 6. Negative: Mismatched target_previous_author_event (breaking author hash chain)
+        val badPrevPayload = createDeletePayload(prev = "ev-corrupted-link")
+        assertFalse(
+            "Tombstone with mismatched target_previous_author_event must be rejected",
+            canApplyTombstone(targetOriginal, validDeleteEvent, badPrevPayload, authorMember),
+        )
+
+        // 7. Negative: Mismatched target_hlc_physical_ms
+        val badHlcPhysPayload = createDeletePayload(hlcPhys = 99_999L)
+        assertFalse(
+            "Tombstone with mismatched target_hlc_physical_ms must be rejected",
+            canApplyTombstone(targetOriginal, validDeleteEvent, badHlcPhysPayload, authorMember),
+        )
+
+        // 8. Negative: Mismatched target_hlc_logical
+        val badHlcLogPayload = createDeletePayload(hlcLog = 0)
+        assertFalse(
+            "Tombstone with mismatched target_hlc_logical must be rejected",
+            canApplyTombstone(targetOriginal, validDeleteEvent, badHlcLogPayload, authorMember),
+        )
+
+        // 9. Negative: Mismatched target_event_id
+        val badTargetIdPayload = createDeletePayload(targetId = "different-msg-999")
+        assertFalse(
+            "Tombstone with mismatched target_event_id must be rejected",
+            canApplyTombstone(targetOriginal, validDeleteEvent, badTargetIdPayload, authorMember),
         )
     }
 }

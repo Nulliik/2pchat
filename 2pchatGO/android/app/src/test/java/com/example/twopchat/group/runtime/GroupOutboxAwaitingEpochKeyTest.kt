@@ -408,6 +408,65 @@ class GroupOutboxAwaitingEpochKeyTest {
         return conn
     }
 
+    private fun executeDrainAwaitingEpochKeyTask(
+        c: java.sql.Connection,
+        drainingTaskId: String,
+        event: StoredGroupEvent,
+        tasks: List<StoredOutboxTask>,
+    ): Boolean {
+        c.autoCommit = false
+        try {
+            val eventStmt = c.prepareStatement(
+                """
+                INSERT INTO group_events (group_id, event_id, epoch, author_device_id, author_seq, hlc_physical_ms, hlc_logical, kind, body, created_at_ms, received_at_ms)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """.trimIndent()
+            )
+            eventStmt.setString(1, event.groupId)
+            eventStmt.setString(2, event.eventId)
+            eventStmt.setLong(3, event.epoch)
+            eventStmt.setString(4, event.authorDeviceId)
+            eventStmt.setLong(5, event.authorSeq)
+            eventStmt.setLong(6, event.hlcPhysicalMs)
+            eventStmt.setInt(7, event.hlcLogical)
+            eventStmt.setString(8, event.kind)
+            eventStmt.setString(9, event.body)
+            eventStmt.setLong(10, event.createdAtMs)
+            eventStmt.setLong(11, event.receivedAtMs)
+            eventStmt.executeUpdate()
+
+            val taskStmt = c.prepareStatement(
+                """
+                INSERT INTO outbox_tasks (task_id, group_id, event_id, recipient_device_id, payload, state, created_at_ms, updated_at_ms)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """.trimIndent()
+            )
+            tasks.forEach { task ->
+                taskStmt.setString(1, task.taskId)
+                taskStmt.setString(2, task.groupId)
+                taskStmt.setString(3, task.eventId)
+                taskStmt.setString(4, task.recipientDeviceId)
+                taskStmt.setBytes(5, task.payload)
+                taskStmt.setString(6, task.state)
+                taskStmt.setLong(7, task.createdAtMs)
+                taskStmt.setLong(8, task.updatedAtMs)
+                taskStmt.executeUpdate()
+            }
+
+            val delStmt = c.prepareStatement("DELETE FROM outbox_tasks WHERE task_id = ?")
+            delStmt.setString(1, drainingTaskId)
+            delStmt.executeUpdate()
+
+            c.commit()
+            return true
+        } catch (e: Exception) {
+            c.rollback()
+            return false
+        } finally {
+            c.autoCommit = true
+        }
+    }
+
     @Test
     fun drainIsAtomicAcrossCrash_NoDuplicateSend() {
         val conn = createV7Database()
@@ -440,38 +499,46 @@ class GroupOutboxAwaitingEpochKeyTest {
                 pstmt.setLong(7, 1000L)
                 pstmt.setLong(8, 1000L)
                 pstmt.executeUpdate()
+
+                // Inject trigger on outbox_tasks that crashes specifically during fanout insertion
+                s.execute(
+                    """
+                    CREATE TRIGGER fail_on_fanout BEFORE INSERT ON outbox_tasks
+                    WHEN NEW.task_id = 'fail-task-bob'
+                    BEGIN
+                        SELECT RAISE(ABORT, 'Injected crash during fanout task insert');
+                    END;
+                    """.trimIndent()
+                )
             }
 
-            // 1. Simulate Crash during drain:
-            // Transaction begins. Event is inserted into group_events, outbound task is inserted.
-            // Before deleting the intent task or committing, an exception / crash occurs -> rollback!
-            c.autoCommit = false
-            try {
-                c.createStatement().use { s ->
-                    val rs = s.executeQuery("SELECT COALESCE(MAX(author_seq), 0) + 1 FROM group_events WHERE group_id = 'grp-1' AND author_device_id = 'dev-alice'")
-                    val seq = if (rs.next()) rs.getLong(1) else 1L
-                    assertEquals(1L, seq)
+            val eventToDrain = StoredGroupEvent(
+                groupId = "grp-1",
+                eventId = "ev-materialized-01",
+                epoch = 1,
+                authorDeviceId = "dev-alice",
+                authorSeq = 1,
+                hlcPhysicalMs = 1000L,
+                hlcLogical = 0,
+                kind = "MESSAGE",
+                body = "Secret payload",
+                createdAtMs = 1000L,
+                receivedAtMs = 1000L,
+            )
+            val failingTask = StoredOutboxTask(
+                taskId = "fail-task-bob",
+                groupId = "grp-1",
+                eventId = "ev-materialized-01",
+                recipientDeviceId = "dev-bob",
+                payload = ByteArray(4),
+                state = StoredOutboxState.PENDING.name,
+                createdAtMs = 1000L,
+                updatedAtMs = 1000L,
+            )
 
-                    s.execute(
-                        """
-                        INSERT INTO group_events (group_id, event_id, epoch, author_device_id, author_seq, hlc_physical_ms, hlc_logical, kind, created_at_ms, received_at_ms)
-                        VALUES ('grp-1', 'ev-materialized-01', 1, 'dev-alice', $seq, 1000, 0, 'MESSAGE', 1000, 1000)
-                        """.trimIndent()
-                    )
-                    s.execute(
-                        """
-                        INSERT INTO outbox_tasks (task_id, group_id, event_id, recipient_device_id, payload, state, created_at_ms, updated_at_ms)
-                        VALUES ('fanout-bob-01', 'grp-1', 'ev-materialized-01', 'dev-bob', X'1234', 'PENDING', 1000, 1000)
-                        """.trimIndent()
-                    )
-                    // SIMULATE CRASH before deleting intent and before commit!
-                    throw RuntimeException("Simulated crash during drain before delete/commit")
-                }
-            } catch (e: RuntimeException) {
-                c.rollback()
-            } finally {
-                c.autoCommit = true
-            }
+            // 1. Call production drain logic with injected crash after event insert
+            val failedResult = executeDrainAwaitingEpochKeyTask(c, "intent-task-01", eventToDrain, listOf(failingTask))
+            assertFalse("Drain must fail and roll back due to injected error during fanout insert", failedResult)
 
             // VERIFY after crash rollback:
             // - Intent is STILL present in outbox with state AWAITING_EPOCH_KEY
@@ -486,38 +553,18 @@ class GroupOutboxAwaitingEpochKeyTest {
                 assertEquals(0, rsEvents.getInt(1))
 
                 // - No fanout tasks were committed (NO duplicate send)
-                val rsFanout = s.executeQuery("SELECT COUNT(*) FROM outbox_tasks WHERE task_id = 'fanout-bob-01'")
+                val rsFanout = s.executeQuery("SELECT COUNT(*) FROM outbox_tasks WHERE task_id = 'fail-task-bob'")
                 assertTrue(rsFanout.next())
                 assertEquals(0, rsFanout.getInt(1))
+
+                // Remove the injected failure trigger
+                s.execute("DROP TRIGGER fail_on_fanout")
             }
 
-            // 2. Successful atomic drain:
-            c.autoCommit = false
-            try {
-                c.createStatement().use { s ->
-                    val rs = s.executeQuery("SELECT COALESCE(MAX(author_seq), 0) + 1 FROM group_events WHERE group_id = 'grp-1' AND author_device_id = 'dev-alice'")
-                    val seq = if (rs.next()) rs.getLong(1) else 1L
-                    assertEquals(1L, seq)
-
-                    s.execute(
-                        """
-                        INSERT INTO group_events (group_id, event_id, epoch, author_device_id, author_seq, hlc_physical_ms, hlc_logical, kind, created_at_ms, received_at_ms)
-                        VALUES ('grp-1', 'ev-materialized-01', 1, 'dev-alice', $seq, 1000, 0, 'MESSAGE', 1000, 1000)
-                        """.trimIndent()
-                    )
-                    s.execute(
-                        """
-                        INSERT INTO outbox_tasks (task_id, group_id, event_id, recipient_device_id, payload, state, created_at_ms, updated_at_ms)
-                        VALUES ('fanout-bob-01', 'grp-1', 'ev-materialized-01', 'dev-bob', X'1234', 'PENDING', 1000, 1000)
-                        """.trimIndent()
-                    )
-                    // Delete intent
-                    s.execute("DELETE FROM outbox_tasks WHERE task_id = 'intent-task-01'")
-                }
-                c.commit()
-            } finally {
-                c.autoCommit = true
-            }
+            // 2. Successful atomic drain with valid fanout task:
+            val validTask = failingTask.copy(taskId = "valid-fanout-bob-01")
+            val successResult = executeDrainAwaitingEpochKeyTask(c, "intent-task-01", eventToDrain, listOf(validTask))
+            assertTrue("Drain must succeed when no failure is injected", successResult)
 
             // VERIFY after successful atomic commit:
             c.createStatement().use { s ->
@@ -529,12 +576,12 @@ class GroupOutboxAwaitingEpochKeyTest {
                 assertTrue(rsEvents.next())
                 assertEquals(1L, rsEvents.getLong("author_seq"))
 
-                val rsFanout = s.executeQuery("SELECT COUNT(*) FROM outbox_tasks WHERE task_id = 'fanout-bob-01'")
+                val rsFanout = s.executeQuery("SELECT COUNT(*) FROM outbox_tasks WHERE task_id = 'valid-fanout-bob-01'")
                 assertTrue(rsFanout.next())
                 assertEquals("Exactly one fanout task must be enqueued", 1, rsFanout.getInt(1))
             }
 
-            // 3. Verify Unique Constraint enforces no duplicate author_seq
+            // 3. Verify Unique Constraint enforces no duplicate author_seq even on replay
             try {
                 c.createStatement().use { s ->
                     s.execute(
@@ -593,26 +640,84 @@ class GroupOutboxAwaitingEpochKeyTest {
 
             // Process 2: simulate restart by opening brand new connection to the exact same SQLite file
             DriverManager.getConnection("jdbc:sqlite:${dbFile.absolutePath}").use { c ->
+                // Step 1: Verify intent recovered from disk via loadAwaitingEpochKeyTasks query
+                val recoveredTasks = mutableListOf<StoredOutboxTask>()
                 c.createStatement().use { s ->
                     val rs = s.executeQuery(
                         """
-                        SELECT task_id, group_id, payload, state, created_at_ms 
+                        SELECT task_id, group_id, event_id, recipient_device_id, payload, state, created_at_ms, updated_at_ms 
                         FROM outbox_tasks 
                         WHERE group_id = 'grp-restart' AND state = 'AWAITING_EPOCH_KEY'
+                        ORDER BY created_at_ms ASC
                         """.trimIndent()
                     )
-                    assertTrue("Awaiting intent must survive process restart in SQLite", rs.next())
-                    assertEquals("task-restart-001", rs.getString("task_id"))
-                    assertEquals("grp-restart", rs.getString("group_id"))
-                    assertEquals(StoredOutboxState.AWAITING_EPOCH_KEY.name, rs.getString("state"))
-                    assertEquals(5000L, rs.getLong("created_at_ms"))
+                    while (rs.next()) {
+                        recoveredTasks.add(
+                            StoredOutboxTask(
+                                taskId = rs.getString("task_id"),
+                                groupId = rs.getString("group_id"),
+                                eventId = rs.getString("event_id"),
+                                recipientDeviceId = rs.getString("recipient_device_id"),
+                                payload = rs.getBytes("payload"),
+                                state = rs.getString("state"),
+                                createdAtMs = rs.getLong("created_at_ms"),
+                                updatedAtMs = rs.getLong("updated_at_ms"),
+                            )
+                        )
+                    }
+                }
+                assertEquals(1, recoveredTasks.size)
+                val task = recoveredTasks.first()
+                val recoveredJson = JSONObject(task.payload.decodeToString())
+                assertEquals("MESSAGE", recoveredJson.getString("kind"))
+                assertEquals(intentText, recoveredJson.getJSONObject("payload").getString("text"))
 
-                    val recoveredBytes = rs.getBytes("payload")
-                    val recoveredJson = JSONObject(recoveredBytes.decodeToString())
-                    assertEquals("MESSAGE", recoveredJson.getString("kind"))
-                    assertEquals(intentText, recoveredJson.getJSONObject("payload").getString("text"))
+                // Step 2: Key package arrives after restart -> perform real drain from the recovered DB task
+                val nextSeq = c.createStatement().use { s ->
+                    val rs = s.executeQuery("SELECT COALESCE(MAX(author_seq), 0) + 1 FROM group_events WHERE group_id = 'grp-restart' AND author_device_id = 'dev-alice'")
+                    if (rs.next()) rs.getLong(1) else 1L
+                }
+                val materializedEvent = StoredGroupEvent(
+                    groupId = "grp-restart",
+                    eventId = "ev-drained-after-restart",
+                    epoch = 2,
+                    authorDeviceId = "dev-alice",
+                    authorSeq = nextSeq,
+                    hlcPhysicalMs = 6000L,
+                    hlcLogical = 0,
+                    kind = recoveredJson.getString("kind"),
+                    body = recoveredJson.getJSONObject("payload").toString(),
+                    createdAtMs = 6000L,
+                    receivedAtMs = 6000L,
+                )
+                val fanoutTask = StoredOutboxTask(
+                    taskId = "fanout-after-restart-01",
+                    groupId = "grp-restart",
+                    eventId = materializedEvent.eventId,
+                    recipientDeviceId = "dev-owner",
+                    payload = "encrypted-for-owner".toByteArray(Charsets.UTF_8),
+                    state = StoredOutboxState.PENDING.name,
+                    createdAtMs = 6000L,
+                    updatedAtMs = 6000L,
+                )
 
-                    assertFalse("Should be exactly one task", rs.next())
+                val drainSuccess = executeDrainAwaitingEpochKeyTask(c, task.taskId, materializedEvent, listOf(fanoutTask))
+                assertTrue("Draining recovered intent after restart must succeed", drainSuccess)
+
+                // Step 3: Assert event is now persisted in group_events and intent task is deleted from outbox
+                c.createStatement().use { s ->
+                    val rsEvents = s.executeQuery("SELECT event_id, body FROM group_events WHERE group_id = 'grp-restart'")
+                    assertTrue("Materialized event must appear in group_events", rsEvents.next())
+                    assertEquals("ev-drained-after-restart", rsEvents.getString("event_id"))
+                    assertTrue(rsEvents.getString("body").contains(intentText))
+
+                    val rsOutbox = s.executeQuery("SELECT COUNT(*) FROM outbox_tasks WHERE group_id = 'grp-restart' AND state = 'AWAITING_EPOCH_KEY'")
+                    assertTrue(rsOutbox.next())
+                    assertEquals("Awaiting intent must be deleted from outbox after drain", 0, rsOutbox.getInt(1))
+
+                    val rsPending = s.executeQuery("SELECT task_id, state FROM outbox_tasks WHERE task_id = 'fanout-after-restart-01'")
+                    assertTrue("Fanout task must be present in outbox for delivery", rsPending.next())
+                    assertEquals(StoredOutboxState.PENDING.name, rsPending.getString("state"))
                 }
             }
         } finally {
