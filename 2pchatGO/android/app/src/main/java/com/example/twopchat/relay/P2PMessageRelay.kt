@@ -3306,7 +3306,9 @@ object P2PMessageRelay {
         val cancelledProgress = FileProgressInfo(0L, 0L, 0.0, FileTransferState.CANCELLED)
         fileProgressStates[key] = cancelledProgress
         fileProgressStates[messageId] = cancelledProgress
-        messageListeners.forEach { it.onMessageStatusChanged(peerName, messageId, "CANCELLED") }
+        runOnMain {
+            messageListeners.forEach { it.onMessageStatusChanged(peerName, messageId, "CANCELLED") }
+        }
         return true
     }
 

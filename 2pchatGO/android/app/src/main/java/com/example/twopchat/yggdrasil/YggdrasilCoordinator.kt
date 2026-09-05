@@ -3,20 +3,26 @@ package com.example.twopchat.yggdrasil
 import android.content.Context
 import android.content.Intent
 import android.net.VpnService
-import android.os.Handler
-import android.os.Looper
 import androidx.core.content.ContextCompat
 import com.example.twopchat.NativeBridge
 import com.example.twopchat.config.P2PPreferences
 import com.example.twopchat.config.P2PPreferences.YggdrasilMode
 import com.example.twopchat.logging.SafeLog
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 object YggdrasilCoordinator {
     private const val TAG = "YggdrasilCoordinator"
     private const val STOP_SETTLE_MS = 2_200L
-    private val mainHandler = Handler(Looper.getMainLooper())
+    private val coordinatorScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private var pendingStartJob: Job? = null
 
     fun start(context: Context, requestedMode: YggdrasilMode? = null) {
+        pendingStartJob?.cancel()
         val mode = requestedMode ?: P2PPreferences.getYggdrasilMode(context)
         val yggAddr = com.example.twopchat.relay.P2PMessageRelay.getYggdrasilAddress()
         com.example.twopchat.AppLog.append(
@@ -31,8 +37,9 @@ object YggdrasilCoordinator {
                 }
                 NativeBridge.setYggdrasilConfig("proxy", "127.0.0.1:${P2PPreferences.DEFAULT_YGGDRASIL_PROXY_PORT}")
                 val delayMs = if (wasTunnelActive) STOP_SETTLE_MS else 0L
-                mainHandler.postDelayed({
-                    if (P2PPreferences.getYggdrasilMode(context) != YggdrasilMode.PROXY) return@postDelayed
+                pendingStartJob = coordinatorScope.launch {
+                    if (delayMs > 0) delay(delayMs)
+                    if (P2PPreferences.getYggdrasilMode(context) != YggdrasilMode.PROXY) return@launch
                     val intent = Intent(context, YggdrasilProxyService::class.java).apply {
                         action = YggdrasilProxyService.ACTION_START
                     }
@@ -45,13 +52,14 @@ object YggdrasilCoordinator {
                             SafeLog.w(TAG, "Failed fallback startService for YggdrasilProxyService: ${fallbackEx.javaClass.simpleName}")
                         }
                     }
-                }, delayMs)
+                }
             }
             YggdrasilMode.VPN -> {
                 stopProxy(context)
                 NativeBridge.setYggdrasilConfig("vpn", "")
-                mainHandler.postDelayed({
-                    if (P2PPreferences.getYggdrasilMode(context) != YggdrasilMode.VPN) return@postDelayed
+                pendingStartJob = coordinatorScope.launch {
+                    delay(STOP_SETTLE_MS)
+                    if (P2PPreferences.getYggdrasilMode(context) != YggdrasilMode.VPN) return@launch
                     val intent = Intent(context, PacketTunnelProvider::class.java).apply {
                         action = PacketTunnelProvider.ACTION_START
                     }
@@ -64,12 +72,14 @@ object YggdrasilCoordinator {
                             SafeLog.w(TAG, "Failed fallback startService for PacketTunnelProvider: ${fallbackEx.javaClass.simpleName}")
                         }
                     }
-                }, STOP_SETTLE_MS)
+                }
             }
         }
     }
 
     fun stop(context: Context) {
+        pendingStartJob?.cancel()
+        pendingStartJob = null
         com.example.twopchat.AppLog.append(context, "[YGGDRASIL] Stopping mesh network coordinator\n")
         stopProxy(context)
         stopVpn(context)

@@ -14,6 +14,7 @@ import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -27,8 +28,8 @@ internal class P2POutboundMessenger(
     private val cancelledFileTransfers = ConcurrentHashMap.newKeySet<String>()
     private val activeFileTransfers = ConcurrentHashMap.newKeySet<String>()
     private val activeSanitizedFiles = ConcurrentHashMap<String, File>()
-    private val scope = CoroutineScope(Dispatchers.IO)
-    private val pinnedStateScope = CoroutineScope(Dispatchers.IO.limitedParallelism(1))
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val pinnedStateScope = CoroutineScope(SupervisorJob() + Dispatchers.IO.limitedParallelism(1))
 
     private val peerFailureBackoffMs = ConcurrentHashMap<String, Long>()
     private val lastPeerFailureAt = ConcurrentHashMap<String, Long>()

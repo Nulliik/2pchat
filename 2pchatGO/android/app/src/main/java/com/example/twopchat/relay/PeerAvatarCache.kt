@@ -14,6 +14,7 @@ import java.io.DataOutputStream
 import java.security.MessageDigest
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -24,6 +25,7 @@ internal class PeerAvatarCache(
     val avatars = mutableStateMapOf<String, Bitmap>()
     private val order = ArrayDeque<String>()
     private var sizeBytes = 0L
+    private val cacheScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     fun put(peerName: String, bitmap: Bitmap) {
         if (bitmap.isRecycled) return
@@ -58,7 +60,7 @@ internal class PeerAvatarCache(
 
     fun loadPersisted(context: Context, onError: (Throwable) -> Unit) {
         val appContext = context.applicationContext
-        CoroutineScope(Dispatchers.IO).launch {
+        cacheScope.launch {
             try {
                 val avatarDir = File(appContext.filesDir, AVATAR_DIRECTORY)
                 val files = avatarDir.listFiles().orEmpty()

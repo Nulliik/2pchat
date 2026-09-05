@@ -20,6 +20,7 @@ import java.util.UUID
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
 class NotificationActionReceiver : BroadcastReceiver() {
@@ -34,6 +35,7 @@ class NotificationActionReceiver : BroadcastReceiver() {
         const val EXTRA_NOTIFICATION_ID = "extra_notification_id"
         const val EXTRA_MESSAGE_IDS = "extra_message_ids"
         private const val TAG = "NotificationAction"
+        private val receiverScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
         fun isPackageMatch(targetPackage: String?, expectedPackage: String): Boolean {
             return !targetPackage.isNullOrBlank() && targetPackage == expectedPackage
@@ -56,7 +58,7 @@ class NotificationActionReceiver : BroadcastReceiver() {
 
         val groupId = intent.getStringExtra(EXTRA_GROUP_ID)
         if (!groupId.isNullOrBlank()) {
-            CoroutineScope(Dispatchers.IO).launch {
+            receiverScope.launch {
                 try {
                     ensureRelayRunning(appContext)
                     when (action) {
@@ -90,7 +92,7 @@ class NotificationActionReceiver : BroadcastReceiver() {
         }
         val messageIds = intent.getStringArrayListExtra(EXTRA_MESSAGE_IDS).orEmpty()
 
-        CoroutineScope(Dispatchers.IO).launch {
+        receiverScope.launch {
             try {
                 val prefs = P2PPreferences.prefs(appContext)
                 val activeChats = prefs.getStringSet(P2PPreferences.ACTIVE_CHATS, emptySet()).orEmpty()

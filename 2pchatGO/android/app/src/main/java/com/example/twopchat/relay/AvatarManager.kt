@@ -8,13 +8,14 @@ import com.example.twopchat.relay.PeerAvatarCache
 import java.io.ByteArrayOutputStream
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
 internal class AvatarManager(
     private val sharedAvatarCache: PeerAvatarCache,
 ) {
     val peerAvatars = sharedAvatarCache.avatars
-    private val ioScope = CoroutineScope(Dispatchers.IO)
+    private val ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     fun loadPersistedAvatars(context: Context, log: (Context, String, String, Throwable?) -> Unit) {
         sharedAvatarCache.loadPersisted(context) { error ->
