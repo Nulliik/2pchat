@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -25,6 +26,7 @@ type TrackerStatusCallback func(trackerURL string, success bool, peerCount int, 
 // DiscoveryService manages tracker queries, LAN beacons, and peer endpoint discovery.
 type DiscoveryService struct {
 	mu               sync.RWMutex
+	policy           transport.NetworkPolicy
 	fingerprint      string
 	peerID           [20]byte
 	listenPort       int
@@ -58,7 +60,13 @@ func NewDiscoveryService(
 	var pID [20]byte
 	_, _ = rand.Read(pID[:])
 
+	initialPolicy := transport.PolicySpeed
+	if dialer != nil {
+		initialPolicy = dialer.GetPolicy()
+	}
+
 	s := &DiscoveryService{
+		policy:        initialPolicy,
 		fingerprint:   fingerprint,
 		peerID:        pID,
 		listenPort:    listenPort,
@@ -76,6 +84,7 @@ func NewDiscoveryService(
 			s.callback(peerFP, endpoint, "lan")
 		}
 	})
+	s.lanEngine.SetPolicy(initialPolicy)
 
 	return s
 }
@@ -130,6 +139,48 @@ func (s *DiscoveryService) SetTrackers(trackers []string) {
 	copy(s.trackers, trackers)
 }
 
+// ApplyPolicy updates network policy for discovery (LAN beacons, trackers).
+func (s *DiscoveryService) ApplyPolicy(p transport.NetworkPolicy) {
+	s.mu.Lock()
+	s.policy = p
+	lan := s.lanEngine
+	running := atomic.LoadInt32(&s.running) == 1
+	s.mu.Unlock()
+
+	if lan != nil {
+		lan.SetPolicy(p)
+		if running && p.AllowLAN {
+			_ = lan.Start()
+		}
+	}
+}
+
+// GetPolicy returns the active network policy.
+func (s *DiscoveryService) GetPolicy() transport.NetworkPolicy {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.policy
+}
+
+func (s *DiscoveryService) isTrackerAllowed(trackerURL string) bool {
+	s.mu.RLock()
+	policy := s.policy
+	s.mu.RUnlock()
+
+	u, err := url.Parse(trackerURL)
+	if err != nil {
+		return false
+	}
+	host := strings.ToLower(u.Hostname())
+	if strings.HasSuffix(host, ".onion") {
+		return policy.AllowOnion
+	}
+	if isYggdrasilTrackerHost(host) {
+		return policy.AllowYggdrasil
+	}
+	return policy.AllowWAN
+}
+
 func (s *DiscoveryService) SetYggdrasilUDPRelay(addr string) { s.udpClient.SetYggdrasilUDPRelay(addr) }
 
 // RegisterInfoHash adds an info hash (20 bytes hex, raw 20-byte string, or arbitrary key to SHA-1) to announce/discover.
@@ -180,6 +231,9 @@ func (s *DiscoveryService) AnnounceHash(hashKey string, hashVal [20]byte) {
 	}
 
 	for _, trackerURL := range trackers {
+		if !s.isTrackerAllowed(trackerURL) {
+			continue
+		}
 		go func(tURL string) {
 			started := time.Now()
 			ctx, cancel := context.WithTimeout(parentCtx, 8*time.Second)
@@ -268,7 +322,14 @@ func (s *DiscoveryService) AnnounceAll() {
 	parentCtx := s.ctx
 	s.mu.RUnlock()
 
-	if len(trackers) == 0 || len(hashes) == 0 {
+	var allowedTrackers []string
+	for _, t := range trackers {
+		if s.isTrackerAllowed(t) {
+			allowedTrackers = append(allowedTrackers, t)
+		}
+	}
+
+	if len(allowedTrackers) == 0 || len(hashes) == 0 {
 		return
 	}
 
@@ -280,7 +341,7 @@ func (s *DiscoveryService) AnnounceAll() {
 	sem := make(chan struct{}, 6)
 
 	for hashKey, hashVal := range hashes {
-		for _, trackerURL := range trackers {
+		for _, trackerURL := range allowedTrackers {
 			select {
 			case <-parentCtx.Done():
 				return
@@ -317,6 +378,10 @@ func (s *DiscoveryService) announceSingle(
 	peerID [20]byte,
 	port int,
 ) (*AnnounceResult, error) {
+	if !s.isTrackerAllowed(trackerURL) {
+		return nil, transport.ErrPolicyDenied
+	}
+
 	u, err := url.Parse(trackerURL)
 	if err != nil {
 		return nil, err

@@ -196,27 +196,31 @@ func TestGoCoreE2EConnectivityAndDiscovery(t *testing.T) {
 
 	// .onion addresses must always classify as TransportTor
 	onionEp := "ta325zop5al47taygtk2d7sobpiozy5mku5mbk2u4hpcrovumvrna4ad.onion:50001"
-	if dialer.ClassifyEndpoint(onionEp) != transport.TransportTor {
-		t.Fatalf("Expected .onion endpoint to classify as TransportTor")
+	class, err := dialer.ClassifyEndpoint(onionEp)
+	if err != nil || class != transport.TransportTor {
+		t.Fatalf("Expected .onion endpoint to classify as TransportTor, got %v, err: %v", class, err)
 	}
 	logf("[LIB2PCORE] AdaptiveDialer verified: .onion endpoint routed to Tor transport (%s)", onionEp)
 
-	// LAN / Loopback must classify as TransportDirect
+	// LAN / Loopback must classify as Direct
 	localEp := "192.168.1.100:50001"
-	if dialer.ClassifyEndpoint(localEp) != transport.TransportDirect {
-		t.Fatalf("Expected local IP to classify as TransportDirect")
+	class, err = dialer.ClassifyEndpoint(localEp)
+	if err != nil || !class.IsDirect() {
+		t.Fatalf("Expected local IP to classify as Direct transport, got %v, err: %v", class, err)
 	}
 	logf("[LIB2PCORE] AdaptiveDialer verified: LAN endpoint routed to Direct transport (%s)", localEp)
 
 	// When Tor proxy is enabled, public IP addresses use Direct transport per RULES.md §11, domain names use Tor
 	dialer.SetTorProxy(true, "127.0.0.1:9050")
 	publicEp := "93.184.216.34:50001"
-	if dialer.ClassifyEndpoint(publicEp) != transport.TransportDirect {
-		t.Fatalf("Expected public IP to classify as TransportDirect per RULES.md §11")
+	class, err = dialer.ClassifyEndpoint(publicEp)
+	if err != nil || !class.IsDirect() {
+		t.Fatalf("Expected public IP to classify as Direct transport per RULES.md §11, got %v, err: %v", class, err)
 	}
 	domainEp := "tracker.customdomain.org:50001"
-	if dialer.ClassifyEndpoint(domainEp) != transport.TransportTor {
-		t.Fatalf("Expected domain name to classify as TransportTor when proxy is enabled")
+	class, err = dialer.ClassifyEndpoint(domainEp)
+	if err != nil || class != transport.TransportTor {
+		t.Fatalf("Expected domain name to classify as TransportTor when proxy is enabled, got %v, err: %v", class, err)
 	}
 	logf("[LIB2PCORE] AdaptiveDialer verified: Public endpoint routed to Direct and domain routed to Tor SOCKS5")
 

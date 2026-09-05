@@ -224,8 +224,9 @@ func TestTorOnionRouting(t *testing.T) {
 	onionAddr := "ta325zop5al47taygtk2d7sobpiozy5mku5mbk2u4hpcrovumvrna4ad.onion:50001"
 
 	// Even if proxyEnabled is false, .onion must route to SOCKS5
-	if dialer.ClassifyEndpoint(onionAddr) != transport.TransportTor {
-		t.Fatalf("Expected .onion endpoint to classify as TransportTor")
+	class, err := dialer.ClassifyEndpoint(onionAddr)
+	if err != nil || class != transport.TransportTor {
+		t.Fatalf("Expected .onion endpoint to classify as TransportTor, got %v, err: %v", class, err)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -248,15 +249,15 @@ func TestYggdrasilIPv6Dialing(t *testing.T) {
 	yggdrasilAddr := "[200:182d:e207:ca9b:8205:5f82:3aa:c4f7]:50001"
 
 	// Verify Yggdrasil address is classified as TransportYggdrasil (bypassing Tor proxy)
-	transportType := dialer.ClassifyEndpoint(yggdrasilAddr)
-	if transportType != transport.TransportYggdrasil {
-		t.Fatalf("Expected Yggdrasil endpoint to classify as TransportYggdrasil, got %v", transportType)
+	transportType, err := dialer.ClassifyEndpoint(yggdrasilAddr)
+	if err != nil || transportType != transport.TransportYggdrasil {
+		t.Fatalf("Expected Yggdrasil endpoint to classify as TransportYggdrasil, got %v, err: %v", transportType, err)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
 
-	_, err := dialer.DialContext(ctx, "tcp", yggdrasilAddr)
+	_, err = dialer.DialContext(ctx, "tcp", yggdrasilAddr)
 	if err == nil {
 		t.Fatal("Expected dial error for unreachable Yggdrasil address")
 	}

@@ -35,10 +35,24 @@ internal class LocalPeerDiscovery(
     private var registrationListener: NsdManager.RegistrationListener? = null
     private var discoveryListener: NsdManager.DiscoveryListener? = null
     private var localFingerprint = ""
+    @Volatile
+    private var isLanAllowed: Boolean = true
+
+    @Synchronized
+    fun applyPolicy(allowLAN: Boolean) {
+        isLanAllowed = allowLAN
+        if (!allowLAN) {
+            stop()
+        }
+    }
 
     @Synchronized
     fun start(name: String, fingerprint: String, port: Int, hiddenMode: Boolean = false) {
         stop()
+        if (!isLanAllowed) {
+            SafeLog.d(TAG, "LocalPeerDiscovery skipped: LAN transport disallowed by network policy")
+            return
+        }
         if (fingerprint.isBlank()) return
         localFingerprint = fingerprint
         if (!hiddenMode) {

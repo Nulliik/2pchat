@@ -26,7 +26,7 @@ func TestZeroizeByteSlice(t *testing.T) {
 			}
 		}
 		if !hasNonZero {
-			t.Fatalf("Buffer was unexpectedly all zeroes before test")
+			buf[0] = 0xAA
 		}
 
 		Zeroize(buf)

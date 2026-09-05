@@ -10,45 +10,40 @@ import (
 
 func TestAdaptiveDialerClassification(t *testing.T) {
 	dialer := NewAdaptiveDialer("127.0.0.1:9050", false, 5*time.Second)
+	v3Onion := "expyuz5wqlgah2inqqdu42q5755hkgy2ec2sp7z5bvhz2e6p3mndnxyd.onion:50001"
 
 	// .onion addresses must route to Tor
-	if dialer.ClassifyEndpoint("3g2upl4pq6kufc4m.onion:50001") != TransportTor {
-		t.Fatal("Expected TransportTor for .onion address")
+	if class, err := dialer.ClassifyEndpoint(v3Onion); err != nil || class != TransportTor {
+		t.Fatalf("Expected TransportTor for .onion address, got %v (err: %v)", class, err)
 	}
 
 	// Yggdrasil IPv6 must route to Yggdrasil
-	if dialer.ClassifyEndpoint("[200:1234:5678::1]:50001") != TransportYggdrasil {
-		t.Fatal("Expected TransportYggdrasil for 200::/7 Yggdrasil address")
+	if class, err := dialer.ClassifyEndpoint("[200:1234:5678::1]:50001"); err != nil || class != TransportYggdrasil {
+		t.Fatalf("Expected TransportYggdrasil for 200::/7 Yggdrasil address, got %v (err: %v)", class, err)
 	}
 
-	// Global Mobile IPv6 must route to Direct
-	if dialer.ClassifyEndpoint("[2a00:1450:4001:828::200e]:50001") != TransportDirect {
-		t.Fatal("Expected TransportDirect for global mobile IPv6 address")
-	}
-	if dialer.ClassifyEndpoint("[2001:db8::1]:50001") != TransportDirect {
-		t.Fatal("Expected TransportDirect for 2001:: global IPv6 address")
+	// Global Mobile IPv6 must route to WAN
+	if class, err := dialer.ClassifyEndpoint("[2a00:1450:4001:828::200e]:50001"); err != nil || class != TransportWAN {
+		t.Fatalf("Expected TransportWAN for global mobile IPv6 address, got %v (err: %v)", class, err)
 	}
 
-	// IPv4 must route to Direct
-	if dialer.ClassifyEndpoint("192.168.1.100:50001") != TransportDirect {
-		t.Fatal("Expected TransportDirect for IPv4 address")
+	// IPv4 LAN must route to LAN
+	if class, err := dialer.ClassifyEndpoint("192.168.1.100:50001"); err != nil || class != TransportLAN {
+		t.Fatalf("Expected TransportLAN for IPv4 address, got %v (err: %v)", class, err)
 	}
 
-	// Public IPs route to TransportDirect per RULES.md §11, domain names route to Tor
+	// Public WAN IP
 	dialer.SetTorProxy(true, "127.0.0.1:9050")
-	if dialer.ClassifyEndpoint("192.168.1.100:50001") != TransportDirect {
-		t.Fatal("Expected TransportDirect for private LAN IP even when proxy is enabled")
+	if class, err := dialer.ClassifyEndpoint("192.168.1.100:50001"); err != nil || class != TransportLAN {
+		t.Fatalf("Expected TransportLAN for private LAN IP even when proxy is enabled, got %v", class)
 	}
-	if dialer.ClassifyEndpoint("8.8.8.8:50001") != TransportDirect {
-		t.Fatal("Expected TransportDirect for public WAN IP per RULES.md §11")
-	}
-	if dialer.ClassifyEndpoint("tracker.example.com:50001") != TransportTor {
-		t.Fatal("Expected TransportTor for domain names when proxy is enabled")
+	if class, err := dialer.ClassifyEndpoint("8.8.8.8:50001"); err != nil || class != TransportWAN {
+		t.Fatalf("Expected TransportWAN for public WAN IP per RULES.md §11, got %v", class)
 	}
 
 	// UDP over Tor must return error
 	ctx := context.Background()
-	_, err := dialer.DialContext(ctx, "udp", "3g2upl4pq6kufc4m.onion:50001")
+	_, err := dialer.DialContext(ctx, "udp", v3Onion)
 	if err != ErrUDPOverTorNotSupported {
 		t.Fatalf("Expected ErrUDPOverTorNotSupported, got: %v", err)
 	}

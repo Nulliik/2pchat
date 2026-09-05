@@ -9,6 +9,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"twopchat/core/pkg/transport"
 )
 
 const (
@@ -31,6 +32,7 @@ type LANDiscoveryHandler func(peerFP string, endpoint string)
 // LANEngine handles local network peer discovery via UDP broadcast/multicast.
 type LANEngine struct {
 	mu          sync.Mutex
+	policy      transport.NetworkPolicy
 	fingerprint string
 	tcpPort     int
 	udpPort     int
@@ -48,6 +50,7 @@ func NewLANEngine(fingerprint string, tcpPort, udpPort int, handler LANDiscovery
 		udpPort = DefaultLANPort
 	}
 	return &LANEngine{
+		policy:      transport.PolicySpeed,
 		fingerprint: fingerprint,
 		tcpPort:     tcpPort,
 		udpPort:     udpPort,
@@ -67,12 +70,35 @@ func (e *LANEngine) Port() int {
 	return e.udpPort
 }
 
+// IsRunning returns true if the LAN engine is actively listening/broadcasting.
+func (e *LANEngine) IsRunning() bool {
+	return atomic.LoadInt32(&e.running) == 1
+}
+
+// SetPolicy updates network policy for LAN discovery.
+// If policy denies LAN, it immediately stops broadcasting and listening (Б2).
+func (e *LANEngine) SetPolicy(p transport.NetworkPolicy) {
+	e.mu.Lock()
+	e.policy = p
+	allowLAN := p.AllowLAN
+	isRunning := atomic.LoadInt32(&e.running) == 1
+	e.mu.Unlock()
+
+	if isRunning && !allowLAN {
+		_ = e.Stop()
+	}
+}
+
 // Start launches the background LAN beacon listener and periodic broadcaster.
 func (e *LANEngine) Start() error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
 	if atomic.LoadInt32(&e.running) == 1 {
+		return nil
+	}
+
+	if !e.policy.AllowLAN {
 		return nil
 	}
 
@@ -138,6 +164,13 @@ func (e *LANEngine) broadcastLoop() {
 }
 
 func (e *LANEngine) sendBeacon() {
+	e.mu.Lock()
+	allowLAN := e.policy.AllowLAN
+	e.mu.Unlock()
+	if !allowLAN {
+		return
+	}
+
 	beacon := LANBeacon{
 		Service:     LANServiceName,
 		Fingerprint: e.fingerprint,

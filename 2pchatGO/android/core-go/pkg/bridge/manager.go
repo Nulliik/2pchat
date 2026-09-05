@@ -24,6 +24,7 @@ import (
 // SessionManager manages active Double Ratchet sessions, local identity, networking, and discovery.
 type SessionManager struct {
 	mu              sync.RWMutex
+	policy          transport.NetworkPolicy
 	storageDir      string
 	storageKey      [32]byte
 	hasKey          bool
@@ -61,6 +62,7 @@ var (
 func GetManager() *SessionManager {
 	once.Do(func() {
 		globalManager = &SessionManager{
+			policy:   transport.PolicySpeed,
 			sessions: make(map[string]*crypto.SessionState),
 			torProxy: "127.0.0.1:9050",
 			dialer:   transport.NewAdaptiveDialer("127.0.0.1:9050", false, 10*time.Second),
@@ -458,6 +460,40 @@ func (m *SessionManager) ProbePeer(endpointsJSON, expectedFingerprint string) er
 	return nil
 }
 
+// ProbePeerWithFlags races candidate endpoints enforcing contact policy flags.
+func (m *SessionManager) ProbePeerWithFlags(endpointsJSON, expectedFingerprint string, policyFlags int) error {
+	if err := m.Init(); err != nil {
+		return err
+	}
+
+	var endpoints []string
+	if err := json.Unmarshal([]byte(endpointsJSON), &endpoints); err != nil {
+		return fmt.Errorf("invalid endpoints JSON: %w", err)
+	}
+
+	m.mu.RLock()
+	nm := m.netManager
+	m.mu.RUnlock()
+
+	if nm == nil {
+		return errors.New("network manager not initialized")
+	}
+
+	contactPolicy := transport.PolicyFromFlags(policyFlags)
+	go func() {
+		endpointStr := strings.Join(endpoints, ",")
+		_, err := nm.ConnectPeerWithPolicy(endpointStr, expectedFingerprint, contactPolicy)
+		if err != nil {
+			callbacks, _ := m.callbackSnapshot()
+			if callbacks.OnError != nil {
+				callbacks.OnError(3, fmt.Sprintf("ProbePeer failed for all endpoints: %v", err))
+			}
+		}
+	}()
+
+	return nil
+}
+
 // StartListener binds the async TCP listener to the specified port.
 func (m *SessionManager) StartListener(port int) error {
 	m.mu.RLock()
@@ -646,6 +682,32 @@ func (m *SessionManager) RestoreFromMnemonic(nickname, mnemonicOrHex, aboutMe st
 	return nil
 }
 
+// ApplyPolicy updates network policy across networking and discovery subsystems.
+func (m *SessionManager) ApplyPolicy(p transport.NetworkPolicy) {
+	m.mu.Lock()
+	m.policy = p
+	if m.dialer != nil {
+		m.dialer.SetPolicy(p)
+	}
+	nm := m.netManager
+	svc := m.discoverySvc
+	m.mu.Unlock()
+
+	if nm != nil {
+		nm.ApplyPolicy(p)
+	}
+	if svc != nil {
+		svc.ApplyPolicy(p)
+	}
+}
+
+// GetPolicy returns the active network policy.
+func (m *SessionManager) GetPolicy() transport.NetworkPolicy {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.policy
+}
+
 // SetTorProxy updates Tor SOCKS5 proxy settings.
 func (m *SessionManager) SetTorProxy(enabled bool, addr string) {
 	m.mu.Lock()
@@ -735,6 +797,53 @@ func (m *SessionManager) ConnectPeer(endpoint, expectedFingerprint string) error
 		}
 	}()
 
+	return nil
+}
+
+// ConnectPeerWithFlags dials a remote peer endpoint enforcing contact policy flags.
+func (m *SessionManager) ConnectPeerWithFlags(endpoint, expectedFingerprint string, policyFlags int) error {
+	m.mu.RLock()
+	nm := m.netManager
+	m.mu.RUnlock()
+
+	if nm == nil {
+		if err := m.Init(); err != nil {
+			return err
+		}
+		nm = m.netManager
+	}
+
+	contactPolicy := transport.PolicyFromFlags(policyFlags)
+	go func() {
+		_, err := nm.ConnectPeerWithPolicy(endpoint, expectedFingerprint, contactPolicy)
+		callbacks, _ := m.callbackSnapshot()
+		if err != nil && callbacks.OnError != nil {
+			callbacks.OnError(2, fmt.Sprintf("ConnectPeer to %s failed: %v", endpoint, err))
+		}
+	}()
+
+	return nil
+}
+
+// SetPeerPolicy stores a contact-specific NetworkPolicy in the network session manager.
+func (m *SessionManager) SetPeerPolicy(peerFP string, policyFlags int) error {
+	m.mu.RLock()
+	nm := m.netManager
+	m.mu.RUnlock()
+
+	if nm == nil {
+		if err := m.Init(); err != nil {
+			return err
+		}
+		m.mu.RLock()
+		nm = m.netManager
+		m.mu.RUnlock()
+	}
+
+	if nm != nil {
+		contactPolicy := transport.PolicyFromFlags(policyFlags)
+		nm.SetPeerPolicy(peerFP, contactPolicy)
+	}
 	return nil
 }
 
@@ -1038,6 +1147,7 @@ func (m *SessionManager) GroupDecrypt(epochSecret, authenticatedData []byte, non
 // endpoint_update has already been sent.
 func (m *SessionManager) RefreshNATDiagnostics(ctx context.Context) bool {
 	m.mu.Lock()
+	policy := m.policy
 	torActive := m.torEnabled
 	port := 0
 	if m.netManager != nil {
@@ -1059,9 +1169,21 @@ func (m *SessionManager) RefreshNATDiagnostics(ctx context.Context) bool {
 	}
 	m.mu.Unlock()
 
+	// Б2: If WAN is disallowed (e.g. Tor Strict mode), skip STUN entirely to prevent clearnet leak.
+	if !policy.AllowWAN {
+		m.mu.Lock()
+		m.natDiag = &transport.NATDiagnostics{
+			NATType:   transport.NATTypeBlocked,
+			CheckedAt: time.Now().Unix(),
+		}
+		m.mu.Unlock()
+		return true
+	}
+
 	diag := transport.DetectNATEnvironment(ctx, torActive)
 
-	if !torActive && port > 0 {
+	// UPnP discovery sends multicast UDP packets on the local network; skip if LAN is disallowed.
+	if !torActive && port > 0 && policy.AllowLAN {
 		_ = m.upnpMapper.DiscoverAndMapPort(ctx, port)
 		mapped, extIP, mPort, sType := m.upnpMapper.GetStatus()
 		diag.UPnPMapped = mapped

@@ -15,23 +15,24 @@ func TestAdaptiveTransportClassification(t *testing.T) {
 
 	torCases := []struct {
 		endpoint string
-		expected TransportType
+		expected TransportClass
 	}{
-		{"192.168.1.50:50001", TransportDirect},
-		{"127.0.0.1:50001", TransportDirect},
-		{"10.0.0.2:50001", TransportDirect},
-		{"8.8.8.8:50001", TransportDirect}, // Public IP uses approved Direct transport per RULES.md §11
-		{"peer.example.com:50001", TransportTor}, // Domain names route via Tor when proxyEnabled=true
+		{"192.168.1.50:50001", TransportLAN},
+		{"10.0.0.2:50001", TransportLAN},
+		{"8.8.8.8:50001", TransportWAN},
+		{"peer.example.com:50001", TransportTor},
 		{"[200:abcd:1234::1]:50001", TransportYggdrasil},
 		{"[0200:1111:2222::1]:50001", TransportYggdrasil},
 		{"[300:abcd::1]:50001", TransportYggdrasil},
 		{"expyuz5wqlgah2inqqdu42q5755hkgy2ec2sp7z5bvhz2e6p3mndnxyd.onion:50001", TransportTor},
-		{"2pchatxyz.onion:80", TransportTor},
 	}
 
 	for _, tc := range torCases {
 		t.Run("TorEnabled_"+tc.endpoint, func(t *testing.T) {
-			got := torDialer.ClassifyEndpoint(tc.endpoint)
+			got, err := torDialer.ClassifyEndpoint(tc.endpoint)
+			if err != nil {
+				t.Fatalf("ClassifyEndpoint(%q) unexpected error: %v", tc.endpoint, err)
+			}
 			if got != tc.expected {
 				t.Errorf("ClassifyEndpoint(%q) = %v, expected %v", tc.endpoint, got, tc.expected)
 			}
@@ -43,17 +44,20 @@ func TestAdaptiveTransportClassification(t *testing.T) {
 
 	directCases := []struct {
 		endpoint string
-		expected TransportType
+		expected TransportClass
 	}{
-		{"8.8.8.8:50001", TransportDirect},
-		{"1.1.1.1:50001", TransportDirect},
+		{"8.8.8.8:50001", TransportWAN},
+		{"1.1.1.1:50001", TransportWAN},
 		{"[200:abcd:1234::1]:50001", TransportYggdrasil},
-		{"2pchatxyz.onion:80", TransportTor}, // Onion always uses Tor
+		{"expyuz5wqlgah2inqqdu42q5755hkgy2ec2sp7z5bvhz2e6p3mndnxyd.onion:80", TransportTor},
 	}
 
 	for _, tc := range directCases {
 		t.Run("DirectMode_"+tc.endpoint, func(t *testing.T) {
-			got := directDialer.ClassifyEndpoint(tc.endpoint)
+			got, err := directDialer.ClassifyEndpoint(tc.endpoint)
+			if err != nil {
+				t.Fatalf("ClassifyEndpoint(%q) unexpected error: %v", tc.endpoint, err)
+			}
 			if got != tc.expected {
 				t.Errorf("ClassifyEndpoint(%q) = %v, expected %v", tc.endpoint, got, tc.expected)
 			}

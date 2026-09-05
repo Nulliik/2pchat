@@ -33,7 +33,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
 
     companion object {
         private const val DATABASE_NAME = "twopchat.db"
-        private const val DATABASE_VERSION = 13
+        internal const val DATABASE_VERSION = 14
         private const val TABLE_MESSAGES = "messages"
         private const val TABLE_PENDING_CONTROLS = "pending_controls"
         private const val TABLE_PEERS = "peers"
@@ -63,6 +63,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
         private const val KEY_LAST_ENDPOINT = "last_endpoint"
         private const val KEY_FINGERPRINT = "fingerprint"
         private const val KEY_ABOUT_ME = "about_me"
+        private const val KEY_TRANSPORT_POLICY = "transport_policy"
         private const val KEY_UPDATED_AT_MS = "updated_at_ms"
         private const val TAG = "ChatDatabaseHelper"
         private val instanceLock = Any()
@@ -354,6 +355,24 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
                 // intentionally ignored: column KEY_ABOUT_ME may already exist from previous migration
             } catch (e: Exception) {
                 SafeLog.w(TAG, "Failed adding KEY_ABOUT_ME to $TABLE_PEERS", e)
+            }
+        }
+        if (oldVersion < 14) {
+            try {
+                db.execSQL("ALTER TABLE $TABLE_PEERS ADD COLUMN $KEY_TRANSPORT_POLICY INTEGER NOT NULL DEFAULT 0")
+            } catch (e: android.database.sqlite.SQLiteException) {
+                // intentionally ignored: column KEY_TRANSPORT_POLICY may already exist from previous migration
+            } catch (e: Exception) {
+                SafeLog.w(TAG, "Failed adding KEY_TRANSPORT_POLICY to $TABLE_PEERS", e)
+            }
+            try {
+                db.execSQL(
+                    "UPDATE $TABLE_PEERS SET $KEY_TRANSPORT_POLICY = 2 " +
+                    "WHERE $KEY_ONION_ADDRESS IS NOT NULL AND $KEY_ONION_ADDRESS != '' " +
+                    "AND ($KEY_LAST_ENDPOINT IS NULL OR $KEY_LAST_ENDPOINT = '' OR $KEY_LAST_ENDPOINT LIKE '%.onion%')"
+                )
+            } catch (e: Exception) {
+                SafeLog.w(TAG, "Failed backfilling transport_policy for onion contacts in $TABLE_PEERS", e)
             }
         }
     }
@@ -1165,13 +1184,16 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
     ) {
         val db = this.safeWritableDatabase
         val values = ContentValues().apply {
-            put(KEY_PEER_NAME, peerName)
             put(KEY_ONION_ADDRESS, onionAddress)
             if (!fingerprint.isNullOrBlank()) put(KEY_FINGERPRINT, fingerprint)
             if (!endpoint.isNullOrBlank()) put(KEY_LAST_ENDPOINT, endpoint)
             put(KEY_UPDATED_AT_MS, System.currentTimeMillis())
         }
-        db.insertWithOnConflict(TABLE_PEERS, null, values, SQLiteDatabase.CONFLICT_REPLACE)
+        val rows = db.update(TABLE_PEERS, values, "LOWER($KEY_PEER_NAME) = LOWER(?)", arrayOf(peerName.trim()))
+        if (rows == 0) {
+            values.put(KEY_PEER_NAME, peerName.trim())
+            db.insertWithOnConflict(TABLE_PEERS, null, values, SQLiteDatabase.CONFLICT_IGNORE)
+        }
     }
 
     fun getPeerOnionAddress(peerName: String): String? {
@@ -1232,11 +1254,14 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
     fun savePeerAboutMe(peerName: String, aboutMe: String) {
         val db = this.safeWritableDatabase
         val values = ContentValues().apply {
-            put(KEY_PEER_NAME, peerName)
             put(KEY_ABOUT_ME, aboutMe)
             put(KEY_UPDATED_AT_MS, System.currentTimeMillis())
         }
-        db.insertWithOnConflict(TABLE_PEERS, null, values, SQLiteDatabase.CONFLICT_REPLACE)
+        val rows = db.update(TABLE_PEERS, values, "LOWER($KEY_PEER_NAME) = LOWER(?)", arrayOf(peerName.trim()))
+        if (rows == 0) {
+            values.put(KEY_PEER_NAME, peerName.trim())
+            db.insertWithOnConflict(TABLE_PEERS, null, values, SQLiteDatabase.CONFLICT_IGNORE)
+        }
     }
 
     fun getPeerAboutMe(peerName: String): String? {
@@ -1317,6 +1342,53 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
         return result
     }
 
+    fun getPeerTransportPolicy(peerNameOrFP: String): Int {
+        if (peerNameOrFP.isBlank()) return 0
+        val db = this.safeReadableDatabase
+        return try {
+            db.query(
+                TABLE_PEERS,
+                arrayOf(KEY_TRANSPORT_POLICY),
+                "LOWER($KEY_PEER_NAME) = LOWER(?) OR $KEY_FINGERPRINT = ?",
+                arrayOf(peerNameOrFP.trim(), peerNameOrFP.trim()),
+                null,
+                null,
+                null,
+            ).use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val idx = cursor.getColumnIndex(KEY_TRANSPORT_POLICY)
+                    if (idx != -1 && !cursor.isNull(idx)) cursor.getInt(idx) else 0
+                } else 0
+            }
+        } catch (e: Exception) {
+            SafeLog.w(TAG, "Failed to get transport policy for $peerNameOrFP", e)
+            0
+        }
+    }
+
+    fun setPeerTransportPolicy(peerNameOrFP: String, policy: Int) {
+        if (peerNameOrFP.isBlank()) return
+        val db = this.safeWritableDatabase
+        try {
+            val values = ContentValues().apply {
+                put(KEY_TRANSPORT_POLICY, policy)
+                put(KEY_UPDATED_AT_MS, System.currentTimeMillis())
+            }
+            val rows = db.update(
+                TABLE_PEERS,
+                values,
+                "LOWER($KEY_PEER_NAME) = LOWER(?) OR $KEY_FINGERPRINT = ?",
+                arrayOf(peerNameOrFP.trim(), peerNameOrFP.trim())
+            )
+            if (rows == 0) {
+                values.put(KEY_PEER_NAME, peerNameOrFP.trim())
+                db.insertWithOnConflict(TABLE_PEERS, null, values, SQLiteDatabase.CONFLICT_IGNORE)
+            }
+        } catch (e: Exception) {
+            SafeLog.e(TAG, "Failed to set transport policy for $peerNameOrFP", e)
+        }
+    }
+
     private fun createPeersTable(db: SQLiteDatabase) {
         db.execSQL(
             "CREATE TABLE IF NOT EXISTS $TABLE_PEERS(" +
@@ -1325,6 +1397,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
                 "$KEY_ONION_ADDRESS TEXT," +
                 "$KEY_LAST_ENDPOINT TEXT," +
                 "$KEY_ABOUT_ME TEXT," +
+                "$KEY_TRANSPORT_POLICY INTEGER NOT NULL DEFAULT 0," +
                 "$KEY_UPDATED_AT_MS INTEGER NOT NULL DEFAULT 0)"
         )
     }

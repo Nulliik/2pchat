@@ -41,7 +41,7 @@ func TestTorOnionServiceIntegration(t *testing.T) {
 	}
 
 	// 3. Test dynamic update of onion address
-	newOnion := "2pchatv3hiddennodeabcdefghijklmnopqrstuvwxyz1234567890.onion"
+	newOnion := "expyuzz5wqqfdgah56trldbdymgah72ire75vp45w532nlr5lauma7ad.onion"
 	mgr.SetOnionAddress(newOnion)
 	if got := mgr.GetOnionAddress(); got != newOnion {
 		t.Errorf("Expected updated onion address %s, got %s", newOnion, got)
@@ -56,9 +56,9 @@ func TestTorOnionServiceIntegration(t *testing.T) {
 		t.Errorf("Expected .onion endpoint to classify as TierTor, got %v", tier)
 	}
 
-	trans := mgr.dialer.ClassifyEndpoint(newOnion + ":50001")
-	if trans != transport.TransportTor {
-		t.Errorf("Expected .onion endpoint to classify as TransportTor, got %v", trans)
+	trans, err := mgr.dialer.ClassifyEndpoint(newOnion + ":50001")
+	if err != nil || trans != transport.TransportTor {
+		t.Errorf("Expected .onion endpoint to classify as TransportTor, got %v, err: %v", trans, err)
 	}
 
 	t.Log("✅ Tor Onion Service integration verified successfully")

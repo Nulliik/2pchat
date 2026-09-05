@@ -198,10 +198,30 @@ object NativeBridge {
         }
     }
 
-    fun connectPeer(endpoint: String, expectedFingerprint: String = ""): Boolean {
+    fun applyPolicy(policyFlags: Int): Boolean {
         if (!isLoaded) return false
         return try {
-            nativeConnectPeer(endpoint, expectedFingerprint)
+            nativeApplyPolicy(policyFlags)
+        } catch (e: Throwable) {
+            SafeLog.e(TAG, "nativeApplyPolicy failed", e)
+            false
+        }
+    }
+
+    fun setPeerPolicy(peerFP: String, policyFlags: Int): Boolean {
+        if (!isLoaded || peerFP.isBlank()) return false
+        return try {
+            nativeSetPeerPolicy(peerFP, policyFlags)
+        } catch (e: Throwable) {
+            SafeLog.e(TAG, "nativeSetPeerPolicy failed", e)
+            false
+        }
+    }
+
+    fun connectPeer(endpoint: String, expectedFingerprint: String = "", policyFlags: Int = 0): Boolean {
+        if (!isLoaded) return false
+        return try {
+            nativeConnectPeer(endpoint, expectedFingerprint, policyFlags)
         } catch (e: Throwable) {
             SafeLog.e(TAG, "nativeConnectPeer failed", e)
             false
@@ -378,11 +398,11 @@ object NativeBridge {
         }
     }
 
-    fun probePeer(endpoints: List<String>, expectedFingerprint: String = ""): Boolean {
+    fun probePeer(endpoints: List<String>, expectedFingerprint: String = "", policyFlags: Int = 0): Boolean {
         if (!isLoaded) return false
         return try {
             val endpointsJson = JSONArray(endpoints).toString()
-            nativeProbePeer(endpointsJson, expectedFingerprint)
+            nativeProbePeer(endpointsJson, expectedFingerprint, policyFlags)
         } catch (e: Throwable) {
             SafeLog.e(TAG, "nativeProbePeer failed", e)
             false
@@ -708,9 +728,11 @@ object NativeBridge {
         myVerify: ByteArray,
         theirVerify: ByteArray,
     ): String?
+    private external fun nativeApplyPolicy(policyFlags: Int): Boolean
+    private external fun nativeSetPeerPolicy(peerFP: String, policyFlags: Int): Boolean
     private external fun nativeStartListener(port: Int): Boolean
     private external fun nativeStopListener(): Boolean
-    private external fun nativeConnectPeer(endpoint: String, expectedFingerprint: String): Boolean
+    private external fun nativeConnectPeer(endpoint: String, expectedFingerprint: String, policyFlags: Int): Boolean
     private external fun nativeUpdatePeerNameMapping(peerFingerprint: String, nickname: String): Boolean
     private external fun nativeSendMessage(peerFingerprint: String, text: String): String?
     private external fun nativeSendMessageBinary(peerFingerprint: String, directBuffer: java.nio.ByteBuffer, offset: Int, length: Int): String?
@@ -737,7 +759,7 @@ object NativeBridge {
     private external fun nativeUpdateTrackers(trackersJSON: String): Boolean
     private external fun nativeReloadIdentity(): Boolean
     private external fun nativeAnnounceSelf(infoHashHex: String, port: Int): Boolean
-    private external fun nativeProbePeer(endpointsJSON: String, expectedFingerprint: String): Boolean
+    private external fun nativeProbePeer(endpointsJSON: String, expectedFingerprint: String, policyFlags: Int): Boolean
     private external fun nativeResetStaleEndpointCooldowns(): Boolean
     private external fun nativeGetLocalSigningPublicKey(): String?
     private external fun nativeSignGroupPayload(canonicalPayload: String): String?

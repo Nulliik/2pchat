@@ -18,6 +18,7 @@ import java.util.concurrent.ConcurrentHashMap
 
 /** Canonical keys for relay state which is intentionally small key/value metadata. */
 object P2PPreferences {
+    private const val TAG = "P2PPreferences"
     val lastMessageCache = ConcurrentHashMap<String, String>()
     const val FILE_NAME = "2pchat_prefs"
     private const val ENCRYPTED_FILE_NAME = "2pchat_secure_prefs"
@@ -328,6 +329,14 @@ object P2PPreferences {
     }
 
     private const val KEY_TOR_HIDDEN_SERVICE_ENABLED = "tor_hidden_service_enabled"
+    const val TOR_STRICT_MODE = "settings_tor_strict_mode"
+
+    fun isTorStrictMode(context: Context): Boolean =
+        prefs(context).getBoolean(TOR_STRICT_MODE, false)
+
+    fun setTorStrictMode(context: Context, enabled: Boolean): Boolean {
+        return prefs(context).edit().putBoolean(TOR_STRICT_MODE, enabled).commit()
+    }
 
     fun isTorHiddenServiceEnabled(context: Context): Boolean =
         prefs(context).getBoolean(KEY_TOR_HIDDEN_SERVICE_ENABLED, true)
@@ -754,32 +763,82 @@ object P2PPreferences {
         }.getOrNull()?.takeIf { it.isNotBlank() }
     }
 
-    enum class PeerTransportPreference(val key: String) {
-        AUTO("auto"),
-        TOR_ONLY("tor"),
-        YGGDRASIL_ONLY("yggdrasil"),
-        DIRECT_ONLY("direct");
+    enum class PeerTransportPreference(val key: String, val policyInt: Int) {
+        AUTO("auto", 0),
+        DIRECT_ONLY("direct", 1),
+        TOR_ONLY("tor", 2),
+        YGGDRASIL_ONLY("yggdrasil", 3);
 
         companion object {
             fun fromKey(key: String?): PeerTransportPreference {
                 return entries.firstOrNull { it.key.equals(key, ignoreCase = true) } ?: AUTO
             }
+
+            fun fromPolicyInt(policyInt: Int): PeerTransportPreference {
+                return entries.firstOrNull { it.policyInt == policyInt } ?: AUTO
+            }
         }
     }
 
     fun getPeerTransportPreference(context: Context, peerName: String): PeerTransportPreference {
+        try {
+            val dbHelper = com.example.twopchat.data.ChatDatabaseHelper.getInstance(context)
+            val policyInt = dbHelper.getPeerTransportPolicy(peerName)
+            if (policyInt != 0) {
+                return PeerTransportPreference.fromPolicyInt(policyInt)
+            }
+            val fp = getPeerFingerprint(context, peerName)
+            if (!fp.isNullOrBlank() && fp != peerName) {
+                val fpPolicyInt = dbHelper.getPeerTransportPolicy(fp)
+                if (fpPolicyInt != 0) {
+                    return PeerTransportPreference.fromPolicyInt(fpPolicyInt)
+                }
+            }
+        } catch (e: Exception) {
+            SafeLog.w(TAG, "Failed reading transport policy from DB for $peerName", e)
+        }
+
         val sp = prefs(context)
         val raw = sp.getString(peerTransportPref(peerName), null)
-        if (raw != null) return PeerTransportPreference.fromKey(raw)
+        if (raw != null) {
+            val pref = PeerTransportPreference.fromKey(raw)
+            if (pref != PeerTransportPreference.AUTO) {
+                try {
+                    com.example.twopchat.data.ChatDatabaseHelper.getInstance(context)
+                        .setPeerTransportPolicy(peerName, pref.policyInt)
+                } catch (_: Exception) {}
+            }
+            return pref
+        }
         val fp = getPeerFingerprint(context, peerName)
         if (!fp.isNullOrBlank() && fp != peerName) {
             val fpRaw = sp.getString(peerTransportPref(fp), null)
-            if (fpRaw != null) return PeerTransportPreference.fromKey(fpRaw)
+            if (fpRaw != null) {
+                val pref = PeerTransportPreference.fromKey(fpRaw)
+                if (pref != PeerTransportPreference.AUTO) {
+                    try {
+                        com.example.twopchat.data.ChatDatabaseHelper.getInstance(context)
+                            .setPeerTransportPolicy(fp, pref.policyInt)
+                    } catch (_: Exception) {}
+                }
+                return pref
+            }
         }
         return PeerTransportPreference.AUTO
     }
 
     fun setPeerTransportPreference(context: Context, peerName: String, pref: PeerTransportPreference) {
+        try {
+            val dbHelper = com.example.twopchat.data.ChatDatabaseHelper.getInstance(context)
+            dbHelper.setPeerTransportPolicy(peerName, pref.policyInt)
+            val fp = getPeerFingerprint(context, peerName)
+            if (!fp.isNullOrBlank() && fp != peerName) {
+                dbHelper.setPeerTransportPolicy(fp, pref.policyInt)
+            }
+        } catch (e: Exception) {
+            SafeLog.e(TAG, "Failed saving transport policy to DB for $peerName", e)
+        }
+
         val editor = prefs(context).edit().putString(peerTransportPref(peerName), pref.key)
         val fp = getPeerFingerprint(context, peerName)
         if (!fp.isNullOrBlank() && fp != peerName) {

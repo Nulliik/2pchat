@@ -4,10 +4,152 @@ import (
 	"context"
 	"errors"
 	"net"
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"twopchat/core/pkg/transport"
 )
+
+const MaxCandidateEndpoints = 16
+
+// GetLocalSubnets queries the OS network interfaces for active non-loopback subnets.
+func GetLocalSubnets() ([]*net.IPNet, error) {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return nil, err
+	}
+	var subnets []*net.IPNet
+	for _, iface := range ifaces {
+		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, addr := range addrs {
+			if ipnet, ok := addr.(*net.IPNet); ok {
+				subnets = append(subnets, ipnet)
+			}
+		}
+	}
+	return subnets, nil
+}
+
+type candidateItem struct {
+	endpoint string
+	tier     ProbingTier
+	class    transport.TransportClass
+}
+
+// FilterCandidates normalizes, deduplicates, enforces Anti-SSRF, verifies local subnets for LAN candidates,
+// applies the NetworkPolicy, and caps the result to at most 16 candidates.
+func FilterCandidates(
+	policy transport.NetworkPolicy,
+	rawCandidates []string,
+	localIfaces []*net.IPNet,
+) ([]string, error) {
+	seen := make(map[string]bool)
+	var filtered []candidateItem
+
+	for _, raw := range rawCandidates {
+		cand := strings.TrimSpace(raw)
+		if cand == "" {
+			continue
+		}
+		norm := transport.NormalizeEndpoint(cand, 50001)
+		if norm == "" || seen[norm] {
+			continue
+		}
+
+		class, err := transport.ClassifyEndpoint(norm)
+		if err != nil || class == transport.TransportInvalid {
+			continue
+		}
+
+		// Policy check: reject any candidate whose class is denied by the policy
+		if !policy.Allows(class) {
+			continue
+		}
+
+		// Anti-SSRF: reject unspecified, link-local addresses, and sensitive infrastructure ports
+		host := norm
+		port := 0
+		if h, p, err := net.SplitHostPort(norm); err == nil {
+			host = h
+			if parsedPort, parseErr := strconv.Atoi(p); parseErr == nil {
+				port = parsedPort
+			}
+		}
+		host = strings.Trim(host, "[]")
+		ip := net.ParseIP(host)
+		if ip != nil {
+			if ip.IsUnspecified() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
+				continue
+			}
+
+			// Reject loopback when LAN is denied
+			if ip.IsLoopback() && !policy.AllowLAN {
+				continue
+			}
+
+			// Anti-SSRF port restrictions on private/local addresses:
+			// Prevent scanning privileged services (< 1024) and well-known web/admin/proxy ports
+			if class == transport.TransportLAN || ip.IsLoopback() {
+				if port < 1024 || isSensitiveLocalPort(port) {
+					continue
+				}
+			}
+
+			// Anti-SSRF for LAN & loopback candidates:
+			// If candidate is a LAN or loopback address, verify it belongs to one of the local interfaces' subnets.
+			// If localIfaces is non-empty and no subnet matches, drop it.
+			if (class == transport.TransportLAN || ip.IsLoopback()) && len(localIfaces) > 0 {
+				matched := false
+				for _, ifaceNet := range localIfaces {
+					if ifaceNet.Contains(ip) {
+						matched = true
+						break
+					}
+				}
+				if !matched {
+					continue
+				}
+			}
+		}
+
+		seen[norm] = true
+		tier := ClassifyTier(norm)
+		filtered = append(filtered, candidateItem{
+			endpoint: norm,
+			tier:     tier,
+			class:    class,
+		})
+	}
+
+	if len(filtered) == 0 {
+		return nil, ErrNoViableEndpoints
+	}
+
+	// Sort by ProbingTier priority
+	sort.SliceStable(filtered, func(i, j int) bool {
+		return filtered[i].tier < filtered[j].tier
+	})
+
+	// Hard cap at MaxCandidateEndpoints (16)
+	if len(filtered) > MaxCandidateEndpoints {
+		filtered = filtered[:MaxCandidateEndpoints]
+	}
+
+	res := make([]string, len(filtered))
+	for i, item := range filtered {
+		res[i] = item.endpoint
+	}
+	return res, nil
+}
 
 // ProbingTier classifies the latency/routing tier of an endpoint candidate.
 type ProbingTier int
@@ -251,3 +393,23 @@ func (p *FastTieredProber) ResetCooldowns() {
 	p.cooldowns = make(map[string]time.Time)
 	p.failures = make(map[string]int)
 }
+
+// isSensitiveLocalPort returns true for ports commonly associated with
+// local infrastructure, router administration, web panels, and local proxies.
+func isSensitiveLocalPort(port int) bool {
+	switch port {
+	case 1080, // SOCKS proxy
+		1900, // SSDP / UPnP control
+		3000, // Common dev web UI (Node/Grafana)
+		3128, // Squid proxy
+		5000, // UPnP / NAS admin (Synology)
+		5353, // mDNS
+		8000, 8008, 8080, 8081, 8443, 8888, // Common router/proxy alternative HTTP(S) ports
+		9050, 9051, // Tor SOCKS / Control
+		9053:        // Yggdrasil admin/proxy
+		return true
+	default:
+		return false
+	}
+}
+

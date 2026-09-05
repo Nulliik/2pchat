@@ -672,20 +672,78 @@ class NativeBridgeImpl(
             peerNameMap[fingerprint] = peerName
             nameToFpMap[peerName] = fingerprint
         }
-        val rawCandidates = endpoint.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+        val context = com.example.twopchat.yggdrasil.GlobalApplication.appContext
+        val pref = P2PPreferences.getPeerTransportPreference(context, peerName)
+
         val isTorRunning = com.example.twopchat.tor.TorManager.isTorRunning.value
         val isTorConnecting = com.example.twopchat.tor.TorManager.isTorConnecting.value
-        val candidateList = rawCandidates.filter { candidate ->
-            !candidate.contains(".onion", ignoreCase = true) || (isTorRunning && !isTorConnecting)
-        }
-        if (candidateList.isEmpty()) {
-            SafeLog.d(TAG, "[GoCore] Tor is not ready yet; deferring connection to .onion endpoint")
+        val torReady = isTorRunning && !isTorConnecting
+
+        // Policy conflict check: If global mode is Tor Strict and contact policy only permits clearnet/yggdrasil
+        val isTorStrict = com.example.twopchat.config.ProxyConfig.getEffectiveProxyConfig(context).enabled &&
+            P2PPreferences.isTorStrictMode(context)
+        if (isTorStrict && (pref == P2PPreferences.PeerTransportPreference.DIRECT_ONLY || pref == P2PPreferences.PeerTransportPreference.YGGDRASIL_ONLY)) {
+            SafeLog.w(TAG, "[PolicyConflict] Peer $peerName policy ${pref.key} conflicts with global Tor Strict mode. Blocked.")
+            com.example.twopchat.tor.TransportEventManager.emit(
+                com.example.twopchat.tor.TransportEvent.PolicyConflict(
+                    peerName = peerName,
+                    contactPolicy = pref.key,
+                    globalPolicy = "tor_strict"
+                )
+            )
             return false
         }
+
+        // Downgrade protection: if contact is TOR_ONLY and Tor is unavailable, do NOT fall back to clearnet
+        if (pref == P2PPreferences.PeerTransportPreference.TOR_ONLY) {
+            if (!torReady) {
+                SafeLog.w(TAG, "[DowngradeProtection] Peer $peerName is TOR_ONLY, but Tor is not ready. Downgrade blocked.")
+                com.example.twopchat.tor.TransportEventManager.emit(
+                    com.example.twopchat.tor.TransportEvent.TorUnavailable(
+                        peerName = peerName,
+                        reason = "Tor network is offline or connecting; clearnet fallback blocked by TOR_ONLY policy"
+                    )
+                )
+                return false
+            }
+        }
+
+        val rawCandidates = endpoint.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+        val candidateList = rawCandidates.filter { candidate ->
+            if (pref == P2PPreferences.PeerTransportPreference.TOR_ONLY) {
+                candidate.contains(".onion", ignoreCase = true)
+            } else {
+                !candidate.contains(".onion", ignoreCase = true) || torReady
+            }
+        }
+        if (candidateList.isEmpty()) {
+            if (pref == P2PPreferences.PeerTransportPreference.TOR_ONLY) {
+                com.example.twopchat.tor.TransportEventManager.emit(
+                    com.example.twopchat.tor.TransportEvent.TransportDowngradeBlocked(
+                        peerName = peerName,
+                        attemptedTransport = "Direct/LAN"
+                    )
+                )
+            }
+            SafeLog.d(TAG, "[GoCore] No viable candidates for peer $peerName under policy $pref")
+            return false
+        }
+
+        val policyFlags = when (pref) {
+            P2PPreferences.PeerTransportPreference.TOR_ONLY -> 8 // PolicyFlagAllowOnion = 1 << 3
+            P2PPreferences.PeerTransportPreference.DIRECT_ONLY -> 3 // AllowLAN | AllowWAN
+            P2PPreferences.PeerTransportPreference.YGGDRASIL_ONLY -> 4 // AllowYggdrasil
+            P2PPreferences.PeerTransportPreference.AUTO -> 0 // Inherit global
+        }
+
+        if (!fingerprint.isNullOrBlank()) {
+            NativeBridge.setPeerPolicy(fingerprint, policyFlags)
+        }
+
         return if (candidateList.size > 1) {
-            NativeBridge.probePeer(candidateList, fingerprint.orEmpty())
+            NativeBridge.probePeer(candidateList, fingerprint.orEmpty(), policyFlags)
         } else {
-            NativeBridge.connectPeer(candidateList.first(), fingerprint.orEmpty())
+            NativeBridge.connectPeer(candidateList.first(), fingerprint.orEmpty(), policyFlags)
         }
     }
 

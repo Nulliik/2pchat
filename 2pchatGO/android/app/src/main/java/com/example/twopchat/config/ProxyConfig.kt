@@ -80,6 +80,12 @@ object ProxyConfig {
             ""
         }
         NativeBridge.setTorProxy(effective.enabled, proxyAddr)
+        val policyFlags = if (effective.enabled && P2PPreferences.isTorStrictMode(context)) {
+            8 // PolicyFlagAllowOnion = 1 << 3
+        } else {
+            31 // PolicySpeed (LAN | WAN | Yggdrasil | Onion | LocalDNS)
+        }
+        NativeBridge.applyPolicy(policyFlags)
         return true
     }
 }

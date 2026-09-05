@@ -755,7 +755,7 @@ object P2PMessageRelay {
 
     fun setLocalDiscoveryEnabled(context: Context, enabled: Boolean) {
         val appContext = context.applicationContext
-        if (!enabled) {
+        if (!enabled || P2PPreferences.isTorEnabled(appContext)) {
             localPeerDiscovery?.stop()
             localPeerCandidates.clear()
             return
@@ -765,6 +765,10 @@ object P2PMessageRelay {
     }
 
     private fun startLocalDiscovery(context: Context, port: Int) {
+        if (P2PPreferences.isTorEnabled(context)) {
+            localPeerDiscovery?.stop()
+            return
+        }
         val prefs = P2PPreferences.prefs(context)
         if (!prefs.getBoolean(P2PPreferences.WIFI_DISCOVERY, true)) return
         val username = prefs.getString("username_profile", "").orEmpty()

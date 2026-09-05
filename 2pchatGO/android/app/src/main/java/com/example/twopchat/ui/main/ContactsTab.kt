@@ -576,6 +576,10 @@ fun ContactsTab(
                                         sharedPrefs.edit().putString("last_endpoint_${effectiveName}", endpointStr).apply()
                                         if (endpointStr.contains(".onion")) {
                                             P2PPreferences.setPeerOnionAddress(context, effectiveName, endpointStr)
+                                            val invEps = endpointStr.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+                                            if (invEps.isNotEmpty() && invEps.all { it.contains(".onion", ignoreCase = true) }) {
+                                                P2PPreferences.setPeerTransportPreference(context, effectiveName, P2PPreferences.PeerTransportPreference.TOR_ONLY)
+                                            }
                                             ChatDatabaseHelper.getInstance(context).savePeerOnionAddress(
                                                 peerName = effectiveName,
                                                 onionAddress = endpointStr,
@@ -660,6 +664,7 @@ fun ContactsTab(
                         sharedPrefs.edit().putString("last_endpoint_${effectiveName}", directOnion.onionEndpoint).apply()
                     }
                     P2PPreferences.setPeerOnionAddress(context, effectiveName, directOnion.onionEndpoint)
+                    P2PPreferences.setPeerTransportPreference(context, effectiveName, P2PPreferences.PeerTransportPreference.TOR_ONLY)
                     ChatDatabaseHelper.getInstance(context).savePeerOnionAddress(
                         peerName = effectiveName,
                         onionAddress = directOnion.onionEndpoint,
@@ -1644,6 +1649,10 @@ fun ContactsTab(
                                         sharedPrefs.edit().putString("last_endpoint_$peerKey", contact.endpoints).apply()
                                         if (contact.endpoints.contains(".onion")) {
                                             P2PPreferences.setPeerOnionAddress(context, peerKey, contact.endpoints)
+                                            val cEps = contact.endpoints.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+                                            if (cEps.isNotEmpty() && cEps.all { it.contains(".onion", ignoreCase = true) }) {
+                                                P2PPreferences.setPeerTransportPreference(context, peerKey, P2PPreferences.PeerTransportPreference.TOR_ONLY)
+                                            }
                                             ChatDatabaseHelper.getInstance(context).savePeerOnionAddress(
                                                 peerName = peerKey,
                                                 onionAddress = contact.endpoints,

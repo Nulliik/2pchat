@@ -73,13 +73,7 @@ func FindAvailablePort(host string, preferredPort int) (int, error) {
 }
 
 // TransportType represents the underlying network transport used for dialing.
-type TransportType string
-
-const (
-	TransportDirect    TransportType = "direct"
-	TransportTor       TransportType = "tor"
-	TransportYggdrasil TransportType = "yggdrasil"
-)
+type TransportType = TransportClass
 
 // YggdrasilMode defines whether Yggdrasil connections are routed via SOCKS5 proxy (default) or OS VPN TUN.
 type YggdrasilMode string
@@ -92,6 +86,7 @@ const (
 // AdaptiveDialer automatically routes outbound connections through Direct TCP, Yggdrasil, Tor SOCKS5, or Blind Relay.
 type AdaptiveDialer struct {
 	mu             sync.RWMutex
+	policy         NetworkPolicy
 	torProxyAddr   string
 	proxyEnabled   bool
 	yggProxyAddr   string
@@ -135,6 +130,7 @@ func NewAdaptiveDialer(torProxyAddr string, proxyEnabled bool, timeout time.Dura
 	}
 
 	d := &AdaptiveDialer{
+		policy:         PolicySpeed,
 		torProxyAddr:   torProxyAddr,
 		proxyEnabled:   proxyEnabled,
 		yggProxyAddr:   DefaultYggdrasilProxy,
@@ -151,6 +147,29 @@ func NewAdaptiveDialer(torProxyAddr string, proxyEnabled bool, timeout time.Dura
 	d.initTorDialer()
 	d.initYggDialer()
 	return d
+}
+
+// SetPolicy sets the network policy enforced by this dialer.
+func (d *AdaptiveDialer) SetPolicy(p NetworkPolicy) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.policy = p
+}
+
+// GetPolicy returns the current network policy enforced by this dialer.
+func (d *AdaptiveDialer) GetPolicy() NetworkPolicy {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	return d.policy
+}
+
+// SetResolver overrides the DNS resolver used by directDialer (used for testing and DNS leak verification).
+func (d *AdaptiveDialer) SetResolver(r *net.Resolver) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.directDialer != nil {
+		d.directDialer.Resolver = r
+	}
 }
 
 func (d *AdaptiveDialer) initTorDialer() {
@@ -208,10 +227,34 @@ var yggdrasilSubnet = func() *net.IPNet {
 	return subnet
 }()
 
+var (
+	cgnatCIDR       = mustParseCIDR("100.64.0.0/10")
+	rfc1918_10      = mustParseCIDR("10.0.0.0/8")
+	rfc1918_172     = mustParseCIDR("172.16.0.0/12")
+	rfc1918_192     = mustParseCIDR("192.168.0.0/16")
+	bogon198_18     = mustParseCIDR("198.18.0.0/15")
+	bogon192_0_2    = mustParseCIDR("192.0.2.0/24")
+	bogon198_51_100 = mustParseCIDR("198.51.100.0/24")
+	bogon203_0_113  = mustParseCIDR("203.0.113.0/24")
+	bogon240_0_0_0  = mustParseCIDR("240.0.0.0/4")
+	ipv6DocCIDR     = mustParseCIDR("2001:db8::/32")
+)
+
+func mustParseCIDR(s string) *net.IPNet {
+	_, ipnet, err := net.ParseCIDR(s)
+	if err != nil {
+		panic(err)
+	}
+	return ipnet
+}
+
 // IsYggdrasilIP returns true if the given IP falls within the Yggdrasil 200::/7 address space.
 func IsYggdrasilIP(ip net.IP) bool {
 	if ip == nil || ip.To4() != nil {
 		return false
+	}
+	if len(ip) == 16 && (ip[0]&0xfe == 0x02) {
+		return true
 	}
 	return yggdrasilSubnet != nil && yggdrasilSubnet.Contains(ip)
 }
@@ -222,13 +265,18 @@ func IsPrivateOrLocalIP(host string) bool {
 	if ip == nil {
 		return false
 	}
-	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified()
+	if ip4 := ip.To4(); ip4 != nil {
+		return ip4.IsLoopback() || ip4.IsPrivate() || ip4.IsLinkLocalUnicast() || ip4.IsLinkLocalMulticast() || ip4.IsUnspecified()
+	}
+	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsUnspecified()
 }
 
-// ClassifyEndpoint determines the appropriate transport type for a given destination address.
-func (d *AdaptiveDialer) ClassifyEndpoint(address string) TransportType {
-	d.mu.RLock()
-	defer d.mu.RUnlock()
+// ClassifyEndpoint determines the appropriate architectural TransportClass for a given destination address.
+func ClassifyEndpoint(address string) (TransportClass, error) {
+	address = strings.TrimSpace(address)
+	if address == "" {
+		return TransportInvalid, ErrInvalidEndpoint
+	}
 
 	host := address
 	if strings.Contains(address, ":") {
@@ -238,46 +286,161 @@ func (d *AdaptiveDialer) ClassifyEndpoint(address string) TransportType {
 		}
 	}
 	host = strings.Trim(host, "[]")
+	if host == "" {
+		return TransportInvalid, ErrInvalidEndpoint
+	}
 
-	if strings.HasSuffix(strings.ToLower(host), ".onion") {
-		return TransportTor
+	lowerHost := strings.ToLower(host)
+	if strings.HasSuffix(lowerHost, ".onion") {
+		onionPrefix := strings.TrimSuffix(lowerHost, ".onion")
+		if len(onionPrefix) != 56 {
+			return TransportInvalid, ErrMalformedOnionAddress
+		}
+		for i := 0; i < len(onionPrefix); i++ {
+			c := onionPrefix[i]
+			if !((c >= 'a' && c <= 'z') || (c >= '2' && c <= '7')) {
+				return TransportInvalid, ErrMalformedOnionAddress
+			}
+		}
+		return TransportTor, nil
 	}
 
 	ip := net.ParseIP(host)
 	if ip != nil {
-		if IsPrivateOrLocalIP(host) {
-			return TransportDirect
+		// IPv4 or IPv4-mapped IPv6 (e.g. ::ffff:192.168.1.1)
+		if ip4 := ip.To4(); ip4 != nil {
+			if ip4.IsUnspecified() {
+				return TransportInvalid, ErrUnspecifiedAddress
+			}
+			if ip4.IsMulticast() {
+				return TransportInvalid, ErrMulticastAddress
+			}
+			if ip4.IsLinkLocalUnicast() || ip4.IsLinkLocalMulticast() {
+				return TransportInvalid, ErrLinkLocalAddress
+			}
+			if bogon198_18.Contains(ip4) || bogon192_0_2.Contains(ip4) || bogon198_51_100.Contains(ip4) || bogon203_0_113.Contains(ip4) || bogon240_0_0_0.Contains(ip4) {
+				return TransportInvalid, ErrBogonAddress
+			}
+			if ip4.IsLoopback() {
+				return TransportLAN, nil
+			}
+			if cgnatCIDR.Contains(ip4) {
+				return TransportWAN, nil
+			}
+			if rfc1918_10.Contains(ip4) || rfc1918_172.Contains(ip4) || rfc1918_192.Contains(ip4) {
+				return TransportLAN, nil
+			}
+			return TransportWAN, nil
 		}
-		if IsYggdrasilIP(ip) {
-			return TransportYggdrasil
+
+		// True IPv6
+		if ip.IsUnspecified() {
+			return TransportInvalid, ErrUnspecifiedAddress
 		}
-		// Direct public IPv4 or direct global mobile IPv6 per RULES.md §11
-		return TransportDirect
+		if ip.IsMulticast() {
+			return TransportInvalid, ErrMulticastAddress
+		}
+		if ip.IsLinkLocalUnicast() {
+			return TransportInvalid, ErrLinkLocalAddress
+		}
+		if ip.IsLoopback() {
+			return TransportLAN, nil
+		}
+
+		// 1. Check Yggdrasil 200::/7 first per П2 (first byte 0000001x -> ip[0]&0xfe == 0x02)
+		if len(ip) == 16 && (ip[0]&0xfe == 0x02) {
+			return TransportYggdrasil, nil
+		}
+
+		// 2. Check ULA fc00::/7 (first byte 1111110x -> ip[0]&0xfe == 0xfc)
+		if len(ip) == 16 && (ip[0]&0xfe == 0xfc) {
+			return TransportLAN, nil
+		}
+
+		// 3. IPv6 Documentation / Bogon
+		if ipv6DocCIDR.Contains(ip) {
+			return TransportInvalid, ErrBogonAddress
+		}
+
+		// 4. Other global unicast IPv6
+		return TransportWAN, nil
 	}
 
-	if d.proxyEnabled {
-		return TransportTor
+	// Hostname / Domain (non-onion)
+	if strings.ContainsAny(host, " \t\r\n/\\@%") {
+		return TransportInvalid, ErrInvalidEndpoint
 	}
+	return TransportWAN, nil
+}
 
-	return TransportDirect
+func isIPAddress(address string) bool {
+	host := address
+	if strings.Contains(address, ":") {
+		if h, _, err := net.SplitHostPort(address); err == nil {
+			host = h
+		}
+	}
+	host = strings.Trim(host, "[]")
+	return net.ParseIP(host) != nil
+}
+
+// ClassifyEndpoint determines the appropriate transport class for a given destination address.
+func (d *AdaptiveDialer) ClassifyEndpoint(address string) (TransportClass, error) {
+	d.mu.RLock()
+	proxyEnabled := d.proxyEnabled
+	d.mu.RUnlock()
+
+	class, err := ClassifyEndpoint(address)
+	if err != nil {
+		return TransportInvalid, err
+	}
+	// If Tor proxy is enabled, domain names route to Tor SOCKS5 to prevent DNS leaks
+	if proxyEnabled && class == TransportWAN && !isIPAddress(address) {
+		return TransportTor, nil
+	}
+	return class, nil
 }
 
 // DialContext establishes a connection to the target address choosing the optimal transport.
 func (d *AdaptiveDialer) DialContext(ctx context.Context, network, address string) (net.Conn, error) {
 	address = NormalizeEndpoint(address, 50001)
-	transportType := d.ClassifyEndpoint(address)
+	class, err := d.ClassifyEndpoint(address)
+	if err != nil {
+		return nil, fmt.Errorf("invalid endpoint %q: %w", address, err)
+	}
 
-	if transportType == TransportTor {
+	d.mu.RLock()
+	p := d.policy
+	torDialer := d.torDialer
+	yggDialer := d.yggDialer
+	yggMode := d.yggdrasilMode
+	yggAddr := d.yggProxyAddr
+	torProxyAddr := d.torProxyAddr
+	d.mu.RUnlock()
+
+	if !p.Allows(class) {
+		return nil, fmt.Errorf("%w: %q (class: %s)", ErrPolicyDenied, address, class)
+	}
+
+	// Fail-closed DNS leak protection:
+	// If the destination address is a hostname (not an IP literal and not .onion)
+	// and local DNS resolution is forbidden by policy (AllowLocalDNS == false):
+	// - If Tor SOCKS5 proxy is enabled, Tor resolves remote hostnames safely via SOCKS5 CONNECT.
+	// - If Tor SOCKS5 proxy is disabled (or transport is not Tor), reject immediately
+	//   BEFORE any DNS resolver call is made to prevent leaking DNS requests to ISP/clearnet.
+	if !isIPAddress(address) && !strings.Contains(strings.ToLower(address), ".onion") {
+		if !p.AllowLocalDNS && class != TransportTor {
+			return nil, fmt.Errorf("%w: local DNS resolution is forbidden by policy for %q", ErrPolicyDenied, address)
+		}
+	}
+
+	if class == TransportTor {
 		if strings.HasPrefix(strings.ToLower(network), "udp") {
 			return nil, ErrUDPOverTorNotSupported
 		}
 
-		d.mu.RLock()
-		torDialer := d.torDialer
-		d.mu.RUnlock()
-
 		if torDialer == nil {
-			return nil, fmt.Errorf("Tor SOCKS5 dialer is uninitialized (proxy: %s)", d.torProxyAddr)
+			return nil, fmt.Errorf("Tor SOCKS5 dialer is uninitialized (proxy: %s)", torProxyAddr)
 		}
 
 		type dialResult struct {
@@ -314,14 +477,8 @@ func (d *AdaptiveDialer) DialContext(ctx context.Context, network, address strin
 		}
 	}
 
-	if transportType == TransportYggdrasil {
-		d.mu.RLock()
-		mode := d.yggdrasilMode
-		yggDialer := d.yggDialer
-		yggAddr := d.yggProxyAddr
-		d.mu.RUnlock()
-
-		if mode == YggdrasilModeProxy {
+	if class == TransportYggdrasil {
+		if yggMode == YggdrasilModeProxy {
 			if yggDialer == nil {
 				return nil, fmt.Errorf("Yggdrasil SOCKS5 dialer is uninitialized (proxy: %s)", yggAddr)
 			}
@@ -364,14 +521,14 @@ func (d *AdaptiveDialer) DialContext(ctx context.Context, network, address strin
 		return d.directDialer.DialContext(ctx, network, address)
 	}
 
-	// Direct TCP connection
+	// TransportLAN or TransportWAN: Direct TCP connection
 	return d.directDialer.DialContext(ctx, network, address)
 }
 
 // Dial is a convenience wrapper around DialContext.
 func (d *AdaptiveDialer) Dial(network, address string) (net.Conn, error) {
 	timeout := d.timeout
-	if d.ClassifyEndpoint(address) == TransportTor {
+	if class, _ := d.ClassifyEndpoint(address); class == TransportTor {
 		timeout = DefaultTorDialTimeout
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
@@ -475,7 +632,7 @@ func (d *AdaptiveDialer) DialWithRelayFallback(
 	if hp != nil && len(directEndpoints) > 0 && ctx.Err() == nil {
 		var directCandidates []string
 		for _, ep := range directEndpoints {
-			if d.ClassifyEndpoint(ep) == TransportDirect {
+			if class, _ := d.ClassifyEndpoint(ep); class.IsDirect() {
 				directCandidates = append(directCandidates, ep)
 			}
 		}

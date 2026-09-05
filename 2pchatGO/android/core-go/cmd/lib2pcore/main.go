@@ -301,12 +301,54 @@ func Java_com_example_twopchat_NativeBridge_nativeStopListener(
 	return C.JNI_TRUE
 }
 
+//export Java_com_example_twopchat_NativeBridge_nativeApplyPolicy
+func Java_com_example_twopchat_NativeBridge_nativeApplyPolicy(
+	env *C.JNIEnv,
+	clazz C.jclass,
+	jPolicyFlags C.jint,
+) C.jboolean {
+	flags := int(jPolicyFlags)
+	if err := transport.ValidateFlags(flags); err != nil {
+		fmt.Printf("nativeApplyPolicy rejected invalid policy flags 0x%x: %v\n", flags, err)
+		return C.JNI_FALSE
+	}
+	policy := transport.PolicyFromFlags(flags)
+	bridge.GetManager().ApplyPolicy(policy)
+	return C.JNI_TRUE
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeSetPeerPolicy
+func Java_com_example_twopchat_NativeBridge_nativeSetPeerPolicy(
+	env *C.JNIEnv,
+	clazz C.jclass,
+	jPeerFP C.jstring,
+	jPolicyFlags C.jint,
+) C.jboolean {
+	cFP := C.getJStringUTFChars(env, jPeerFP)
+	if cFP == nil {
+		return C.JNI_FALSE
+	}
+	peerFP := C.GoString(cFP)
+	C.releaseJStringUTFChars(env, jPeerFP, cFP)
+
+	flags := int(jPolicyFlags)
+	if flags != 0 {
+		if err := transport.ValidateFlags(flags); err != nil {
+			fmt.Printf("nativeSetPeerPolicy rejected invalid flags 0x%x: %v\n", flags, err)
+			return C.JNI_FALSE
+		}
+	}
+	_ = bridge.GetManager().SetPeerPolicy(peerFP, flags)
+	return C.JNI_TRUE
+}
+
 //export Java_com_example_twopchat_NativeBridge_nativeConnectPeer
 func Java_com_example_twopchat_NativeBridge_nativeConnectPeer(
 	env *C.JNIEnv,
 	clazz C.jclass,
 	jEndpoint C.jstring,
 	jExpectedFP C.jstring,
+	jPolicyFlags C.jint,
 ) C.jboolean {
 	cEndpoint := C.getJStringUTFChars(env, jEndpoint)
 	if cEndpoint == nil {
@@ -322,9 +364,22 @@ func Java_com_example_twopchat_NativeBridge_nativeConnectPeer(
 		C.releaseJStringUTFChars(env, jExpectedFP, cFP)
 	}
 
-	err := bridge.GetManager().ConnectPeer(endpoint, expectedFP)
+	flags := int(jPolicyFlags)
+	if flags != 0 {
+		if err := transport.ValidateFlags(flags); err != nil {
+			fmt.Printf("nativeConnectPeer rejected invalid flags 0x%x: %v\n", flags, err)
+			return C.JNI_FALSE
+		}
+	}
+
+	var err error
+	if flags != 0 {
+		err = bridge.GetManager().ConnectPeerWithFlags(endpoint, expectedFP, flags)
+	} else {
+		err = bridge.GetManager().ConnectPeer(endpoint, expectedFP)
+	}
 	if err != nil {
-		fmt.Printf("P2P connect rejected for %s (expected fingerprint %q): %v\n", endpoint, expectedFP, err)
+		fmt.Printf("P2P connect rejected for %s (expected fingerprint %q, flags %d): %v\n", endpoint, expectedFP, flags, err)
 		return C.JNI_FALSE
 	}
 	return C.JNI_TRUE
@@ -741,6 +796,7 @@ func Java_com_example_twopchat_NativeBridge_nativeProbePeer(
 	clazz C.jclass,
 	jEndpointsJSON C.jstring,
 	jExpectedFP C.jstring,
+	jPolicyFlags C.jint,
 ) C.jboolean {
 	cEndpoints := C.getJStringUTFChars(env, jEndpointsJSON)
 	if cEndpoints == nil {
@@ -756,7 +812,19 @@ func Java_com_example_twopchat_NativeBridge_nativeProbePeer(
 		C.releaseJStringUTFChars(env, jExpectedFP, cFP)
 	}
 
-	err := bridge.GetManager().ProbePeer(endpointsJSON, expectedFP)
+	flags := int(jPolicyFlags)
+	if flags != 0 {
+		if err := transport.ValidateFlags(flags); err != nil {
+			fmt.Printf("nativeProbePeer rejected invalid flags 0x%x: %v\n", flags, err)
+			return C.JNI_FALSE
+		}
+	}
+	var err error
+	if flags != 0 {
+		err = bridge.GetManager().ProbePeerWithFlags(endpointsJSON, expectedFP, flags)
+	} else {
+		err = bridge.GetManager().ProbePeer(endpointsJSON, expectedFP)
+	}
 	if err != nil {
 		return C.JNI_FALSE
 	}

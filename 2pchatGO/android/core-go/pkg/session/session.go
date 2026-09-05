@@ -53,11 +53,12 @@ type Session struct {
 	receivedIDs   map[string]bool
 	receivedOrder []string
 
-	sendMu    sync.Mutex
-	closeOnce sync.Once
-	closeChan chan struct{}
-	online    int32
-	counter   uint64
+	sendMu         sync.RWMutex
+	isTorTransport bool
+	closeOnce      sync.Once
+	closeChan      chan struct{}
+	online         int32
+	counter        uint64
 
 	ackTimeout time.Duration
 	maxRetries int
@@ -763,10 +764,18 @@ func (s *Session) AckTimeout() time.Duration {
 	return s.ackTimeout
 }
 
+// IsTorTransport returns true if the session is configured for Tor transport.
+func (s *Session) IsTorTransport() bool {
+	s.sendMu.RLock()
+	defer s.sendMu.RUnlock()
+	return s.isTorTransport
+}
+
 // SetTorTransport configures the session to use Tor-optimized timeouts.
 func (s *Session) SetTorTransport(isTor bool) {
 	s.sendMu.Lock()
 	defer s.sendMu.Unlock()
+	s.isTorTransport = isTor
 	if isTor {
 		s.ackTimeout = TorAckTimeout
 	} else {
