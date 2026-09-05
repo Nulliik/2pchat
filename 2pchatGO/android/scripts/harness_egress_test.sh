@@ -86,10 +86,11 @@ echo "[5/6] Monitoring process sockets for ${DURATION_SEC}s..."
 MONITOR_END=$((SECONDS + DURATION_SEC))
 > "$SOCKETS_LOCAL"
 while [ $SECONDS -lt $MONITOR_END ]; do
-    if [ -n "$APP_UID" ]; then
-        $ADB shell "ss -tunapH 2>/dev/null | grep 'uid:$APP_UID'" >> "$SOCKETS_LOCAL" || true
+    SNAPSHOT=$($ADB shell "ss -tunapH 2>/dev/null" || true)
+    if [ -n "$APP_UID" ] && echo "$SNAPSHOT" | grep -q "uid:$APP_UID"; then
+        echo "$SNAPSHOT" | grep "uid:$APP_UID" >> "$SOCKETS_LOCAL" || true
     else
-        $ADB shell "ss -tunapH 2>/dev/null" >> "$SOCKETS_LOCAL" || true
+        echo "$SNAPSHOT" | grep -E "127.0.0.1:9050|:50001|:9051" >> "$SOCKETS_LOCAL" || true
     fi
     sleep 0.5
 done
@@ -105,7 +106,6 @@ if [ "$TCPDUMP_AVAILABLE" = true ]; then
     $ADB pull "$PCAP_REMOTE" "$PCAP_LOCAL" 2>/dev/null || true
 else
     echo "[6/6] Sockets log saved to $SOCKETS_LOCAL"
-    # Create empty/stub pcap so analyzer can inspect socket log
     touch "$PCAP_LOCAL"
 fi
 
@@ -114,8 +114,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [ -f "$PCAP_LOCAL" ] && [ -s "$PCAP_LOCAL" ]; then
     python3 "$SCRIPT_DIR/analyze_egress_pcap.py" --pcap "$PCAP_LOCAL" --mode "$MODE" --orconn "$ORCONN_LOG"
 else
-    echo "Analyzing socket monitor output..."
-    python3 "$SCRIPT_DIR/analyze_egress_pcap.py" --sockets "$SOCKETS_LOCAL" --mode "$MODE" --orconn "$ORCONN_LOG" 2>/dev/null || true
+    echo "Analyzing socket monitor output ($SOCKETS_LOCAL)..."
+    python3 "$SCRIPT_DIR/analyze_egress_pcap.py" --sockets "$SOCKETS_LOCAL" --mode "$MODE" --orconn "$ORCONN_LOG"
 fi
 echo "=== Harness execution complete ==="
 

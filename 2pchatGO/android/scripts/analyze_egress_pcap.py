@@ -107,18 +107,53 @@ def parse_guard_ips(orconn_status_file: str) -> Set[str]:
         print(f"Warning: could not parse orconn status: {e}", file=sys.stderr)
     return guards
 
-def analyze(pcap_path: str, mode: str, guard_ips: Set[str]) -> Tuple[bool, List[str]]:
-    packets = parse_pcap_packets(pcap_path)
+def parse_socket_lines(sockets_path: str) -> List[dict]:
+    items = []
+    if not sockets_path:
+        return items
+    try:
+        with open(sockets_path, 'r', encoding='utf-8') as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith('Cannot') or line.startswith('Netid') or line.startswith('State'):
+                    continue
+                parts = line.split()
+                if len(parts) >= 5:
+                    proto = parts[0].upper()
+                    rem_token = parts[4] if len(parts) > 4 else ''
+                    if ':' in rem_token:
+                        dst_ip, dst_port_str = rem_token.rsplit(':', 1)
+                        dst_ip = dst_ip.strip('[]*')
+                        try:
+                            dst_port = int(dst_port_str) if dst_port_str != '*' else 0
+                            items.append({'proto': proto, 'dst_ip': dst_ip, 'dst_port': dst_port})
+                        except ValueError:
+                            pass
+    except Exception as e:
+        print(f"Warning: could not read sockets file: {e}", file=sys.stderr)
+    return items
+
+def analyze(pcap_path: str, mode: str, guard_ips: Set[str], sockets_path: str = "") -> Tuple[bool, List[str]]:
+    packets = parse_pcap_packets(pcap_path) if pcap_path else []
+    if sockets_path:
+        packets.extend(parse_socket_lines(sockets_path))
+
     violations = []
     observed_leaks = []
+    seen = set()
 
     for pkt in packets:
-        dst_ip = pkt['dst_ip']
-        dst_port = pkt['dst_port']
-        proto = pkt['proto']
+        dst_ip = pkt.get('dst_ip', '')
+        dst_port = pkt.get('dst_port', 0)
+        proto = pkt.get('proto', '')
+
+        key = (proto, dst_ip, dst_port)
+        if key in seen:
+            continue
+        seen.add(key)
 
         # Loopback traffic (e.g. local SOCKS5 proxy or daemon IPC) is always allowed
-        if dst_ip.startswith('127.'):
+        if dst_ip.startswith('127.') or dst_ip in ('localhost', '::1', '', '0.0.0.0', '*'):
             continue
 
         # Check DNS leaks (UDP/TCP 53)
@@ -164,17 +199,24 @@ def analyze(pcap_path: str, mode: str, guard_ips: Set[str]) -> Tuple[bool, List[
         return passed, observed_leaks
 
 def main():
-    parser = argparse.ArgumentParser(description="Analyze egress PCAP for 2PChat Tor Strict Mode")
-    parser.add_argument("--pcap", required=True, help="Path to pcap file")
+    parser = argparse.ArgumentParser(description="Analyze egress PCAP and sockets for 2PChat Tor Strict Mode")
+    parser.add_argument("--pcap", default="", help="Path to pcap file")
+    parser.add_argument("--sockets", default="", help="Path to socket log file")
     parser.add_argument("--mode", required=True, choices=["strict", "speed"], help="Operating mode tested")
     parser.add_argument("--orconn", default="", help="Path to Tor orconn-status dump")
     args = parser.parse_args()
 
+    if not args.pcap and not args.sockets:
+        parser.error("At least one of --pcap or --sockets must be specified")
+
     guard_ips = parse_guard_ips(args.orconn) if args.orconn else set()
-    passed, findings = analyze(args.pcap, args.mode, guard_ips)
+    passed, findings = analyze(args.pcap, args.mode, guard_ips, args.sockets)
 
     print(f"=== Egress Leak Analysis Report (Mode: {args.mode.upper()}) ===")
-    print(f"PCAP file: {args.pcap}")
+    if args.pcap:
+        print(f"PCAP file: {args.pcap}")
+    if args.sockets:
+        print(f"Sockets file: {args.sockets}")
     print(f"Known Tor Guard IPs ({len(guard_ips)}): {', '.join(sorted(guard_ips)) if guard_ips else 'None provided'}")
     print(f"Status: {'PASS' if passed else 'FAIL'}")
 
@@ -191,3 +233,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+
