@@ -1058,10 +1058,11 @@ fun ContactsTab(
             }
         }
 
-        val onionAddressCard: String? = remember {
-            P2PPreferences.getTorOnionHostname(context) ?: TorManager.onionAddress.value
+        val torOnionAddress by TorManager.onionAddress.collectAsState()
+        val onionAddressCard: String? = remember(torOnionAddress) {
+            P2PPreferences.getTorOnionHostname(context) ?: torOnionAddress
         }
-        val isTorDaemonRunning = TorManager.isTorRunning.value
+        val isTorDaemonRunning by TorManager.isTorRunning.collectAsState()
 
         if (discoveryCode.isNotEmpty() || onionAddressCard != null) {
             Card(

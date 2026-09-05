@@ -382,12 +382,16 @@ func (s *SessionState) DeriveMessageKey(direction string) ([]byte, error) {
 	switch direction {
 	case "send":
 		msgKey := HMACSHA256(s.SendChainKey, []byte("MsgKey"))
-		s.SendChainKey = HMACSHA256(s.SendChainKey, []byte("ChainKey"))
+		nextChainKey := HMACSHA256(s.SendChainKey, []byte("ChainKey"))
+		Zeroize(s.SendChainKey)
+		s.SendChainKey = nextChainKey
 		s.SendIdx++
 		return msgKey, nil
 	case "recv":
 		msgKey := HMACSHA256(s.RecvChainKey, []byte("MsgKey"))
-		s.RecvChainKey = HMACSHA256(s.RecvChainKey, []byte("ChainKey"))
+		nextChainKey := HMACSHA256(s.RecvChainKey, []byte("ChainKey"))
+		Zeroize(s.RecvChainKey)
+		s.RecvChainKey = nextChainKey
 		s.RecvIdx++
 		return msgKey, nil
 	default:
@@ -443,6 +447,7 @@ func (s *SessionState) EncryptMessage(plaintext []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	defer Zeroize(msgKey)
 
 	ciphertext, err := SecretBoxEncrypt(msgKey, plaintext)
 	if err != nil {
@@ -473,6 +478,7 @@ func (s *SessionState) EncryptMessage(plaintext []byte) ([]byte, error) {
 	prefix = append(prefix, ciphertext...)
 
 	authKey := HMACSHA256(msgKey, []byte(PacketAuthContext))
+	defer Zeroize(authKey)
 	tag := HMACSHA256(authKey, prefix)
 
 	packet := append(prefix, tag...)
@@ -487,7 +493,16 @@ func (s *SessionState) DecryptMessage(packet []byte) ([]byte, error) {
 	candidate := s.clone()
 	plaintext, err := candidate.decryptMessageInternal(packet)
 	if err != nil {
+		candidate.Zeroize()
 		return nil, err
+	}
+	// Zeroize replaced keys before adopting candidate state
+	Zeroize(s.RootKey)
+	Zeroize(s.SendChainKey)
+	Zeroize(s.RecvChainKey)
+	Zeroize(s.HeaderKey)
+	if s.DHSendKey != nil && s.DHSendKey != candidate.DHSendKey {
+		Zeroize(s.DHSendKey[:])
 	}
 	s.restore(candidate)
 	return plaintext, nil
@@ -535,7 +550,9 @@ func (s *SessionState) decryptMessageInternal(packet []byte) ([]byte, error) {
 
 	// Check if this message key was previously skipped
 	if skippedKey := s.tryRetrieveSkippedKey(remoteDHPub, msgIndex); skippedKey != nil {
+		defer Zeroize(skippedKey)
 		authKey := HMACSHA256(skippedKey, []byte(PacketAuthContext))
+		defer Zeroize(authKey)
 		expectedTag := HMACSHA256(authKey, packet[:len(packet)-PacketTagLen])
 		if !hmac.Equal(suppliedTag, expectedTag) {
 			return nil, errors.New("packet authentication failed for skipped key")
@@ -568,8 +585,10 @@ func (s *SessionState) decryptMessageInternal(packet []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	defer Zeroize(msgKey)
 
 	authKey := HMACSHA256(msgKey, []byte(PacketAuthContext))
+	defer Zeroize(authKey)
 	expectedTag := HMACSHA256(authKey, packet[:len(packet)-PacketTagLen])
 	if !hmac.Equal(suppliedTag, expectedTag) {
 		return nil, errors.New("packet authentication failed")
