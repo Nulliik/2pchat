@@ -1,6 +1,7 @@
 package com.example.twopchat.tor
 
 import android.content.Context
+import android.os.Build
 import android.util.Base64
 import com.example.twopchat.logging.SafeLog
 import com.example.twopchat.AppLog
@@ -13,6 +14,7 @@ import com.example.twopchat.data.ChatDatabaseHelper
 import java.io.File
 import java.security.KeyStore
 import java.util.Locale
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
 import java.security.cert.X509Certificate
 import kotlinx.coroutines.CancellationException
@@ -1004,7 +1006,7 @@ object TorManager {
             val bootstrapTimeoutMs = TOTAL_BOOTSTRAP_TIMEOUT_MS
             while (currentCoroutineContext().isActive && elapsedMillisSince(startTime) < bootstrapTimeoutMs) {
                 if (!runGate.isCurrent(runId)) return
-                if (!startedProcess.isAlive) {
+                if (!isProcessAlive(startedProcess)) {
                     processExited = true
                     break
                 }
@@ -1059,10 +1061,10 @@ object TorManager {
                 }
                 if (!enableTorProxy(context, runId)) return
 
-                while (currentCoroutineContext().isActive && runGate.isCurrent(runId) && startedProcess.isAlive) {
+                while (currentCoroutineContext().isActive && runGate.isCurrent(runId) && isProcessAlive(startedProcess)) {
                     delay(1000)
                 }
-                if (currentCoroutineContext().isActive && runGate.isCurrent(runId) && !startedProcess.isAlive) {
+                if (currentCoroutineContext().isActive && runGate.isCurrent(runId) && !isProcessAlive(startedProcess)) {
                     recordFailure(runId, "PROCESS_EXITED")
                     disableTorProxy(context, runId)
                 }
@@ -1235,14 +1237,52 @@ object TorManager {
         _onionAddress.value = null
     }
 
+    private fun isProcessAlive(process: Process): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            process.isAlive
+        } else {
+            try {
+                process.exitValue()
+                false
+            } catch (_: IllegalThreadStateException) {
+                true
+            }
+        }
+    }
+
+    private fun waitForProcess(process: Process, timeout: Long, unit: TimeUnit): Boolean {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            return process.waitFor(timeout, unit)
+        }
+        val deadline = System.currentTimeMillis() + unit.toMillis(timeout)
+        while (System.currentTimeMillis() < deadline) {
+            if (!isProcessAlive(process)) return true
+            try {
+                Thread.sleep(50)
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+                return !isProcessAlive(process)
+            }
+        }
+        return !isProcessAlive(process)
+    }
+
+    private fun destroyProcessForcibly(process: Process) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            process.destroyForcibly()
+        } else {
+            process.destroy()
+        }
+    }
+
     private fun terminateProcess(process: Process?) {
         if (process == null) return
         try {
-            if (process.isAlive) {
+            if (isProcessAlive(process)) {
                 process.destroy()
-                process.waitFor(1000, java.util.concurrent.TimeUnit.MILLISECONDS)
-                if (process.isAlive) {
-                    process.destroyForcibly()
+                waitForProcess(process, 1000, TimeUnit.MILLISECONDS)
+                if (isProcessAlive(process)) {
+                    destroyProcessForcibly(process)
                 }
                 SafeLog.i(TAG, "Stopped embedded Tor process")
             }

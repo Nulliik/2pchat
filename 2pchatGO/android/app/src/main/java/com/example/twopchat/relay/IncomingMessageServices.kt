@@ -221,8 +221,8 @@ internal class MessageNotificationService {
             val cachedIcon = avatarIconCache.get(sender)
             if (cachedIcon != null) {
                 val isRecycled = runCatching {
-                    val bmp = cachedIcon.bitmap
-                    bmp != null && bmp.isRecycled
+                    val drawable = cachedIcon.loadDrawable(context)
+                    (drawable as? android.graphics.drawable.BitmapDrawable)?.bitmap?.isRecycled == true
                 }.getOrDefault(false)
                 if (!isRecycled) return cachedIcon
                 avatarIconCache.remove(sender)

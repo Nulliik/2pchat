@@ -34,9 +34,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+import android.annotation.SuppressLint
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 
+@SuppressLint("UnusedContentLambdaTargetStateParameter")
 @Composable
 fun MainNavigation(
     isDarkTheme: Boolean,
@@ -113,9 +115,10 @@ fun MainNavigation(
       },
       label = "ScreenNavigationTransition"
     ) { targetDestination ->
-      NavDisplay(
-        backStack = backStack,
-        onBack = { backStack.removeLastOrNull() },
+      key(targetDestination) {
+        NavDisplay(
+          backStack = backStack,
+          onBack = { backStack.removeLastOrNull() },
         entryProvider =
           entryProvider {
             entry<Main> {
@@ -198,7 +201,8 @@ fun MainNavigation(
               )
             }
           },
-      )
+        )
+      }
     }
   }
 }
