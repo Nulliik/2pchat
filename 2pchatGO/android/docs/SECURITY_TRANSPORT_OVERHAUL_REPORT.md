@@ -35,15 +35,9 @@
     ```
   * При вызовах `ConnectPeerWithPolicy` и `SetPeerPolicy(peerFP, policy)` политика фиксируется в ядре.
   * Метод `connectPeerInternal` проверяет `peerPolicies` для `expectedFingerprint`, если явная политика не была передана в аргументах.
-  * В `handleIncomingConnection(conn net.Conn)` после успешного криптографического рукопожатия X3DH проверяется сохранённая политика для `peerFP`. Если удалённый пир обозначен как `TOR_ONLY`, а входящее соединение пришло не через Tor (`!sess.IsTorTransport()`), соединение немедленно закрывается:
-    ```go
-    if !effectivePolicy.Allows(inboundClass) {
-        _ = sess.Close()
-        _ = conn.Close()
-        callbacks.OnError(2, fmt.Sprintf("Incoming connection from %s rejected: transport class %s is denied by policy", peerFP, inboundClass))
-        return
-    }
-    ```
+  * В `handleIncomingConnection(conn net.Conn)` внедрена двухконтурная защита от раскрытия личности (SEC-03):
+    1. **Pre-Handshake Transport Guard:** До начала криптографического рукопожатия проверяется глобальная политика (`m.policy.Allows(inboundClass)`). Если устройство работает в режиме `Tor Strict`, любые входящие clearnet-соединения закрываются мгновенно, без чтения/записи байт и без нагрузки на CPU.
+    2. **Pre-Reply Peer Policy Guard (`WithPeerValidator`):** Внутри `performResponderHandshake` сразу после расшифровки `init`-пакета и вычисления отпечатка инициатора вызывается валидатор политики. Если для данного пира установлена политика `TOR_ONLY` (или другая запрещающая данный входящий транспорт), рукопожатие прерывается **ДО** генерации и отправки ответа (`reply`). Ответчик закрывает сокет, не передав ни единого байта своего постоянного ключа (`IdentityPub`). Атакующий получает EOF и не может деанонимизировать узел.
   * В методе `ApplyPolicy(p NetworkPolicy)` проверяется признак `sess.IsTorTransport()`: при переходе в `Tor Strict` закрываются только clearnet-сессии, а активные сессии через Tor Onion Service остаются онлайн.
 
 ### 2.2 Обработка конфликтов политик в UI (Вопрос 2)

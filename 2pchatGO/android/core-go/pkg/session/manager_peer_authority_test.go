@@ -67,7 +67,9 @@ func TestPeerAuthority_TorOnlyPeer_InboundClearnet_Rejected(t *testing.T) {
 	}
 	defer conn.Close()
 
-	// Bob performs X3DH initiator handshake over clearnet
+	// Bob attempts X3DH initiator handshake over clearnet.
+	// SEC-03: Alice must reject Bob pre-reply because Bob has a TOR_ONLY policy!
+	// Therefore, Alice must NOT send her reply handshake frame, and Bob's handshake MUST fail with EOF.
 	bobSess, err := NewSession(
 		conn,
 		true, // initiator
@@ -77,10 +79,10 @@ func TestPeerAuthority_TorOnlyPeer_InboundClearnet_Rejected(t *testing.T) {
 		aliceMgr.Fingerprint(),
 		5*time.Second,
 	)
-	if err != nil {
-		t.Fatalf("Bob NewSession handshake error: %v", err)
+	if err == nil {
+		_ = bobSess.Close()
+		t.Fatalf("SEC-03 VIOLATION: Bob's handshake over clearnet should have failed pre-reply, but succeeded! Alice leaked her identity!")
 	}
-	_ = bobSess
 
 	// Wait for Alice to process handshake and verify policy
 	time.Sleep(300 * time.Millisecond)
@@ -152,10 +154,10 @@ func TestPeerAuthority_SwitchToStrict_PreservesTorSessions(t *testing.T) {
 // TestUnconfirmedGroupPeerIncomingClearnetRejected verifies that a peer introduced via a group roster
 // with PolicyTorStrict (POLICY_FLAG_ALLOW_ONION) cannot initiate an incoming session over clearnet.
 //
-// SEC-03 Residual Note:
-// Rejection occurs post-handshake, meaning the initiator's endpoint and identity are disclosed
-// during the handshake before connection termination. Protection is against session establishment,
-// not pre-handshake identity leakage.
+// SEC-03 Resolved:
+// Rejection occurs PRE-REPLY: as soon as the initiator's identity is received in the init packet,
+// the responder validates the peer's policy. If the transport class is denied, the responder terminates
+// the connection immediately without sending its reply frame or disclosing its long-term identity.
 func TestPeerAuthority_UnconfirmedGroupPeerIncomingClearnetRejected(t *testing.T) {
 	aliceID, _ := crypto.GenerateIdentityKeyPair()
 	alicePrekeyPriv, alicePrekeyPub, _ := crypto.GenerateX25519Keypair()
@@ -191,7 +193,8 @@ func TestPeerAuthority_UnconfirmedGroupPeerIncomingClearnetRejected(t *testing.T
 	}
 	defer conn.Close()
 
-	// Bob completes handshake over clearnet
+	// Bob attempts handshake over clearnet.
+	// SEC-03: Alice must reject Bob pre-reply without sending a reply frame!
 	bobSess, err := NewSession(
 		conn,
 		true, // initiator
@@ -201,10 +204,10 @@ func TestPeerAuthority_UnconfirmedGroupPeerIncomingClearnetRejected(t *testing.T
 		aliceMgr.Fingerprint(),
 		5*time.Second,
 	)
-	if err != nil {
-		t.Fatalf("Bob NewSession handshake error: %v", err)
+	if err == nil {
+		_ = bobSess.Close()
+		t.Fatalf("SEC-03 VIOLATION: Unconfirmed group peer handshake over clearnet should have failed pre-reply, but succeeded! Alice leaked identity!")
 	}
-	_ = bobSess
 
 	time.Sleep(300 * time.Millisecond)
 

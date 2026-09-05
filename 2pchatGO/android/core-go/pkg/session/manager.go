@@ -351,6 +351,52 @@ func (m *Manager) handleIncomingConnection(conn net.Conn) {
 	// 3. Pre-handshake socket deadline guard (prevents slowloris DoS)
 	_ = conn.SetDeadline(time.Now().Add(30 * time.Second))
 
+	m.mu.RLock()
+	onion := m.onionAddress
+	globalPolicy := m.policy
+	m.mu.RUnlock()
+
+	endpoint := conn.RemoteAddr().String()
+	isTor := onion != "" && (strings.HasPrefix(endpoint, "127.0.0.1:") || strings.HasPrefix(endpoint, "[::1]:"))
+
+	var inboundClass transport.TransportClass
+	if isTor {
+		inboundClass = transport.TransportTor
+	} else {
+		inboundClass, _ = transport.ClassifyEndpoint(endpoint)
+	}
+
+	// 4. Pre-handshake global transport policy guard (SEC-03)
+	// If global policy rejects this transport class (e.g. Tor Strict mode rejects clearnet connections),
+	// drop immediately without reading frames or executing handshake.
+	if !globalPolicy.Allows(inboundClass) {
+		_ = conn.Close()
+		callbacks := m.callbacksSnapshot()
+		if callbacks.OnError != nil {
+			callbacks.OnError(2, fmt.Sprintf("Incoming connection from %s rejected: transport class %s is denied by global policy", endpoint, inboundClass))
+		}
+		return
+	}
+
+	// 5. Pre-reply peer policy validator callback (SEC-03)
+	// As soon as initiator's fingerprint is extracted in responder handshake,
+	// verify peer's transport policy BEFORE sending our identity in the reply frame!
+	peerValidator := func(peerFP string) error {
+		m.mu.RLock()
+		peerPolicy, hasPeerPolicy := m.peerPolicies[peerFP]
+		m.mu.RUnlock()
+
+		effectivePolicy := globalPolicy
+		if hasPeerPolicy {
+			effectivePolicy = effectivePolicy.Intersect(peerPolicy)
+		}
+
+		if !effectivePolicy.Allows(inboundClass) {
+			return fmt.Errorf("transport class %s is denied by policy for peer %s", inboundClass, peerFP)
+		}
+		return nil
+	}
+
 	sess, err := NewSession(
 		conn,
 		false, // responder
@@ -359,53 +405,22 @@ func (m *Manager) handleIncomingConnection(conn net.Conn) {
 		m.prekeyPub,
 		"", // accept any valid key during incoming connection
 		30*time.Second,
+		WithPeerValidator(peerValidator),
+		WithTorTransport(isTor),
 	)
 	if err != nil {
 		callbacks := m.callbacksSnapshot()
 		if callbacks.OnError != nil {
-			callbacks.OnError(1, fmt.Sprintf("Incoming handshake failed: %v", err))
+			errCode := 1
+			if strings.Contains(err.Error(), "denied by policy") {
+				errCode = 2
+			}
+			callbacks.OnError(errCode, fmt.Sprintf("Incoming connection from %s rejected: %v", endpoint, err))
 		}
 		return
-	}
-
-	m.mu.RLock()
-	onion := m.onionAddress
-	m.mu.RUnlock()
-
-	endpoint := conn.RemoteAddr().String()
-	if onion != "" && (strings.HasPrefix(endpoint, "127.0.0.1:") || strings.HasPrefix(endpoint, "[::1]:")) {
-		sess.SetTorTransport(true)
 	}
 
 	peerFP := sess.PeerFingerprint()
-
-	m.mu.RLock()
-	globalPolicy := m.policy
-	peerPolicy, hasPeerPolicy := m.peerPolicies[peerFP]
-	m.mu.RUnlock()
-
-	effectivePolicy := globalPolicy
-	if hasPeerPolicy {
-		effectivePolicy = effectivePolicy.Intersect(peerPolicy)
-	}
-
-	var inboundClass transport.TransportClass
-	if sess.IsTorTransport() {
-		inboundClass = transport.TransportTor
-	} else {
-		inboundClass, _ = transport.ClassifyEndpoint(endpoint)
-	}
-
-	if !effectivePolicy.Allows(inboundClass) {
-		_ = sess.Close()
-		_ = conn.Close()
-		callbacks := m.callbacksSnapshot()
-		if callbacks.OnError != nil {
-			callbacks.OnError(2, fmt.Sprintf("Incoming connection from %s rejected: transport class %s is denied by policy", peerFP, inboundClass))
-		}
-		return
-	}
-
 	m.RegisterSession(sess, peerFP, endpoint, false)
 }
 

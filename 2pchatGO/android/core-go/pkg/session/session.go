@@ -62,6 +62,31 @@ type Session struct {
 
 	ackTimeout time.Duration
 	maxRetries int
+
+	peerValidator func(peerFingerprint string) error
+}
+
+// SessionOption configures a Session during construction.
+type SessionOption func(*Session)
+
+// WithPeerValidator sets a callback that validates the remote peer's identity before
+// the responder sends its reply handshake frame. If the validator returns an error,
+// the handshake is aborted immediately and the connection is closed without disclosing
+// the local identity (SEC-03).
+func WithPeerValidator(v func(peerFingerprint string) error) SessionOption {
+	return func(s *Session) {
+		s.peerValidator = v
+	}
+}
+
+// WithTorTransport sets whether the session is operating over Tor transport.
+func WithTorTransport(isTor bool) SessionOption {
+	return func(s *Session) {
+		s.isTorTransport = isTor
+		if isTor {
+			s.ackTimeout = TorAckTimeout
+		}
+	}
 }
 
 // HandshakeJSON matches the 2PChat protocol V3 handshake wire frame.
@@ -86,6 +111,7 @@ func NewSession(
 	prekeyPub *crypto.X25519PublicKey,
 	expectedFingerprint string,
 	timeout time.Duration,
+	opts ...SessionOption,
 ) (*Session, error) {
 	if timeout <= 0 {
 		timeout = DefaultHandshakeTimeout
@@ -112,6 +138,11 @@ func NewSession(
 		receivedOrder:   make([]string, 0, MaxReceivedIDsHistory),
 		ackTimeout:      initAckTimeout,
 		maxRetries:      DefaultMaxRetries,
+	}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(s)
+		}
 	}
 	atomic.StoreInt32(&s.online, 1)
 
@@ -324,7 +355,16 @@ func (s *Session) performResponderHandshake(expectedFingerprint string) error {
 		return fmt.Errorf("peer fingerprint mismatch: expected %s, got %s", expectedFingerprint, s.peerFingerprint)
 	}
 
-	// Send reply only after validating initiator's identity against expectedFingerprint (SEC-03)
+	// SEC-03: Pre-reply peer policy validation.
+	// Prevents post-handshake identity disclosure ("отказ после раскрытия")
+	// over unauthorized transports.
+	if s.peerValidator != nil {
+		if err := s.peerValidator(s.peerFingerprint); err != nil {
+			return fmt.Errorf("peer policy rejected initiator %s before reply: %w", s.peerFingerprint, err)
+		}
+	}
+
+	// Send reply only after validating initiator's identity against expectedFingerprint and peerValidator (SEC-03)
 	prekeySig := crypto.SignPreKey(s.localIdentity.Signing, s.localPrekeyPub)
 
 	toSign := append([]byte(crypto.X3DHHandshakeContext), []byte("reply")...)
