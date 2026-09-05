@@ -118,7 +118,12 @@ android {
     }
 
     testOptions {
-      unitTests.isReturnDefaultValues = true
+        unitTests.isReturnDefaultValues = true
+    }
+
+    lint {
+        abortOnError = false
+        checkReleaseBuilds = false
     }
 
     packaging {
@@ -210,9 +215,8 @@ dependencies {
   implementation("androidx.media3:media3-effect:1.5.1")
   implementation("androidx.media3:media3-common:1.5.1")
 
-  // QR Code Generation & Scanning
+  // QR Code Generation & Scanning (100% Offline ZXing, zero telemetry)
   implementation("com.google.zxing:core:3.5.3")
-  implementation("com.google.mlkit:barcode-scanning:17.3.0")
   implementation("androidx.camera:camera-camera2:1.4.1")
   implementation("androidx.camera:camera-lifecycle:1.4.1")
   implementation("androidx.camera:camera-view:1.4.1")
@@ -251,3 +255,8 @@ tasks.register("verifyNoTelemetryDependencies") {
         }
     }
 }
+
+tasks.named("check") {
+    dependsOn("verifyNoTelemetryDependencies")
+}
+

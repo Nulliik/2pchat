@@ -1889,13 +1889,16 @@ private fun CameraQrScannerOverlay(
     var cameraControl by remember { mutableStateOf<androidx.camera.core.CameraControl?>(null) }
     var cameraProviderInstance by remember { mutableStateOf<androidx.camera.lifecycle.ProcessCameraProvider?>(null) }
 
-    val liveScannerOptions = remember {
-        com.google.mlkit.vision.barcode.BarcodeScannerOptions.Builder()
-            .setBarcodeFormats(com.google.mlkit.vision.barcode.common.Barcode.FORMAT_QR_CODE)
-            .build()
-    }
-    val liveBarcodeScanner = remember {
-        com.google.mlkit.vision.barcode.BarcodeScanning.getClient(liveScannerOptions)
+    val qrReader = remember {
+        com.google.zxing.MultiFormatReader().apply {
+            setHints(
+                mapOf(
+                    com.google.zxing.DecodeHintType.POSSIBLE_FORMATS to listOf(com.google.zxing.BarcodeFormat.QR_CODE),
+                    com.google.zxing.DecodeHintType.TRY_HARDER to true,
+                    com.google.zxing.DecodeHintType.CHARACTER_SET to "UTF-8",
+                )
+            )
+        }
     }
     val analysisExecutor = remember { java.util.concurrent.Executors.newSingleThreadExecutor() }
 
@@ -1912,11 +1915,6 @@ private fun CameraQrScannerOverlay(
             } catch (e: Exception) {
                 com.example.twopchat.logging.SafeLog.d("ContactsTab", "analysisExecutor shutdown failed: ${e.javaClass.simpleName}")
             }
-            try {
-                liveBarcodeScanner.close()
-            } catch (e: Exception) {
-                com.example.twopchat.logging.SafeLog.d("ContactsTab", "liveBarcodeScanner close failed: ${e.javaClass.simpleName}")
-            }
         }
     }
 
@@ -1925,58 +1923,43 @@ private fun CameraQrScannerOverlay(
     ) { uri: android.net.Uri? ->
         if (uri != null && !isScanned.get()) {
             try {
-                val inputImage = com.google.mlkit.vision.common.InputImage.fromFilePath(context, uri)
-                liveBarcodeScanner.process(inputImage)
-                    .addOnSuccessListener { barcodes ->
-                        val qrText = barcodes.firstOrNull { it.rawValue?.isNotBlank() == true }?.rawValue
-                        if (!qrText.isNullOrBlank() && !isScanned.getAndSet(true)) {
-                            try {
-                                haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
-                            } catch (_: Exception) {
-                                // intentionally ignored: haptic feedback may fail on unsupported hardware
-                            }
-                            onQrScanned(qrText)
-                        } else {
-                            var zxingSuccess = false
-                            try {
-                                val bitmap = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
-                                    val source = android.graphics.ImageDecoder.createSource(context.contentResolver, uri)
-                                    android.graphics.ImageDecoder.decodeBitmap(source) { decoder, _, _ ->
-                                        decoder.allocator = android.graphics.ImageDecoder.ALLOCATOR_SOFTWARE
-                                    }
-                                } else {
-                                    @Suppress("DEPRECATION")
-                                    android.provider.MediaStore.Images.Media.getBitmap(context.contentResolver, uri)
-                                }
-                                val intArray = IntArray(bitmap.width * bitmap.height)
-                                bitmap.getPixels(intArray, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
-                                val source = com.google.zxing.RGBLuminanceSource(bitmap.width, bitmap.height, intArray)
-                                val binaryBitmap = com.google.zxing.BinaryBitmap(com.google.zxing.common.HybridBinarizer(source))
-                                val result = com.google.zxing.MultiFormatReader().decode(binaryBitmap)
-                                if (result != null && result.text.isNotBlank() && !isScanned.getAndSet(true)) {
-                                    zxingSuccess = true
-                                    try {
-                                        haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
-                                    } catch (_: Exception) {
-                                        // intentionally ignored: haptic feedback may fail on unsupported hardware
-                                    }
-                                    onQrScanned(result.text)
-                                }
-                            } catch (e: Exception) {
-                                com.example.twopchat.logging.SafeLog.d("ContactsTab", "ZXing fallback QR decode failed: ${e.javaClass.simpleName}")
-                            }
-                            if (!zxingSuccess) {
-                                Toast.makeText(
-                                    context,
-                                    if (appLanguage == "Русский") "QR-код не найден на фото" else "No QR code found in photo",
-                                    Toast.LENGTH_SHORT
-                                ).show()
-                            }
-                        }
+                val bitmap = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+                    val source = android.graphics.ImageDecoder.createSource(context.contentResolver, uri)
+                    android.graphics.ImageDecoder.decodeBitmap(source) { decoder, _, _ ->
+                        decoder.allocator = android.graphics.ImageDecoder.ALLOCATOR_SOFTWARE
                     }
-                    .addOnFailureListener { e ->
-                        Toast.makeText(context, e.message ?: "Failed to read image", Toast.LENGTH_SHORT).show()
-                    }
+                } else {
+                    @Suppress("DEPRECATION")
+                    android.provider.MediaStore.Images.Media.getBitmap(context.contentResolver, uri)
+                }
+                val intArray = IntArray(bitmap.width * bitmap.height)
+                bitmap.getPixels(intArray, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
+                val source = com.google.zxing.RGBLuminanceSource(bitmap.width, bitmap.height, intArray)
+                var resultText: String? = null
+                try {
+                    val binaryBitmap = com.google.zxing.BinaryBitmap(com.google.zxing.common.HybridBinarizer(source))
+                    resultText = qrReader.decodeWithState(binaryBitmap).text
+                } catch (_: com.google.zxing.NotFoundException) {
+                    try {
+                        val binaryBitmap = com.google.zxing.BinaryBitmap(com.google.zxing.common.GlobalHistogramBinarizer(source))
+                        resultText = qrReader.decodeWithState(binaryBitmap).text
+                    } catch (_: Exception) {}
+                } finally {
+                    qrReader.reset()
+                }
+
+                if (!resultText.isNullOrBlank() && !isScanned.getAndSet(true)) {
+                    try {
+                        haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                    } catch (_: Exception) {}
+                    onQrScanned(resultText)
+                } else {
+                    Toast.makeText(
+                        context,
+                        if (appLanguage == "Русский") "QR-код не найден на фото" else "No QR code found in photo",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
             } catch (e: Exception) {
                 Toast.makeText(context, e.message ?: "Failed to load image", Toast.LENGTH_SHORT).show()
             }
@@ -2027,44 +2010,91 @@ private fun CameraQrScannerOverlay(
                             imageAnalysis.setAnalyzer(analysisExecutor) { imageProxy ->
                                 try {
                                     if (isScanned.get()) {
-                                        imageProxy.close()
                                         return@setAnalyzer
                                     }
-                                    @androidx.annotation.OptIn(androidx.camera.core.ExperimentalGetImage::class)
-                                    val mediaImage = imageProxy.image
-                                    if (mediaImage != null && !isScanned.get()) {
-                                        val rotationDegrees = imageProxy.imageInfo.rotationDegrees
-                                        val inputImage = com.google.mlkit.vision.common.InputImage.fromMediaImage(mediaImage, rotationDegrees)
-                                        liveBarcodeScanner.process(inputImage)
-                                            .addOnSuccessListener { barcodes ->
-                                                if (isScanned.get()) return@addOnSuccessListener
-                                                for (barcode in barcodes) {
-                                                    val rawValue = barcode.rawValue ?: barcode.displayValue ?: continue
-                                                    if (rawValue.isNotBlank() && !isScanned.getAndSet(true)) {
-                                                        mainExecutor.execute {
-                                                            try {
-                                                                haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
-                                                            } catch (_: Exception) {
-                                                                // intentionally ignored: haptic feedback failure is harmless
-                                                            }
-                                                            onQrScanned(rawValue)
-                                                        }
-                                                        break
-                                                    }
+                                    val yPlane = imageProxy.planes[0]
+                                    val yBuffer = yPlane.buffer
+                                    val ySize = yBuffer.remaining()
+                                    val yBytes = ByteArray(ySize)
+                                    yBuffer.get(yBytes)
+
+                                    val width = imageProxy.width
+                                    val height = imageProxy.height
+                                    val rowStride = yPlane.rowStride
+                                    val rotationDegrees = imageProxy.imageInfo.rotationDegrees
+
+                                    val (finalData, finalWidth, finalHeight) = when (rotationDegrees) {
+                                        90 -> {
+                                            val rotated = ByteArray(width * height)
+                                            for (y in 0 until height) {
+                                                val srcRow = y * rowStride
+                                                for (x in 0 until width) {
+                                                    rotated[x * height + (height - 1 - y)] = yBytes[srcRow + x]
                                                 }
                                             }
-                                            .addOnCompleteListener {
-                                                try {
-                                                    imageProxy.close()
-                                                } catch (e: Exception) {
-                                                    com.example.twopchat.logging.SafeLog.d("CameraQrScanner", "imageProxy.close failed: ${e.javaClass.simpleName}")
+                                            Triple(rotated, height, width)
+                                        }
+                                        180 -> {
+                                            val rotated = ByteArray(width * height)
+                                            for (y in 0 until height) {
+                                                val srcRow = y * rowStride
+                                                val dstRow = (height - 1 - y) * width
+                                                for (x in 0 until width) {
+                                                    rotated[dstRow + (width - 1 - x)] = yBytes[srcRow + x]
                                                 }
                                             }
-                                    } else {
-                                        imageProxy.close()
+                                            Triple(rotated, width, height)
+                                        }
+                                        270 -> {
+                                            val rotated = ByteArray(width * height)
+                                            for (y in 0 until height) {
+                                                val srcRow = y * rowStride
+                                                for (x in 0 until width) {
+                                                    rotated[(width - 1 - x) * height + y] = yBytes[srcRow + x]
+                                                }
+                                            }
+                                            Triple(rotated, height, width)
+                                        }
+                                        else -> {
+                                            if (rowStride == width) {
+                                                Triple(yBytes, width, height)
+                                            } else {
+                                                val compacted = ByteArray(width * height)
+                                                for (y in 0 until height) {
+                                                    System.arraycopy(yBytes, y * rowStride, compacted, y * width, width)
+                                                }
+                                                Triple(compacted, width, height)
+                                            }
+                                        }
+                                    }
+
+                                    val source = com.google.zxing.PlanarYUVLuminanceSource(
+                                        finalData, finalWidth, finalHeight,
+                                        0, 0, finalWidth, finalHeight, false
+                                    )
+                                    val binaryBitmap = com.google.zxing.BinaryBitmap(com.google.zxing.common.HybridBinarizer(source))
+                                    var qrText: String? = null
+                                    try {
+                                        qrText = qrReader.decodeWithState(binaryBitmap).text
+                                    } catch (_: com.google.zxing.NotFoundException) {
+                                        // Normal frame without QR
+                                    } catch (_: Exception) {
+                                        // Ignore decode failure
+                                    } finally {
+                                        qrReader.reset()
+                                    }
+
+                                    if (!qrText.isNullOrBlank() && !isScanned.getAndSet(true)) {
+                                        mainExecutor.execute {
+                                            try {
+                                                haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                                            } catch (_: Exception) {}
+                                            onQrScanned(qrText)
+                                        }
                                     }
                                 } catch (e: Exception) {
                                     com.example.twopchat.logging.SafeLog.w("CameraQrScanner", "ImageAnalysis frame processing failed", e)
+                                } finally {
                                     try {
                                         imageProxy.close()
                                     } catch (ce: Exception) {

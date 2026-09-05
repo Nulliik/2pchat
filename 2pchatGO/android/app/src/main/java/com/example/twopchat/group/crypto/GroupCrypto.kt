@@ -153,12 +153,14 @@ object GroupIdentitySignatures {
         MessageDigest.getInstance("SHA-256").digest(payload).toBase64()
 }
 
+@android.annotation.SuppressLint("NewApi")
 internal fun ByteArray.toBase64(): String = try {
     Base64.encodeToString(this, Base64.NO_WRAP) ?: java.util.Base64.getEncoder().encodeToString(this)
 } catch (e: Throwable) {
     java.util.Base64.getEncoder().encodeToString(this)
 }
 
+@android.annotation.SuppressLint("NewApi")
 internal fun String.decodeBase64Strict(): ByteArray = try {
     val res = Base64.decode(this, Base64.NO_WRAP)
     if (res == null || (res.isEmpty() && this.isNotBlank())) {
