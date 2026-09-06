@@ -63,7 +63,7 @@ object KeystoreProvider {
                 val appContext = context.applicationContext
                 if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) {
                     SafeLog.w(TAG, "MasterKey requested synchronously on Main Thread before async prewarm completed!")
-                    com.example.twopchat.logging.AppLog.append(
+                    com.example.twopchat.AppLog.append(
                         appContext,
                         "[KeystoreProvider] WARNING: MasterKey requested synchronously on Main Thread before async prewarm completed!\n",
                     )

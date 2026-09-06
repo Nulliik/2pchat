@@ -114,7 +114,10 @@ object SecureStorage {
             val cached = stringDecryptionCache.get(value)
             if (cached != null) return cached
             return try {
-                val packed = Base64.decode(value.removePrefix(PREFIX), Base64.NO_WRAP)
+                val prefixLen = PREFIX.length
+                val rawBytes = value.toByteArray(Charsets.US_ASCII)
+                val packed = Base64.decode(rawBytes, prefixLen, rawBytes.size - prefixLen, Base64.NO_WRAP)
+                SecurityUtils.zeroize(rawBytes)
                 if (packed.size <= 12) return value
                 cipher.init(
                     Cipher.DECRYPT_MODE,

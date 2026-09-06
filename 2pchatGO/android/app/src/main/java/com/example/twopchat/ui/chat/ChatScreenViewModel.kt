@@ -18,6 +18,10 @@ class ChatScreenViewModel : ViewModel() {
     val selectedMessageForOptions = mutableStateOf<Message?>(null)
     val selectedMessages = mutableStateListOf<Message>()
 
+    override fun onCleared() {
+        super.onCleared()
+        com.example.twopchat.data.cache.MessageCache.clear()
+    }
 }
 
 internal fun fastHistoryMessageLimit(unreadMessageCount: Int): Int =

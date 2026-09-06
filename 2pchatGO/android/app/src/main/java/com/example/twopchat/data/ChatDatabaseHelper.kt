@@ -107,6 +107,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
                 isMigrationChecked = false
                 isControlPurged = false
                 com.example.twopchat.ui.chat.state.ChatHistoryCache.clear()
+                com.example.twopchat.data.cache.MessageCache.clear()
             }
         }
     }
@@ -444,6 +445,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
             put(KEY_IS_PINNED, if (isPinned) 1 else 0)
         }
         db.update(TABLE_MESSAGES, values, "$KEY_ID = ?", arrayOf(id))
+        com.example.twopchat.data.cache.MessageCache.invalidate(id)
     }
 
     fun getPinnedMessagesForPeer(peerName: String): List<Message> {
@@ -474,6 +476,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
             put(KEY_IS_PINNED, 0)
         }
         db.update(TABLE_MESSAGES, values, "$KEY_PEER_NAME = ?", arrayOf(peerName))
+        com.example.twopchat.data.cache.MessageCache.clear()
     }
 
     private fun getMessageStatusById(db: SQLiteDatabase, id: String): String? {
@@ -521,13 +524,14 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
                     put(KEY_REPLY_TO_TEXT, encNullable(msg.replyToText))
                     put(KEY_REPLY_TO_NAME, encNullable(msg.replyToName))
                     put(KEY_STATUS, finalStatus)
-                    put(KEY_REACTIONS, encNullable(serializeReactions(msg.reactions)))
+                    put(KEY_REACTIONS, if (msg.reactions.isNotEmpty()) encNullable(serializeReactions(msg.reactions)) else null)
                     put(KEY_SENT_AT_MS, msg.sentAtEpochMs)
                     put(KEY_IS_PINNED, if (msg.isPinned) 1 else 0)
                     put(KEY_ALBUM_URIS, encNullable(if (msg.albumMediaUris.isNotEmpty()) msg.albumMediaUris.joinToString("|||") else null))
                     put(KEY_ALBUM_TYPES, if (msg.albumMediaTypes.isNotEmpty()) msg.albumMediaTypes.joinToString("|||") else null)
                 }
                 db.insertWithOnConflict(TABLE_MESSAGES, null, values, SQLiteDatabase.CONFLICT_REPLACE)
+                com.example.twopchat.data.cache.MessageCache.invalidate(msg.id)
             }
             db.setTransactionSuccessful()
         } finally {
@@ -556,22 +560,47 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
             put(KEY_REPLY_TO_TEXT, encNullable(msg.replyToText))
             put(KEY_REPLY_TO_NAME, encNullable(msg.replyToName))
             put(KEY_STATUS, finalStatus)
-            put(KEY_REACTIONS, encNullable(serializeReactions(msg.reactions)))
+            put(KEY_REACTIONS, if (msg.reactions.isNotEmpty()) encNullable(serializeReactions(msg.reactions)) else null)
             put(KEY_SENT_AT_MS, msg.sentAtEpochMs)
             put(KEY_IS_PINNED, if (msg.isPinned) 1 else 0)
             put(KEY_ALBUM_URIS, encNullable(if (msg.albumMediaUris.isNotEmpty()) msg.albumMediaUris.joinToString("|||") else null))
             put(KEY_ALBUM_TYPES, if (msg.albumMediaTypes.isNotEmpty()) msg.albumMediaTypes.joinToString("|||") else null)
         }
         db.insertWithOnConflict(TABLE_MESSAGES, null, values, SQLiteDatabase.CONFLICT_REPLACE)
+        com.example.twopchat.data.cache.MessageCache.invalidate(msg.id)
     }
 
     private fun safeDec(stringCipher: SecureStorage.StringCipher, value: String?): String? {
-        if (!SecureStorage.isEncrypted(value)) return value
+        if (value.isNullOrEmpty() || value == "{}" || !SecureStorage.isEncrypted(value)) return value
         return try {
             stringCipher.decrypt(value)
         } catch (_: Exception) {
             value
         }
+    }
+
+    private fun safeDecOrNull(
+        cursor: android.database.Cursor,
+        colIndex: Int,
+        stringCipher: SecureStorage.StringCipher,
+    ): String? {
+        if (colIndex == -1 || cursor.isNull(colIndex)) return null
+        val raw = cursor.getString(colIndex)
+        if (raw.isNullOrEmpty() || raw == "{}") return null
+        if (!SecureStorage.isEncrypted(raw)) return raw
+        return safeDec(stringCipher, raw)
+    }
+
+    private fun safeDecOrEmpty(
+        cursor: android.database.Cursor,
+        colIndex: Int,
+        stringCipher: SecureStorage.StringCipher,
+    ): String {
+        if (colIndex == -1 || cursor.isNull(colIndex)) return ""
+        val raw = cursor.getString(colIndex)
+        if (raw.isNullOrEmpty()) return ""
+        if (!SecureStorage.isEncrypted(raw)) return raw
+        return safeDec(stringCipher, raw).orEmpty()
     }
 
     private class MessageColumnIndices(cursor: android.database.Cursor) {
@@ -598,35 +627,65 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
         stringCipher: SecureStorage.StringCipher,
         indices: MessageColumnIndices = MessageColumnIndices(cursor),
     ): Message {
-        val text = if (indices.indexText != -1) {
-            safeDec(stringCipher, cursor.getString(indices.indexText)).orEmpty()
+        val id = if (indices.indexId != -1 && !cursor.isNull(indices.indexId)) {
+            cursor.getString(indices.indexId)
         } else {
-            ""
+            null
         }
+
         val isMe = if (indices.indexIsMe != -1) cursor.getInt(indices.indexIsMe) == 1 else false
-        val timestamp = if (indices.indexTimestamp != -1) cursor.getString(indices.indexTimestamp) else ""
-        val attachType = if (indices.indexAttachType != -1) cursor.getString(indices.indexAttachType) else null
-        val attachUri = if (indices.indexAttachUri != -1) safeDec(stringCipher, cursor.getString(indices.indexAttachUri)) else null
-        val attachName = if (indices.indexAttachName != -1) safeDec(stringCipher, cursor.getString(indices.indexAttachName)) else null
-        val replyToId = if (indices.indexReplyToId != -1) cursor.getString(indices.indexReplyToId) else null
-        val replyToText = if (indices.indexReplyToText != -1) safeDec(stringCipher, cursor.getString(indices.indexReplyToText)) else null
-        val replyToName = if (indices.indexReplyToName != -1) safeDec(stringCipher, cursor.getString(indices.indexReplyToName)) else null
-        val status = if (indices.indexStatus != -1) cursor.getString(indices.indexStatus) else null
-        val reactions = if (indices.indexReactions != -1) {
-            try {
-                deserializeReactions(safeDec(stringCipher, cursor.getString(indices.indexReactions)))
-            } catch (_: Exception) {
+        val status = if (indices.indexStatus != -1 && !cursor.isNull(indices.indexStatus)) {
+            cursor.getString(indices.indexStatus)
+        } else {
+            null
+        }
+        val isPinned = if (indices.indexIsPinned != -1) cursor.getInt(indices.indexIsPinned) == 1 else false
+
+        if (id != null) {
+            val cached = com.example.twopchat.data.cache.MessageCache.get(id)
+            if (cached != null) {
+                if (cached.status == status && cached.isPinned == isPinned && cached.isMe == isMe) {
+                    return cached
+                }
+                val updated = cached.copy(status = status, isPinned = isPinned, isMe = isMe)
+                com.example.twopchat.data.cache.MessageCache.put(id, updated)
+                return updated
+            }
+        }
+
+        val text = safeDecOrEmpty(cursor, indices.indexText, stringCipher)
+        val timestamp = if (indices.indexTimestamp != -1 && !cursor.isNull(indices.indexTimestamp)) cursor.getString(indices.indexTimestamp) else ""
+        val attachType = if (indices.indexAttachType != -1 && !cursor.isNull(indices.indexAttachType)) cursor.getString(indices.indexAttachType) else null
+        val attachUri = safeDecOrNull(cursor, indices.indexAttachUri, stringCipher)
+        val attachName = safeDecOrNull(cursor, indices.indexAttachName, stringCipher)
+        val replyToId = if (indices.indexReplyToId != -1 && !cursor.isNull(indices.indexReplyToId)) cursor.getString(indices.indexReplyToId) else null
+        val replyToText = safeDecOrNull(cursor, indices.indexReplyToText, stringCipher)
+        val replyToName = safeDecOrNull(cursor, indices.indexReplyToName, stringCipher)
+
+        val reactions = if (indices.indexReactions != -1 && !cursor.isNull(indices.indexReactions)) {
+            val raw = cursor.getString(indices.indexReactions)
+            if (raw.isNullOrEmpty() || raw == "{}" || raw == "null") {
                 emptyMap()
+            } else {
+                try {
+                    val dec = safeDec(stringCipher, raw)
+                    if (dec.isNullOrEmpty() || dec == "{}" || dec == "null") {
+                        emptyMap()
+                    } else {
+                        deserializeReactions(dec)
+                    }
+                } catch (_: Exception) {
+                    emptyMap()
+                }
             }
         } else {
             emptyMap()
         }
-        val id = if (indices.indexId != -1) cursor.getString(indices.indexId) else java.util.UUID.randomUUID().toString()
+
         val sentAtEpochMs = if (indices.indexSentAtMs != -1) cursor.getLong(indices.indexSentAtMs) else 0L
-        val isPinned = if (indices.indexIsPinned != -1) cursor.getInt(indices.indexIsPinned) == 1 else false
-        val rawAlbumUris = if (indices.indexAlbumUris != -1) safeDec(stringCipher, cursor.getString(indices.indexAlbumUris)) else null
+        val rawAlbumUris = safeDecOrNull(cursor, indices.indexAlbumUris, stringCipher)
         val albumMediaUris = rawAlbumUris?.split("|||") ?: emptyList()
-        val rawAlbumTypes = if (indices.indexAlbumTypes != -1) cursor.getString(indices.indexAlbumTypes) else null
+        val rawAlbumTypes = if (indices.indexAlbumTypes != -1 && !cursor.isNull(indices.indexAlbumTypes)) cursor.getString(indices.indexAlbumTypes) else null
         val albumMediaTypes = rawAlbumTypes?.split("|||") ?: emptyList()
 
         var resolvedAttachUri = attachUri
@@ -652,8 +711,8 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
             }
         }
 
-        return Message(
-            id = id,
+        val message = Message(
+            id = id ?: java.util.UUID.randomUUID().toString(),
             text = text,
             isMe = isMe,
             timestamp = timestamp,
@@ -670,6 +729,11 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
             albumMediaUris = albumMediaUris,
             albumMediaTypes = albumMediaTypes,
         )
+
+        if (id != null) {
+            com.example.twopchat.data.cache.MessageCache.put(id, message)
+        }
+        return message
     }
 
     private fun isControlMessageText(text: String): Boolean {
@@ -996,6 +1060,9 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
         } catch (e: Exception) {
             SafeLog.e(TAG, "Failed to mark messages as read for $peerName", e)
         }
+        if (messageIds.isNotEmpty()) {
+            com.example.twopchat.data.cache.MessageCache.invalidateAll(messageIds)
+        }
         return messageIds
     }
 
@@ -1005,12 +1072,14 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
         val db = this.safeWritableDatabase
         val whereClause = names.joinToString(" OR ") { "LOWER($KEY_PEER_NAME) = LOWER(?)" }
         db.delete(TABLE_MESSAGES, whereClause, names.toTypedArray())
+        com.example.twopchat.data.cache.MessageCache.clear()
     }
 
     fun deleteMessage(id: String) {
         try {
             val db = this.safeWritableDatabase
             db.delete(TABLE_MESSAGES, "$KEY_ID = ?", arrayOf(id))
+            com.example.twopchat.data.cache.MessageCache.invalidate(id)
         } catch (e: Exception) {
             SafeLog.e(TAG, "Failed to delete message $id", e)
         }
@@ -1032,6 +1101,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
                 put(KEY_STATUS, mergedStatus)
             }
             db.update(TABLE_MESSAGES, values, "$KEY_ID = ?", arrayOf(id))
+            com.example.twopchat.data.cache.MessageCache.invalidate(id)
         } catch (e: Exception) {
             SafeLog.e(TAG, "Failed to update status for $id", e)
         }
@@ -1067,6 +1137,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
                 db.update(TABLE_MESSAGES, values, "$KEY_ID = ?", arrayOf(id))
             }
             db.setTransactionSuccessful()
+            com.example.twopchat.data.cache.MessageCache.invalidateAll(updates.keys)
         } catch (e: Exception) {
             SafeLog.e(TAG, "Failed to batch update message statuses", e)
         } finally {
@@ -1078,9 +1149,10 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
         try {
             val db = this.safeWritableDatabase
             val values = ContentValues().apply {
-                put(KEY_REACTIONS, encNullable(serializeReactions(reactions)))
+                put(KEY_REACTIONS, if (reactions.isNotEmpty()) encNullable(serializeReactions(reactions)) else null)
             }
             db.update(TABLE_MESSAGES, values, "$KEY_ID = ?", arrayOf(id))
+            com.example.twopchat.data.cache.MessageCache.invalidate(id)
         } catch (e: Exception) {
             SafeLog.e(TAG, "Failed to update reactions for $id", e)
         }
@@ -1130,6 +1202,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
                 }
             }
             val rows = db.update(TABLE_MESSAGES, values, "$KEY_ID = ? AND $KEY_PEER_NAME = ? AND $KEY_IS_ME = 0", arrayOf(id, peerName))
+            if (rows > 0) com.example.twopchat.data.cache.MessageCache.invalidate(id)
             return rows > 0
         } catch (e: Exception) {
             SafeLog.e(TAG, "Failed to update text for $id for peer $peerName", e)
@@ -1152,6 +1225,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
             if (isMe != 0) return false // CRIT-01: Peer can only delete incoming messages sent by the peer
 
             val rows = db.delete(TABLE_MESSAGES, "$KEY_ID = ? AND $KEY_PEER_NAME = ? AND $KEY_IS_ME = 0", arrayOf(id, peerName))
+            if (rows > 0) com.example.twopchat.data.cache.MessageCache.invalidate(id)
             return rows > 0
         } catch (e: Exception) {
             SafeLog.e(TAG, "Failed to delete message $id for peer $peerName", e)
@@ -1176,6 +1250,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
                 }
             }
             db.update(TABLE_MESSAGES, values, "$KEY_ID = ?", arrayOf(id))
+            com.example.twopchat.data.cache.MessageCache.invalidate(id)
         } catch (e: Exception) {
             SafeLog.e(TAG, "Failed to update text for $id", e)
         }
@@ -1299,10 +1374,11 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
     fun clearAllMessages() {
         val db = this.safeWritableDatabase
         db.delete(TABLE_MESSAGES, null, null)
+        com.example.twopchat.data.cache.MessageCache.clear()
     }
 
     private fun enc(value: String) = SecureStorage.encrypt(value)
-    private fun encNullable(value: String?) = value?.let(SecureStorage::encrypt)
+    private fun encNullable(value: String?) = if (value.isNullOrEmpty()) null else SecureStorage.encrypt(value)
     private fun dec(value: String?) = SecureStorage.decrypt(value).orEmpty()
     private fun decNullable(value: String?) = SecureStorage.decrypt(value)
 
