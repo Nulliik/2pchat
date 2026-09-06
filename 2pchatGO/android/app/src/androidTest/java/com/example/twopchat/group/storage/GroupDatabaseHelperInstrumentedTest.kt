@@ -359,7 +359,7 @@ class GroupDatabaseHelperInstrumentedTest {
             null,
             null,
         )
-        legacy.execSQL("CREATE TABLE IF NOT EXISTS groups(group_id TEXT PRIMARY KEY)")
+        legacy.execSQL("CREATE TABLE IF NOT EXISTS \"groups\"(group_id TEXT PRIMARY KEY)")
         legacy.execSQL("CREATE TABLE migration_marker(value TEXT NOT NULL)")
         legacy.execSQL("INSERT INTO migration_marker(value) VALUES ('preserved')")
         legacy.version = 2
@@ -569,7 +569,7 @@ class GroupDatabaseHelperInstrumentedTest {
             null,
             null,
         )
-        v6Db.execSQL("CREATE TABLE IF NOT EXISTS groups(group_id TEXT PRIMARY KEY, title TEXT NOT NULL, local_device_id TEXT NOT NULL, owner_device_id TEXT NOT NULL, current_epoch INTEGER NOT NULL, control_head TEXT, control_depth INTEGER NOT NULL DEFAULT 0, created_at_ms INTEGER NOT NULL, updated_at_ms INTEGER NOT NULL, avatar_uri TEXT, direct_peer_pubkey TEXT, direct_transport_type TEXT, unread_count INTEGER NOT NULL DEFAULT 0, last_read_hlc_physical_ms INTEGER NOT NULL DEFAULT 0, last_read_hlc_logical INTEGER NOT NULL DEFAULT 0, is_archived INTEGER NOT NULL DEFAULT 0, is_muted INTEGER NOT NULL DEFAULT 0, admin_only_posting INTEGER NOT NULL DEFAULT 0)")
+        v6Db.execSQL("CREATE TABLE IF NOT EXISTS \"groups\"(group_id TEXT PRIMARY KEY, title TEXT NOT NULL, local_device_id TEXT NOT NULL, owner_device_id TEXT NOT NULL, current_epoch INTEGER NOT NULL, control_head TEXT, control_depth INTEGER NOT NULL DEFAULT 0, created_at_ms INTEGER NOT NULL, updated_at_ms INTEGER NOT NULL, avatar_uri TEXT, direct_peer_pubkey TEXT, direct_transport_type TEXT, unread_count INTEGER NOT NULL DEFAULT 0, last_read_hlc_physical_ms INTEGER NOT NULL DEFAULT 0, last_read_hlc_logical INTEGER NOT NULL DEFAULT 0, is_archived INTEGER NOT NULL DEFAULT 0, is_muted INTEGER NOT NULL DEFAULT 0, admin_only_posting INTEGER NOT NULL DEFAULT 0)")
         v6Db.execSQL("CREATE TABLE group_members(group_id TEXT NOT NULL, device_id TEXT NOT NULL, account_id TEXT NOT NULL, display_name TEXT NOT NULL, role TEXT NOT NULL, permissions INTEGER NOT NULL, status TEXT NOT NULL, joined_epoch INTEGER NOT NULL, removed_epoch INTEGER, created_at_ms INTEGER NOT NULL, updated_at_ms INTEGER NOT NULL, transport_fingerprint TEXT, peer_name TEXT, signing_key_base64 TEXT, PRIMARY KEY (group_id, device_id))")
         v6Db.execSQL("CREATE TABLE group_epoch_keys(group_id TEXT NOT NULL, epoch INTEGER NOT NULL, key_material BLOB NOT NULL, created_at_ms INTEGER NOT NULL, PRIMARY KEY (group_id, epoch))")
         v6Db.execSQL("CREATE TABLE group_events(group_id TEXT NOT NULL, event_id TEXT PRIMARY KEY, epoch INTEGER NOT NULL, author_device_id TEXT NOT NULL, author_seq INTEGER NOT NULL, hlc_physical_ms INTEGER NOT NULL, hlc_logical INTEGER NOT NULL, kind TEXT NOT NULL, body TEXT NOT NULL, created_at_ms INTEGER NOT NULL, received_at_ms INTEGER NOT NULL)")
@@ -582,7 +582,7 @@ class GroupDatabaseHelperInstrumentedTest {
         v6Db.execSQL("CREATE TABLE roster_snapshot_pages(group_id TEXT NOT NULL, root_event_id TEXT NOT NULL, page_index INTEGER NOT NULL, total_pages INTEGER NOT NULL, payload BLOB NOT NULL, PRIMARY KEY (group_id, root_event_id, page_index))")
 
         // Seed initial v6 group and members
-        v6Db.execSQL("INSERT INTO groups(group_id, title, local_device_id, owner_device_id, current_epoch, created_at_ms, updated_at_ms) VALUES ('g-v6', 'V6 Group', 'owner-dev', 'owner-dev', 3, 1000, 2000)")
+        v6Db.execSQL("INSERT INTO \"groups\"(group_id, title, local_device_id, owner_device_id, current_epoch, created_at_ms, updated_at_ms) VALUES ('g-v6', 'V6 Group', 'owner-dev', 'owner-dev', 3, 1000, 2000)")
         v6Db.execSQL("INSERT INTO group_members(group_id, device_id, account_id, display_name, role, permissions, status, joined_epoch, created_at_ms, updated_at_ms) VALUES ('g-v6', 'owner-dev', 'acc-owner', 'Owner', 'OWNER', 999, 'ACTIVE', 1, 1000, 1000)")
         v6Db.execSQL("INSERT INTO group_members(group_id, device_id, account_id, display_name, role, permissions, status, joined_epoch, removed_epoch, created_at_ms, updated_at_ms) VALUES ('g-v6', 'kicked-dev', 'acc-kicked', 'Kicked', 'MEMBER', 0, 'LEFT', 1, 2, 1000, 1500)")
         v6Db.execSQL("INSERT INTO group_epoch_keys(group_id, epoch, key_material, created_at_ms) VALUES ('g-v6', 1, x'010203', 1000)")
