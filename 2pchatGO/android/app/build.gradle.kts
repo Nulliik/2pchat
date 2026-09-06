@@ -10,7 +10,7 @@ val pluggableTransportBinaries by configurations.creating
 val generatedBridgeJniLibs = layout.buildDirectory.dir("generated/jniLibs/bridgeTransport")
 val expectedLyrebirdSha256 = "2d70a38393ee6f1760a65a33dd971210efa06b5a355ebea829196b61fd9fd11a"
 val unpackBridgeTransportBinaries by tasks.registering(Sync::class) {
-    from({ pluggableTransportBinaries.map { zipTree(it) } })
+    from(pluggableTransportBinaries.elements.map { files -> files.map { zipTree(it) } })
     into(generatedBridgeJniLibs)
     doFirst {
         val artifacts = pluggableTransportBinaries.files
