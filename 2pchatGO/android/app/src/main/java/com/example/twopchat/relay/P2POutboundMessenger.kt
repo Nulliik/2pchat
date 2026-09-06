@@ -799,15 +799,37 @@ internal class P2POutboundMessenger(
         val defaultText = when (message.attachmentType) {
             "IMAGE" -> text.equals("Sent an image", ignoreCase = true) ||
                 text.equals("Фотография", ignoreCase = true) ||
-                text.equals("Отправлена фотография", ignoreCase = true)
+                text.equals("Отправлена фотография", ignoreCase = true) ||
+                text.equals("Bild gesendet", ignoreCase = true) ||
+                text.equals("Foto enviada", ignoreCase = true) ||
+                text.equals("Photo envoyée", ignoreCase = true) ||
+                text.equals("Fotoğraf gönderildi", ignoreCase = true) ||
+                text.equals("Foto", ignoreCase = true) ||
+                text.equals("Photo", ignoreCase = true)
             "VIDEO" -> text.equals("Sent a video", ignoreCase = true) ||
-                text.equals("Видеозапись", ignoreCase = true)
+                text.equals("Видеозапись", ignoreCase = true) ||
+                text.equals("Video gesendet", ignoreCase = true) ||
+                text.equals("Vídeo enviado", ignoreCase = true) ||
+                text.equals("Vidéo envoyée", ignoreCase = true) ||
+                text.equals("Video gönderildi", ignoreCase = true) ||
+                text.equals("Video", ignoreCase = true) ||
+                text.equals("Vidéo", ignoreCase = true)
             "VOICE" -> text.equals("Voice message", ignoreCase = true) ||
-                text.equals("Голосовое сообщение", ignoreCase = true)
+                text.equals("Голосовое сообщение", ignoreCase = true) ||
+                text.equals("Sprachnachricht", ignoreCase = true) ||
+                text.equals("Mensaje de voz", ignoreCase = true) ||
+                text.equals("Message vocal", ignoreCase = true) ||
+                text.equals("Mensagem de voz", ignoreCase = true) ||
+                text.equals("Sesli mesaj", ignoreCase = true)
             GifStorageManager.ATTACHMENT_TYPE -> text.equals("GIF", ignoreCase = true)
             "ALBUM" -> text.startsWith("Sent an album", ignoreCase = true) ||
                 text.startsWith("Album", ignoreCase = true) ||
-                text.startsWith("Альбом", ignoreCase = true)
+                text.startsWith("Álbum", ignoreCase = true) ||
+                text.startsWith("Альбом", ignoreCase = true) ||
+                text.startsWith("Album gesendet", ignoreCase = true) ||
+                text.startsWith("Álbum enviado", ignoreCase = true) ||
+                text.startsWith("Album envoyé", ignoreCase = true) ||
+                text.startsWith("Albüm gönderildi", ignoreCase = true)
             StickerSupport.ATTACHMENT_TYPE -> false
             StickerSupport.PACK_ATTACHMENT_TYPE -> true
             else -> true

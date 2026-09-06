@@ -12,6 +12,7 @@ import android.content.Context
 import android.content.Intent
 import androidx.core.app.NotificationCompat
 import org.json.JSONObject
+import com.example.twopchat.data.Localizations
 import java.io.File
 import java.security.MessageDigest
 
@@ -349,14 +350,21 @@ internal class MessageNotificationService {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
 
-        val isRu = settings.getString("settings_language", "English") == "Русский"
+        val appLanguage = P2PPreferences.getAppLanguage(context)
         val showPreview = settings.getBoolean("settings_previews", true)
         val displayText = if (showPreview) {
             IncomingMessageParser.parseNotificationText(text)
-        } else if (isRu) {
-            "Новое сообщение"
         } else {
-            "New message"
+            Localizations.tr(
+                appLanguage,
+                ru = "Новое сообщение",
+                en = "New message",
+                de = "Neue Nachricht",
+                es = "Nuevo mensaje",
+                fr = "Nouveau message",
+                pt = "Nova mensagem",
+                tr = "Yeni mesaj"
+            )
         }
 
         // Add to history list for MessagingStyle
@@ -364,13 +372,33 @@ internal class MessageNotificationService {
 
         // 2. MessagingStyle Conversation Threading with Avatar Icon
         val avatarIcon = getPeerAvatarIcon(context, sender)
-        val userPerson = androidx.core.app.Person.Builder().setName(if (isRu) "Вы" else "You").build()
+        val userPerson = androidx.core.app.Person.Builder().setName(
+            Localizations.tr(
+                appLanguage,
+                ru = "Вы",
+                en = "You",
+                de = "Du",
+                es = "Tú",
+                fr = "Vous",
+                pt = "Você",
+                tr = "Sen"
+            )
+        ).build()
         val senderPerson = androidx.core.app.Person.Builder()
             .setName(sender)
             .setIcon(avatarIcon)
             .build()
         val conversationTitle = if (isMention) {
-            if (isRu) "💬 Вас упомянули ($sender)" else "💬 Mentioned by $sender"
+            Localizations.tr(
+                appLanguage,
+                ru = "💬 Вас упомянули ($sender)",
+                en = "💬 Mentioned by $sender",
+                de = "💬 Erwähnt von $sender",
+                es = "💬 Te mencionó $sender",
+                fr = "💬 Mentionné par $sender",
+                pt = "💬 Mencionado por $sender",
+                tr = "💬 $sender sizden bahsetti"
+            )
         } else sender
 
         val messagingStyle = NotificationCompat.MessagingStyle(userPerson)
@@ -382,7 +410,18 @@ internal class MessageNotificationService {
 
         // 1. Direct Reply RemoteInput Action
         val remoteInput = androidx.core.app.RemoteInput.Builder(NotificationActionReceiver.KEY_TEXT_REPLY)
-            .setLabel(if (isRu) "Ответить" else "Reply")
+            .setLabel(
+                Localizations.tr(
+                    appLanguage,
+                    ru = "Ответить",
+                    en = "Reply",
+                    de = "Antworten",
+                    es = "Responder",
+                    fr = "Répondre",
+                    pt = "Responder",
+                    tr = "Yanıtla"
+                )
+            )
             .build()
 
         val replyIntent = Intent(context, NotificationActionReceiver::class.java).apply {
@@ -404,7 +443,16 @@ internal class MessageNotificationService {
 
         val replyAction = NotificationCompat.Action.Builder(
             R.drawable.ic_send_airplane,
-            if (isRu) "Ответить" else "Reply",
+            Localizations.tr(
+                appLanguage,
+                ru = "Ответить",
+                en = "Reply",
+                de = "Antworten",
+                es = "Responder",
+                fr = "Répondre",
+                pt = "Responder",
+                tr = "Yanıtla"
+            ),
             replyPendingIntent
         ).addRemoteInput(remoteInput)
             .setAllowGeneratedReplies(true)
@@ -432,7 +480,16 @@ internal class MessageNotificationService {
 
         val readAction = NotificationCompat.Action.Builder(
             R.drawable.ic_check,
-            if (isRu) "Прочитано" else "Mark as Read",
+            Localizations.tr(
+                appLanguage,
+                ru = "Прочитано",
+                en = "Mark as read",
+                de = "Als gelesen markieren",
+                es = "Marcar como leído",
+                fr = "Marquer comme lu",
+                pt = "Marcar como lido",
+                tr = "Okundu olarak işaretle"
+            ),
             readPendingIntent
         ).setSemanticAction(NotificationCompat.Action.SEMANTIC_ACTION_MARK_AS_READ)
             .setShowsUserInterface(false)

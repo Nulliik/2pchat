@@ -1121,17 +1121,12 @@ fun GroupChatScreen(
                                 ) {
                                     Box(
                                         modifier = Modifier
-                                            .size(52.dp)
+                                            .size(56.dp)
                                             .background(primaryColor.copy(alpha = 0.15f), shape = CircleShape)
-                                            .border(1.dp, primaryColor.copy(alpha = 0.35f), CircleShape),
+                                            .border(1.5.dp, primaryColor.copy(alpha = 0.35f), CircleShape),
                                         contentAlignment = Alignment.Center
                                     ) {
-                                        Icon(
-                                            painter = painterResource(id = R.drawable.ic_menu_chats),
-                                            contentDescription = null,
-                                            tint = primaryColor,
-                                            modifier = Modifier.size(26.dp)
-                                        )
+                                        Text(text = "🛡️", fontSize = 28.sp)
                                     }
 
                                     Spacer(modifier = Modifier.height(14.dp))
@@ -1139,20 +1134,21 @@ fun GroupChatScreen(
                                     Text(
                                         text = Localizations.tr(
                                             appLanguage,
-                                            "История сообщений пуста",
-                                            "No messages yet",
-                                            "Keine Nachrichten vorhanden",
-                                            "Sin mensajes aún",
-                                            "Aucun message pour le moment",
-                                            "Nenhuma mensagem ainda",
-                                            tr = "Henüz mesaj yok"
+                                            ru = "Сквозное шифрование группы",
+                                            en = "End-to-End Group Encryption",
+                                            de = "Ende-zu-Ende Gruppenverschlüsselung",
+                                            es = "Cifrado de grupo de extremo a extremo",
+                                            fr = "Chiffrement de groupe de bout en bout",
+                                            pt = "Criptografia de grupo ponta a ponta",
+                                            tr = "Uçtan Uca Grup Şifrelemesi"
                                         ),
-                                        fontSize = 16.sp,
+                                        fontSize = 17.sp,
                                         fontWeight = FontWeight.Bold,
-                                        color = onSurfaceColor
+                                        color = onSurfaceColor,
+                                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
                                     )
 
-                                    Spacer(modifier = Modifier.height(6.dp))
+                                    Spacer(modifier = Modifier.height(8.dp))
 
                                     Text(
                                         text = if (state.readOnlyReason.isNotBlank()) {
@@ -1160,47 +1156,87 @@ fun GroupChatScreen(
                                         } else {
                                             Localizations.tr(
                                                 appLanguage,
-                                                "Сообщений пока нет. Начните общение в группе!",
-                                                "No messages yet. Start chatting in the group!",
-                                                "Keine Nachrichten vorhanden. Starte die Unterhaltung in der Gruppe!",
-                                                "¡Aún no hay mensajes. Comienza a chatear en el grupo!",
-                                                "Pas encore de messages. Commencez à discuter dans le groupe !",
-                                                "Nenhuma mensagem ainda. Comece a conversar no grupo!",
-                                                tr = "Henüz mesaj yok. Grupta sohbete başlayın!"
+                                                ru = "Сообщения группы защищены сквозным шифрованием эпохи. Никаких промежуточных серверов.",
+                                                en = "Group messages are protected by epoch-based end-to-end encryption. No intermediate servers.",
+                                                de = "Gruppennachrichten sind durch Ende-zu-Ende-Verschlüsselung geschützt. Keine Zwischenserver.",
+                                                es = "Los mensajes del grupo están protegidos por cifrado de extremo a extremo. Sin servidores intermediarios.",
+                                                fr = "Les messages de groupe sont protégés par chiffrement de bout en bout. Aucun serveur intermédiaire.",
+                                                pt = "As mensagens do grupo são protegidas por criptografia de ponta a ponta. Sem servidores intermediários.",
+                                                tr = "Grup mesajları uçtan uca şifreleme ile korunur. Ara sunucu yoktur."
                                             )
                                         },
                                         fontSize = 13.sp,
+                                        lineHeight = 18.sp,
                                         textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
+                                        modifier = Modifier.padding(horizontal = 8.dp)
                                     )
 
                                     Spacer(modifier = Modifier.height(14.dp))
 
-                                    Surface(
-                                        color = primaryColor.copy(alpha = 0.12f),
-                                        shape = RoundedCornerShape(12.dp),
-                                        border = androidx.compose.foundation.BorderStroke(
-                                            0.5.dp,
-                                            primaryColor.copy(alpha = 0.25f)
-                                        )
+                                    Row(
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                        verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Row(
-                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                                            verticalAlignment = Alignment.CenterVertically
+                                        Surface(
+                                            color = Color.White.copy(alpha = 0.05f),
+                                            shape = RoundedCornerShape(8.dp),
+                                            border = androidx.compose.foundation.BorderStroke(0.5.dp, Color.White.copy(alpha = 0.1f))
                                         ) {
                                             Text(
-                                                text = "🔒 " + Localizations.tr(
-                                                    appLanguage,
-                                                    "Сквозное шифрование (Double Ratchet)",
-                                                    "End-to-End Encrypted (Double Ratchet)",
-                                                    "Ende-zu-Ende verschlüsselt (Double Ratchet)",
-                                                    "Cifrado de extremo a extremo (Double Ratchet)",
-                                                    "Chiffrement de bout en bout (Double Ratchet)",
-                                                    "Criptografia de ponta a ponta (Double Ratchet)",
-                                                    tr = "Uçtan Uca Şifreli (Double Ratchet)"
-                                                ),
-                                                fontSize = 11.sp,
+                                                text = "🔒 Epoch AEAD",
+                                                fontSize = 10.sp,
                                                 fontWeight = FontWeight.SemiBold,
+                                                color = primaryColor,
+                                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
+                                            )
+                                        }
+                                        Surface(
+                                            color = Color.White.copy(alpha = 0.05f),
+                                            shape = RoundedCornerShape(8.dp),
+                                            border = androidx.compose.foundation.BorderStroke(0.5.dp, Color.White.copy(alpha = 0.1f))
+                                        ) {
+                                            Text(
+                                                text = "⚡ Direct P2P Mesh",
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = Color(0xFF34D399),
+                                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
+                                            )
+                                        }
+                                    }
+
+                                    if (state.textComposerEnabled && state.readOnlyReason.isBlank()) {
+                                        Spacer(modifier = Modifier.height(18.dp))
+                                        Button(
+                                            onClick = {
+                                                controller.sendMessage(state.groupId, "👋", null)
+                                            },
+                                            shape = RoundedCornerShape(14.dp),
+                                            colors = ButtonDefaults.buttonColors(
+                                                containerColor = primaryColor.copy(alpha = 0.18f),
+                                                contentColor = primaryColor
+                                            ),
+                                            border = androidx.compose.foundation.BorderStroke(1.dp, primaryColor.copy(alpha = 0.45f)),
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .height(44.dp)
+                                        ) {
+                                            Text(text = "👋", fontSize = 18.sp)
+                                            Spacer(Modifier.width(8.dp))
+                                            Text(
+                                                text = Localizations.tr(
+                                                    appLanguage,
+                                                    ru = "Помахать рукой",
+                                                    en = "Say Hello",
+                                                    de = "Hallo sagen",
+                                                    es = "Saludar",
+                                                    fr = "Dire bonjour",
+                                                    pt = "Acenar",
+                                                    tr = "Selam ver"
+                                                ),
+                                                fontSize = 14.sp,
+                                                fontWeight = FontWeight.Bold,
                                                 color = primaryColor
                                             )
                                         }

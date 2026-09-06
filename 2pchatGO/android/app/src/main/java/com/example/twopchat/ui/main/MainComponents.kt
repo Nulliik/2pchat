@@ -400,7 +400,16 @@ fun PeerRow(
                     )
                     Spacer(modifier = Modifier.height(2.dp))
                     if (peer.hasDraft) {
-                        val draftPrefix = if (appLanguage == "Русский") "Черновик: " else "Draft: "
+                        val draftPrefix = Localizations.tr(
+                            appLanguage,
+                            ru = "Черновик: ",
+                            en = "Draft: ",
+                            de = "Entwurf: ",
+                            es = "Borrador: ",
+                            fr = "Brouillon : ",
+                            pt = "Rascunho: ",
+                            tr = "Taslak: "
+                        )
                         val draftContent = peer.lastMsg.removePrefix(draftPrefix)
                         Text(
                             text = buildAnnotatedString {
@@ -453,24 +462,46 @@ fun PeerRow(
                     Color(0xFFE53935).copy(alpha = 0.12f),
                     Color(0xFFE53935),
                     "🚫",
-                    if (appLanguage == "Русский") "Заблокирован" else "Blocked"
+                    Localizations.tr(
+                        appLanguage,
+                        ru = "Заблокирован",
+                        en = "Blocked",
+                        de = "Blockiert",
+                        es = "Bloqueado",
+                        fr = "Bloqué",
+                        pt = "Bloqueado",
+                        tr = "Engellendi"
+                    )
                 )
                 isSavedMessages -> TransportBadgeSpec(
                     onSurfaceColor.copy(alpha = 0.08f),
                     onSurfaceVariant,
                     "🔖",
-                    if (appLanguage == "Русский") "Память" else "Storage"
+                    Localizations.tr(
+                        appLanguage,
+                        ru = "Память",
+                        en = "Storage",
+                        de = "Speicher",
+                        es = "Almacenamiento",
+                        fr = "Stockage",
+                        pt = "Armazenamento",
+                        tr = "Depolama"
+                    )
                 )
                 isGroup -> {
                     val count = peer.transport.substringBefore(" ").toIntOrNull() ?: 1
-                    val label = if (appLanguage == "Русский") {
-                        when {
+                    val label = when (appLanguage) {
+                        "Русский" -> when {
                             count % 10 == 1 && count % 100 != 11 -> "$count участник"
                             count % 10 in 2..4 && count % 100 !in 12..14 -> "$count участника"
                             else -> "$count участников"
                         }
-                    } else {
-                        "$count ${if (count == 1) "member" else "members"}"
+                        "Deutsch" -> if (count == 1) "$count Mitglied" else "$count Mitglieder"
+                        "Español" -> if (count == 1) "$count miembro" else "$count miembros"
+                        "Français" -> if (count == 1) "$count membre" else "$count membres"
+                        "Português" -> if (count == 1) "$count membro" else "$count membros"
+                        "Türkçe" -> "$count üye"
+                        else -> if (count == 1) "$count member" else "$count members"
                     }
                     TransportBadgeSpec(
                         primaryColor.copy(alpha = 0.12f),
@@ -483,7 +514,16 @@ fun PeerRow(
                     onSurfaceColor.copy(alpha = 0.06f),
                     onSurfaceVariant.copy(alpha = 0.75f),
                     "○",
-                    if (appLanguage == "Русский") "Не в сети" else "Offline"
+                    Localizations.tr(
+                        appLanguage,
+                        ru = "Не в сети",
+                        en = "Offline",
+                        de = "Offline",
+                        es = "Desconectado",
+                        fr = "Hors ligne",
+                        pt = "Offline",
+                        tr = "Çevrimdışı"
+                    )
                 )
                 transportKind == ConnectionTransportKind.DIRECT -> TransportBadgeSpec(
                     Color(0xFF10B981).copy(alpha = 0.15f),
@@ -507,7 +547,16 @@ fun PeerRow(
                     onSurfaceColor.copy(alpha = 0.06f),
                     onSurfaceVariant,
                     "…",
-                    if (appLanguage == "Русский") "ОПРЕДЕЛЕНИЕ..." else "DETECTING..."
+                    Localizations.tr(
+                        appLanguage,
+                        ru = "ОПРЕДЕЛЕНИЕ...",
+                        en = "DETECTING...",
+                        de = "ERKENNUNG...",
+                        es = "DETECTANDO...",
+                        fr = "DÉTECTION...",
+                        pt = "DETECTANDO...",
+                        tr = "ALGILANIYOR..."
+                    )
                 )
             }
             val badgeBg = badgeSpec.bg

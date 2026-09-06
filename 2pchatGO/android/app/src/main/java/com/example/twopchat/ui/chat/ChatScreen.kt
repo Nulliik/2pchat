@@ -206,23 +206,72 @@ fun ChatScreen(
                 withContext(Dispatchers.Main) {
                     if (uri != null) {
                         val successText = if (msg.attachmentType == "IMAGE") {
-                            if (appLanguage == "Русский") "Изображение сохранено в Галерею" else "Image saved to Gallery"
+                            Localizations.tr(
+                                appLanguage,
+                                ru = "Изображение сохранено в Галерею",
+                                en = "Image saved to Gallery",
+                                de = "Bild in Galerie gespeichert",
+                                es = "Imagen guardada en la Galería",
+                                fr = "Image enregistrée dans la Galerie",
+                                pt = "Imagem salva na Galeria",
+                                tr = "Görsel Galeriye kaydedildi"
+                            )
                         } else {
-                            if (appLanguage == "Русский") "Файл сохранен в Загрузки" else "File saved to Downloads"
+                            Localizations.tr(
+                                appLanguage,
+                                ru = "Файл сохранен в Загрузки",
+                                en = "File saved to Downloads",
+                                de = "Datei in Downloads gespeichert",
+                                es = "Archivo guardado en Descargas",
+                                fr = "Fichier enregistré dans les Téléchargements",
+                                pt = "Arquivo salvo em Downloads",
+                                tr = "Dosya İndirilenler'e kaydedildi"
+                            )
                         }
                         Toast.makeText(context, successText, Toast.LENGTH_SHORT).show()
                     } else {
                         val failText = if (msg.attachmentType == "IMAGE") {
-                            if (appLanguage == "Русский") "Не удалось сохранить изображение" else "Failed to save image"
+                            Localizations.tr(
+                                appLanguage,
+                                ru = "Не удалось сохранить изображение",
+                                en = "Failed to save image",
+                                de = "Bild konnte nicht gespeichert werden",
+                                es = "Error al guardar la imagen",
+                                fr = "Impossible d'enregistrer l'image",
+                                pt = "Falha ao salvar imagem",
+                                tr = "Görsel kaydedilemedi"
+                            )
                         } else {
-                            if (appLanguage == "Русский") "Не удалось сохранить файл" else "Failed to save file"
+                            Localizations.tr(
+                                appLanguage,
+                                ru = "Не удалось сохранить файл",
+                                en = "Failed to save file",
+                                de = "Datei konnte nicht gespeichert werden",
+                                es = "Error al guardar el archivo",
+                                fr = "Impossible d'enregistrer le fichier",
+                                pt = "Falha ao salvar arquivo",
+                                tr = "Dosya kaydedilemedi"
+                            )
                         }
                         Toast.makeText(context, failText, Toast.LENGTH_SHORT).show()
                     }
                 }
             }
         } else if (msg != null) {
-            Toast.makeText(context, if (appLanguage == "Русский") "Разрешение на запись отклонено" else "Storage permission denied", Toast.LENGTH_SHORT).show()
+            Toast.makeText(
+                context,
+                Localizations.tr(
+                    appLanguage,
+                    ru = "Разрешение на запись отклонено",
+                    en = "Storage permission denied",
+                    de = "Speicherberechtigung verweigert",
+                    es = "Permiso de almacenamiento denegado",
+                    fr = "Autorisation de stockage refusée",
+                    pt = "Permissão de armazenamento negada",
+                    tr = "Depolama izni reddedildi"
+                ),
+                Toast.LENGTH_SHORT
+            ).show()
         }
         pendingDownloadMsg = null
     }
@@ -333,7 +382,20 @@ fun ChatScreen(
             recordingElapsedMs = 0
             isRecordingVoice = true
         } else {
-            Toast.makeText(context, if (appLanguage == "Русский") "Не удалось начать запись" else "Could not start recording", Toast.LENGTH_SHORT).show()
+            Toast.makeText(
+                context,
+                Localizations.tr(
+                    appLanguage,
+                    ru = "Не удалось начать запись",
+                    en = "Could not start recording",
+                    de = "Aufnahme konnte nicht gestartet werden",
+                    es = "No se pudo iniciar la grabación",
+                    fr = "Impossible de démarrer l'enregistrement",
+                    pt = "Não foi possível iniciar a gravação",
+                    tr = "Kayıt başlatılamadı"
+                ),
+                Toast.LENGTH_SHORT
+            ).show()
         }
     }
 
@@ -343,7 +405,20 @@ fun ChatScreen(
         if (granted) {
             beginVoiceRecording()
         } else {
-            Toast.makeText(context, if (appLanguage == "Русский") "Разрешите доступ к микрофону" else "Microphone permission is required", Toast.LENGTH_LONG).show()
+            Toast.makeText(
+                context,
+                Localizations.tr(
+                    appLanguage,
+                    ru = "Разрешите доступ к микрофону",
+                    en = "Microphone permission is required",
+                    de = "Mikrofonberechtigung erforderlich",
+                    es = "Se requiere permiso de micrófono",
+                    fr = "Autorisation du microphone requise",
+                    pt = "Permissão de microfone necessária",
+                    tr = "Mikrofon izni gerekli"
+                ),
+                Toast.LENGTH_LONG
+            ).show()
         }
     }
 
@@ -368,7 +443,20 @@ fun ChatScreen(
             if (result.resultCode == android.app.Activity.RESULT_OK) {
                 com.example.twopchat.yggdrasil.YggdrasilCoordinator.start(context)
                 sharedPrefs.edit { putBoolean("settings_yggdrasil", true) }
-                Toast.makeText(context, if (appLanguage == "Русский") "Yggdrasil успешно включен!" else "Yggdrasil enabled successfully!", Toast.LENGTH_SHORT).show()
+                Toast.makeText(
+                    context,
+                    Localizations.tr(
+                        appLanguage,
+                        ru = "Yggdrasil успешно включен!",
+                        en = "Yggdrasil enabled successfully!",
+                        de = "Yggdrasil erfolgreich aktiviert!",
+                        es = "¡Yggdrasil activado con éxito!",
+                        fr = "Yggdrasil activé avec succès !",
+                        pt = "Yggdrasil ativado com sucesso!",
+                        tr = "Yggdrasil başarıyla etkinleştirildi!"
+                    ),
+                    Toast.LENGTH_SHORT
+                ).show()
             }
         }
     )
@@ -735,10 +823,38 @@ fun ChatScreen(
         }
     }
 
+    val youPrefix = Localizations.tr(
+        appLanguage,
+        ru = "Вы",
+        en = "You",
+        de = "Du",
+        es = "Tú",
+        fr = "Vous",
+        pt = "Você",
+        tr = "Siz"
+    )
+
+    fun showKeyConfirmationPausedToast() {
+        Toast.makeText(
+            context,
+            Localizations.tr(
+                appLanguage,
+                ru = "Отправка приостановлена до подтверждения ключа",
+                en = "Sending is paused until the key is confirmed",
+                de = "Senden pausiert, bis der Schlüssel bestätigt ist",
+                es = "Envío en pausa hasta que se confirme la clave",
+                fr = "Envoi suspendu jusqu'à confirmation de la clé",
+                pt = "Envio pausado até a confirmação da chave",
+                tr = "Anahtar onaylanana kadar gönderme duraklatıldı"
+            ),
+            Toast.LENGTH_LONG
+        ).show()
+    }
+
     fun sendVoiceRecording(recording: VoiceRecording) {
         if (P2PPreferences.isPeerIdentityChangePending(context, peerName)) {
             recording.file.delete()
-            Toast.makeText(context, if (appLanguage == "Русский") "Отправка приостановлена до подтверждения ключа" else "Sending is paused until the key is confirmed", Toast.LENGTH_LONG).show()
+            showKeyConfirmationPausedToast()
             return
         }
         val time = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
@@ -746,9 +862,19 @@ fun ChatScreen(
             ?: P2PPreferences.prefs(context).getString(P2PPreferences.lastEndpoint(peerName), null).orEmpty()
         val isLive = P2PMessageRelay.peerSessionStates[peerName] == true || endpoint.isNotBlank()
         val initialStatus = if (peerName == "Saved Messages") "SENT" else if (isLive) "SENDING" else "PENDING"
+        val voiceMsgText = Localizations.tr(
+            appLanguage,
+            ru = "Голосовое сообщение",
+            en = "Voice message",
+            de = "Sprachnachricht",
+            es = "Mensaje de voz",
+            fr = "Message vocal",
+            pt = "Mensagem de voz",
+            tr = "Sesli mesaj"
+        )
         val outMsg = Message(
             id = newMessageId(),
-            text = "Voice message",
+            text = voiceMsgText,
             isMe = true,
             timestamp = time,
             attachmentType = "VOICE",
@@ -767,7 +893,7 @@ fun ChatScreen(
                 sharedPrefs.edit { putStringSet("active_chats", activeSet.toMutableSet().apply { add(peerName) }) }
             }
         }
-        sharedPrefs.edit { putString("last_msg_$peerName", SecureStorage.encrypt("You: Voice message")) }
+        sharedPrefs.edit { putString("last_msg_$peerName", SecureStorage.encrypt("$youPrefix: $voiceMsgText")) }
 
         if (peerName != "Saved Messages") {
             P2PMessageRelay.sendFile(context, peerName, endpoint, recording.file.absolutePath, outMsg.id) { success ->
@@ -776,6 +902,60 @@ fun ChatScreen(
                 coroutineScope.launch {
                     val index = initialMessages.indexOfFirst { it.id == outMsg.id }
                     if (index != -1) initialMessages[index] = outMsg.copy(status = finalStatus)
+                }
+            }
+        }
+    }
+
+    val sendDirectTextMessage: (String) -> Unit = { rawText ->
+        val trimmed = rawText.trim().take(4096)
+        if (trimmed.isNotEmpty()) {
+            val time = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
+            val endpoint = P2PMessageRelay.peerEndpoints[peerName]
+            val isConnected = P2PMessageRelay.peerSessionStates[peerName] == true || endpoint != null || peerName == "Saved Messages"
+            val initialStatus = if (isConnected) "SENT" else "PENDING"
+            val outMsg = Message(
+                id = newMessageId(),
+                text = trimmed,
+                isMe = true,
+                timestamp = time,
+                status = initialStatus,
+            )
+            arrivalAnimationTracker.mark(outMsg.id)
+            initialMessages.add(outMsg)
+            triggerHaptic()
+            if (persistEnabled || initialStatus == "PENDING") {
+                persistDatabase { db.saveMessage(peerName, outMsg) }
+            }
+            if (peerName != "Saved Messages") {
+                val activeSet = sharedPrefs.getStringSet("active_chats", emptySet()) ?: emptySet()
+                if (!activeSet.contains(peerName)) {
+                    sharedPrefs.edit { putStringSet("active_chats", activeSet.toMutableSet().apply { add(peerName) }) }
+                }
+            }
+            sharedPrefs.edit { putString("last_msg_$peerName", SecureStorage.encrypt("$youPrefix: $trimmed")) }
+            val myAboutMe = com.example.twopchat.config.P2PPreferences.aboutMe(context).trim()
+            val payload = org.json.JSONObject().apply {
+                put("type", "text")
+                put("message_id", outMsg.id)
+                put("text", trimmed)
+                put("sender", username)
+                put("nickname", username)
+                if (myAboutMe.isNotEmpty()) {
+                    put("about_me", myAboutMe)
+                }
+            }.toString()
+            if (peerName != "Saved Messages") {
+                P2PMessageRelay.sendMessageToPeer(context, peerName, payload) { success ->
+                    if (!success) {
+                        persistDatabase { db.updateMessageStatus(outMsg.id, "PENDING") }
+                        coroutineScope.launch {
+                            val idx = initialMessages.indexOfFirst { it.id == outMsg.id }
+                            if (idx in initialMessages.indices) {
+                                initialMessages[idx] = outMsg.copy(status = "PENDING")
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -955,9 +1135,35 @@ fun ChatScreen(
                         isVerified = true
                         P2PPreferences.setPeerVerified(context, peerName, true)
                         showVerifyDialog = false
-                        Toast.makeText(context, if (appLanguage == "Русский") "Собеседник подтвердил личность!" else "Peer successfully verified!", Toast.LENGTH_LONG).show()
+                        Toast.makeText(
+                            context,
+                            Localizations.tr(
+                                appLanguage,
+                                ru = "Собеседник подтвердил личность!",
+                                en = "Peer successfully verified!",
+                                de = "Kontaktperson erfolgreich verifiziert!",
+                                es = "¡Contacto verificado con éxito!",
+                                fr = "Contact vérifié avec succès !",
+                                pt = "Contato verificado com sucesso!",
+                                tr = "Kullanıcı başarıyla doğrulandı!"
+                            ),
+                            Toast.LENGTH_LONG
+                        ).show()
                     } else {
-                        Toast.makeText(context, if (appLanguage == "Русский") "Запрос верификации отклонен собеседником." else "Verification request declined.", Toast.LENGTH_LONG).show()
+                        Toast.makeText(
+                            context,
+                            Localizations.tr(
+                                appLanguage,
+                                ru = "Запрос верификации отклонен собеседником.",
+                                en = "Verification request declined.",
+                                de = "Verifizierungsanfrage abgelehnt.",
+                                es = "Solicitud de verificación rechazada.",
+                                fr = "Demande de vérification refusée.",
+                                pt = "Pedido de verificação recusado.",
+                                tr = "Doğrulama isteği reddedildi."
+                            ),
+                            Toast.LENGTH_LONG
+                        ).show()
                     }
                 }
             }
@@ -1037,11 +1243,16 @@ fun ChatScreen(
                 stickerPackPreviewRevision += 1
                 Toast.makeText(
                     context,
-                    if (appLanguage == "Русский") {
-                        "Стикерпак загружен для предпросмотра"
-                    } else {
-                        "Sticker pack ready to preview"
-                    },
+                    Localizations.tr(
+                        appLanguage,
+                        ru = "Стикерпак загружен для предпросмотра",
+                        en = "Sticker pack ready to preview",
+                        de = "Sticker-Paket bereit zur Vorschau",
+                        es = "Paquete de stickers listo para vista previa",
+                        fr = "Pack d'autocollants prêt pour l'aperçu",
+                        pt = "Pacote de figurinhas pronto para pré-visualização",
+                        tr = "Çıkartma paketi önizlemeye hazır"
+                    ),
                     Toast.LENGTH_SHORT,
                 ).show()
             }
@@ -1111,25 +1322,22 @@ fun ChatScreen(
         showStickerPicker = false
         showAttachments = false
         if (P2PPreferences.isPeerIdentityChangePending(context, peerName)) {
-            Toast.makeText(
-                context,
-                if (appLanguage == "Русский") {
-                    "Отправка приостановлена до подтверждения ключа"
-                } else {
-                    "Sending is paused until the key is confirmed"
-                },
-                Toast.LENGTH_LONG,
-            ).show()
+            showKeyConfirmationPausedToast()
             return
         }
         if (!stickerRateLimiter.tryAcquire()) {
             Toast.makeText(
                 context,
-                if (appLanguage == "Русский") {
-                    "Не более 3 стикеров в секунду"
-                } else {
-                    "Up to 3 stickers per second"
-                },
+                Localizations.tr(
+                    appLanguage,
+                    ru = "Не более 3 стикеров в секунду",
+                    en = "Up to 3 stickers per second",
+                    de = "Bis zu 3 Sticker pro Sekunde",
+                    es = "Hasta 3 stickers por segundo",
+                    fr = "Jusqu'à 3 autocollants par seconde",
+                    pt = "Até 3 figurinhas por segundo",
+                    tr = "Saniyede en fazla 3 çıkartma"
+                ),
                 Toast.LENGTH_SHORT,
             ).show()
             return
@@ -1142,7 +1350,16 @@ fun ChatScreen(
             if (stickerFile == null) {
                 Toast.makeText(
                     context,
-                    if (appLanguage == "Русский") "Не удалось подготовить стикер" else "Could not prepare sticker",
+                    Localizations.tr(
+                        appLanguage,
+                        ru = "Не удалось подготовить стикер",
+                        en = "Could not prepare sticker",
+                        de = "Sticker konnte nicht vorbereitet werden",
+                        es = "No se pudo preparar el sticker",
+                        fr = "Impossible de préparer l'autocollant",
+                        pt = "Não foi possível preparar a figurinha",
+                        tr = "Çıkartma hazırlanamadı"
+                    ),
                     Toast.LENGTH_SHORT,
                 ).show()
                 return@launch
@@ -1176,7 +1393,17 @@ fun ChatScreen(
                 }
             }
 
-            val lastText = if (appLanguage == "Русский") "Вы: Стикер" else "You: Sticker"
+            val stickerLabel = Localizations.tr(
+                appLanguage,
+                ru = "Стикер",
+                en = "Sticker",
+                de = "Sticker",
+                es = "Sticker",
+                fr = "Autocollant",
+                pt = "Figurinha",
+                tr = "Çıkartma"
+            )
+            val lastText = "$youPrefix: $stickerLabel"
             sharedPrefs.edit { putString("last_msg_$peerName", SecureStorage.encrypt(lastText)) }
 
             if (peerName != "Saved Messages") {
@@ -1202,15 +1429,7 @@ fun ChatScreen(
     fun sendGifFile(source: File) {
         showGifLibrary = false
         if (P2PPreferences.isPeerIdentityChangePending(context, peerName)) {
-            Toast.makeText(
-                context,
-                if (appLanguage == "Русский") {
-                    "Отправка приостановлена до подтверждения ключа"
-                } else {
-                    "Sending is paused until the key is confirmed"
-                },
-                Toast.LENGTH_LONG,
-            ).show()
+            showKeyConfirmationPausedToast()
             return
         }
         coroutineScope.launch {
@@ -1223,7 +1442,16 @@ fun ChatScreen(
             if (stored == null) {
                 Toast.makeText(
                     context,
-                    if (appLanguage == "Русский") "Некорректный GIF" else "Invalid GIF",
+                    Localizations.tr(
+                        appLanguage,
+                        ru = "Некорректный GIF",
+                        en = "Invalid GIF",
+                        de = "Ungültiges GIF",
+                        es = "GIF no válido",
+                        fr = "GIF invalide",
+                        pt = "GIF inválido",
+                        tr = "Geçersiz GIF"
+                    ),
                     Toast.LENGTH_SHORT,
                 ).show()
                 return@launch
@@ -1261,7 +1489,7 @@ fun ChatScreen(
             sharedPrefs.edit {
                 putString(
                     "last_msg_$peerName",
-                    SecureStorage.encrypt(if (appLanguage == "Русский") "Вы: GIF" else "You: GIF"),
+                    SecureStorage.encrypt("$youPrefix: GIF"),
                 )
             }
             if (peerName != "Saved Messages") {
@@ -1390,9 +1618,27 @@ fun ChatScreen(
             val file = tempFiles.first()
             val type = mediaTypes.firstOrNull() ?: "IMAGE"
             val defaultMsgText = when (type) {
-                "VIDEO" -> if (appLanguage == "Русский") "Видеозапись" else "Sent a video"
+                "VIDEO" -> Localizations.tr(
+                    appLanguage,
+                    ru = "Видеозапись",
+                    en = "Sent a video",
+                    de = "Video gesendet",
+                    es = "Video enviado",
+                    fr = "Vidéo envoyée",
+                    pt = "Vídeo enviado",
+                    tr = "Video gönderildi",
+                )
                 GifStorageManager.ATTACHMENT_TYPE -> "GIF"
-                else -> if (appLanguage == "Русский") "Фотография" else "Sent an image"
+                else -> Localizations.tr(
+                    appLanguage,
+                    ru = "Фотография",
+                    en = "Sent an image",
+                    de = "Bild gesendet",
+                    es = "Imagen enviada",
+                    fr = "Image envoyée",
+                    pt = "Imagem enviada",
+                    tr = "Fotoğraf gönderildi",
+                )
             }
             val msgText = customCaption.ifBlank { defaultMsgText }
             val outMsg = Message(
@@ -1422,7 +1668,16 @@ fun ChatScreen(
             }
         } else {
             val albumUris = tempFiles.map { it.absolutePath }
-            val defaultTitle = if (appLanguage == "Русский") "Альбом (${tempFiles.size})" else "Sent an album (${tempFiles.size})"
+            val defaultTitle = Localizations.tr(
+                appLanguage,
+                ru = "Альбом (${tempFiles.size})",
+                en = "Sent an album (${tempFiles.size})",
+                de = "Album gesendet (${tempFiles.size})",
+                es = "Álbum enviado (${tempFiles.size})",
+                fr = "Album envoyé (${tempFiles.size})",
+                pt = "Álbum enviado (${tempFiles.size})",
+                tr = "Albüm gönderildi (${tempFiles.size})",
+            )
             val albumText = customCaption.ifBlank { defaultTitle }
             val outMsg = Message(
                 id = newMessageId(),
@@ -1463,7 +1718,7 @@ fun ChatScreen(
     ) { uris: List<Uri> ->
         if (uris.isEmpty()) return@rememberLauncherForActivityResult
         if (P2PPreferences.isPeerIdentityChangePending(context, peerName)) {
-            Toast.makeText(context, if (appLanguage == "Русский") "Отправка приостановлена до подтверждения ключа" else "Sending is paused until the key is confirmed", Toast.LENGTH_LONG).show()
+            showKeyConfirmationPausedToast()
             return@rememberLauncherForActivityResult
         }
         if (uris.size == 1) {
@@ -1489,38 +1744,48 @@ fun ChatScreen(
                         withContext(Dispatchers.Main) { sendGifFile(file) }
                     }
                 }
-            } else {
-                editingPhotoUri = uri
+                return@rememberLauncherForActivityResult
             }
+            editingPhotoUri = uri
+            editingPhotoPath = null
         } else {
             handleMultipleUrisSelected(uris)
         }
     }
 
     val gifImportLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent(),
+        contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         if (uri == null) return@rememberLauncherForActivityResult
-        coroutineScope.launch {
-            val result = withContext(Dispatchers.IO) {
-                var fileName = "imported_${System.currentTimeMillis()}.gif"
-                runCatching {
-                    context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
-                        val index = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
-                        if (index != -1 && cursor.moveToFirst()) {
-                            fileName = cursor.getString(index).orEmpty().ifBlank { fileName }
-                        }
+        coroutineScope.launch(Dispatchers.IO) {
+            var fileName = "animation.gif"
+            runCatching {
+                context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                    val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                    if (nameIndex != -1 && cursor.moveToFirst()) {
+                        fileName = cursor.getString(nameIndex).orEmpty().ifBlank { fileName }
                     }
                 }
+            }
+            val result = runCatching {
                 if (!fileName.endsWith(".gif", ignoreCase = true)) fileName += ".gif"
                 saveUriToTempFile(context, uri, fileName)?.let { temporary ->
                     GifStorageManager.save(context, temporary).also { temporary.delete() }
                 }
-            }
+            }.getOrNull()
             if (result == null) {
                 Toast.makeText(
                     context,
-                    if (appLanguage == "Русский") "Не удалось добавить GIF" else "Could not add GIF",
+                    Localizations.tr(
+                        appLanguage,
+                        ru = "Не удалось добавить GIF",
+                        en = "Could not add GIF",
+                        de = "GIF konnte nicht hinzugefügt werden",
+                        es = "No se pudo añadir el GIF",
+                        fr = "Impossible d'ajouter le GIF",
+                        pt = "Não foi possível adicionar o GIF",
+                        tr = "GIF eklenemedi"
+                    ),
                     Toast.LENGTH_SHORT,
                 ).show()
             } else {
@@ -1535,7 +1800,7 @@ fun ChatScreen(
     ) { uris: List<Uri> ->
         if (uris.isEmpty()) return@rememberLauncherForActivityResult
         if (P2PPreferences.isPeerIdentityChangePending(context, peerName)) {
-            Toast.makeText(context, if (appLanguage == "Русский") "Отправка приостановлена до подтверждения ключа" else "Sending is paused until the key is confirmed", Toast.LENGTH_LONG).show()
+            showKeyConfirmationPausedToast()
             return@rememberLauncherForActivityResult
         }
         if (uris.size == 1) {
@@ -1568,7 +1833,7 @@ fun ChatScreen(
         if (!success) return@rememberLauncherForActivityResult
         if (P2PPreferences.isPeerIdentityChangePending(context, peerName)) {
             tempCameraFile?.delete()
-            Toast.makeText(context, if (appLanguage == "Русский") "Отправка приостановлена до подтверждения ключа" else "Sending is paused until the key is confirmed", Toast.LENGTH_LONG).show()
+            showKeyConfirmationPausedToast()
             return@rememberLauncherForActivityResult
         }
         val file = tempCameraFile ?: return@rememberLauncherForActivityResult
@@ -1594,7 +1859,18 @@ fun ChatScreen(
                         ?: P2PPreferences.prefs(context).getString(P2PPreferences.lastEndpoint(peerName), null).orEmpty()
                     val isLive = P2PMessageRelay.peerSessionStates[peerName] == true || endpoint.isNotBlank()
                     val initialStatus = if (peerName == "Saved Messages") "SENT" else if (isLive) "SENDING" else "PENDING"
-                    val msgText = caption.ifBlank { if (appLanguage == "Русский") "Фотография" else "Sent an image" }
+                    val msgText = caption.ifBlank {
+                        Localizations.tr(
+                            appLanguage,
+                            ru = "Фотография",
+                            en = "Sent an image",
+                            de = "Bild gesendet",
+                            es = "Imagen enviada",
+                            fr = "Image envoyée",
+                            pt = "Imagem enviada",
+                            tr = "Fotoğraf gönderildi",
+                        )
+                    }
                     val outMsg = Message(
                         id = newMessageId(),
                         text = msgText,
@@ -2169,6 +2445,7 @@ fun ChatScreen(
                         onSurfaceVariant = onSurfaceVariant,
                         onReply = { replyingToMessage = it },
                         onShowOptions = { selectedMessageForOptions = it },
+                        onSendGreeting = { sendDirectTextMessage("👋") },
                         onOpenImages = { images, index, message ->
                             activeFullscreenBitmapOverrides = emptyMap()
                             activeFullscreenImages = images

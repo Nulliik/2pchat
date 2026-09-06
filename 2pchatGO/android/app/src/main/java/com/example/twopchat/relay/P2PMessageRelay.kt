@@ -1627,14 +1627,16 @@ object P2PMessageRelay {
                                         appContext,
                                         resolvedSender,
                                         offerMessage,
-                                        notificationText = if (
-                                            P2PPreferences.prefs(appContext)
-                                                .getString("settings_language", "English") == "Русский"
-                                        ) {
-                                            "Началось получение файла: $fileName"
-                                        } else {
-                                            "Receiving file: $fileName"
-                                        },
+                                        notificationText = com.example.twopchat.data.Localizations.tr(
+                                            P2PPreferences.getAppLanguage(appContext),
+                                            ru = "Началось получение файла: %s",
+                                            en = "Receiving file: %s",
+                                            de = "Dateiempfang gestartet: %s",
+                                            es = "Recibiendo archivo: %s",
+                                            fr = "Réception du fichier : %s",
+                                            pt = "Recebendo arquivo: %s",
+                                            tr = "Dosya alınıyor: %s"
+                                        ).replace("%s", fileName),
                                         countAsNew = isNewOffer,
                                     )
                                     return
@@ -1858,22 +1860,27 @@ object P2PMessageRelay {
                                                 P2PPreferences.setDirectWallpaper(appContext, sender, destFile.absolutePath, dimming, isBlur)
                                             }
 
-                                            val defaultLang = if (Locale.getDefault().language == "ru") "Русский" else "English"
-                                            val lang = P2PPreferences.prefs(appContext).getString("settings_language", defaultLang)
-                                                ?: P2PPreferences.prefs(appContext).getString("app_language", defaultLang)
-                                                ?: defaultLang
-                                            val textRu = "Собеседник установил(а) новые обои для этого чата"
-                                            val textEn = "Your peer set a new wallpaper for this chat"
+                                            val lang = P2PPreferences.getAppLanguage(appContext)
+                                            val wallpaperSetText = com.example.twopchat.data.Localizations.tr(
+                                                lang,
+                                                ru = "Собеседник установил(а) новые обои для этого чата",
+                                                en = "Your peer set a new wallpaper for this chat",
+                                                de = "Dein Chatpartner hat ein neues Hintergrundbild festgelegt",
+                                                es = "Tu contacto estableció un nuevo fondo para este chat",
+                                                fr = "Votre interlocuteur a défini un nouveau fond d'écran pour ce chat",
+                                                pt = "Seu contato definiu um novo papel de parede para este chat",
+                                                tr = "Eşiniz bu sohbet için yeni bir duvar kağıdı ayarladı"
+                                            )
                                             val sysMsg = Message(
                                                 id = UUID.randomUUID().toString(),
-                                                text = if (lang == "Русский") textRu else textEn,
+                                                text = wallpaperSetText,
                                                 isMe = false,
                                                 timestamp = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date()),
                                                 attachmentType = "SYSTEM"
                                             )
-                                            persistAndDispatchIncoming(appContext, resolvedSender, sysMsg, notificationText = if (lang == "Русский") textRu else textEn, countAsNew = false)
+                                            persistAndDispatchIncoming(appContext, resolvedSender, sysMsg, notificationText = wallpaperSetText, countAsNew = false)
                                             if (resolvedSender != sender) {
-                                                persistAndDispatchIncoming(appContext, sender, sysMsg, notificationText = if (lang == "Русский") textRu else textEn, countAsNew = false)
+                                                persistAndDispatchIncoming(appContext, sender, sysMsg, notificationText = wallpaperSetText, countAsNew = false)
                                             }
                                         } catch (e: Exception) {
                                             log(appContext, "Failed to apply incoming wallpaper: ${e.message}", "ERROR", e)
@@ -1892,22 +1899,27 @@ object P2PMessageRelay {
                                                 P2PPreferences.setDirectWallpaper(appContext, sender, null, 0, false)
                                             }
 
-                                            val defaultLang = if (Locale.getDefault().language == "ru") "Русский" else "English"
-                                            val lang = P2PPreferences.prefs(appContext).getString("settings_language", defaultLang)
-                                                ?: P2PPreferences.prefs(appContext).getString("app_language", defaultLang)
-                                                ?: defaultLang
-                                            val textRu = "Собеседник удалил(а) обои для этого чата"
-                                            val textEn = "Your peer removed the wallpaper for this chat"
+                                            val lang = P2PPreferences.getAppLanguage(appContext)
+                                            val wallpaperRemovedText = com.example.twopchat.data.Localizations.tr(
+                                                lang,
+                                                ru = "Собеседник удалил(а) обои для этого чата",
+                                                en = "Your peer removed the wallpaper for this chat",
+                                                de = "Dein Chatpartner hat das Hintergrundbild entfernt",
+                                                es = "Tu contacto eliminó el fondo para este chat",
+                                                fr = "Votre interlocuteur a supprimé le fond d'écran pour ce chat",
+                                                pt = "Seu contato removeu o papel de parede deste chat",
+                                                tr = "Eşiniz bu sohbetin duvar kağıdını kaldırdı"
+                                            )
                                             val sysMsg = Message(
                                                 id = UUID.randomUUID().toString(),
-                                                text = if (lang == "Русский") textRu else textEn,
+                                                text = wallpaperRemovedText,
                                                 isMe = false,
                                                 timestamp = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date()),
                                                 attachmentType = "SYSTEM"
                                             )
-                                            persistAndDispatchIncoming(appContext, resolvedSender, sysMsg, notificationText = if (lang == "Русский") textRu else textEn, countAsNew = false)
+                                            persistAndDispatchIncoming(appContext, resolvedSender, sysMsg, notificationText = wallpaperRemovedText, countAsNew = false)
                                             if (resolvedSender != sender) {
-                                                persistAndDispatchIncoming(appContext, sender, sysMsg, notificationText = if (lang == "Русский") textRu else textEn, countAsNew = false)
+                                                persistAndDispatchIncoming(appContext, sender, sysMsg, notificationText = wallpaperRemovedText, countAsNew = false)
                                             }
                                         } catch (e: Exception) {
                                             log(appContext, "Failed to clear wallpaper: ${e.message}", "ERROR", e)
@@ -2361,11 +2373,17 @@ object P2PMessageRelay {
                                     albumTypes[partIndex] = incomingAttachment.attachmentType
                                 }
                                 val albumComplete = albumUris.take(totalParts).all { it.isNotBlank() }
-                                val defaultTitle = if (runCatching { P2PPreferences.getAppLanguage(appContext) == "Русский" }.getOrDefault(false)) {
-                                    "Альбом (${incomingAttachment.albumCount})"
-                                } else {
-                                    "Sent an album (${incomingAttachment.albumCount})"
-                                }
+                                val appLang = runCatching { P2PPreferences.getAppLanguage(appContext) }.getOrDefault("English")
+                                val defaultTitle = com.example.twopchat.data.Localizations.tr(
+                                    appLang,
+                                    ru = "Альбом (${incomingAttachment.albumCount})",
+                                    en = "Sent an album (${incomingAttachment.albumCount})",
+                                    de = "Album gesendet (${incomingAttachment.albumCount})",
+                                    es = "Álbum enviado (${incomingAttachment.albumCount})",
+                                    fr = "Album envoyé (${incomingAttachment.albumCount})",
+                                    pt = "Álbum enviado (${incomingAttachment.albumCount})",
+                                    tr = "Albüm gönderildi (${incomingAttachment.albumCount})"
+                                )
                                 Message(
                                     id = incomingAttachment.albumId,
                                     text = existingAlbum?.text

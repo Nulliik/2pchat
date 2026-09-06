@@ -11,6 +11,7 @@ import androidx.core.app.Person
 import androidx.core.app.RemoteInput
 import com.example.twopchat.config.P2PPreferences
 import com.example.twopchat.R
+import com.example.twopchat.data.Localizations
 import com.example.twopchat.service.NotificationActionReceiver
 
 internal object GroupNotificationService {
@@ -51,16 +52,48 @@ internal object GroupNotificationService {
             launchIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
+        val appLanguage = P2PPreferences.getAppLanguage(context)
         val myDisplayName = prefs.getString("username_profile", "") ?: ""
         val isMentioned = isGroupMention(text, myDisplayName)
-        val title = if (isMentioned) "🔔 Вас упомянули в $groupTitle" else groupTitle
+        val title = if (isMentioned) {
+            Localizations.tr(
+                appLanguage,
+                ru = "🔔 Вас упомянули в $groupTitle",
+                en = "🔔 You were mentioned in $groupTitle",
+                de = "🔔 Du wurdest in $groupTitle erwähnt",
+                es = "🔔 Fuiste mencionado en $groupTitle",
+                fr = "🔔 Vous avez été mentionné dans $groupTitle",
+                pt = "🔔 Você foi mencionado em $groupTitle",
+                tr = "🔔 $groupTitle içinde sizden bahsedildi"
+            )
+        } else groupTitle
         val showPreview = prefs.getBoolean("settings_previews", true)
-        val cleanText = formatGroupNotificationText(text)
-        val body = if (showPreview) cleanText else "Новое сообщение в группе"
+        val cleanText = formatGroupNotificationText(text, appLanguage)
+        val body = if (showPreview) cleanText else Localizations.tr(
+            appLanguage,
+            ru = "Новое сообщение в группе",
+            en = "New group message",
+            de = "Neue Gruppennachricht",
+            es = "Nuevo mensaje en el grupo",
+            fr = "Nouveau message de groupe",
+            pt = "Nova mensagem no grupo",
+            tr = "Yeni grup mesajı"
+        )
 
         // Direct Reply Action
         val remoteInput = RemoteInput.Builder(NotificationActionReceiver.KEY_TEXT_REPLY)
-            .setLabel("Ответить...")
+            .setLabel(
+                Localizations.tr(
+                    appLanguage,
+                    ru = "Ответить...",
+                    en = "Reply...",
+                    de = "Antworten...",
+                    es = "Responder...",
+                    fr = "Répondre...",
+                    pt = "Responder...",
+                    tr = "Yanıtla..."
+                )
+            )
             .build()
         val replyIntent = Intent(context, NotificationActionReceiver::class.java).apply {
             action = NotificationActionReceiver.ACTION_GROUP_REPLY
@@ -76,7 +109,16 @@ internal object GroupNotificationService {
         )
         val replyAction = NotificationCompat.Action.Builder(
             R.drawable.ic_logo_default_fg,
-            "Ответить",
+            Localizations.tr(
+                appLanguage,
+                ru = "Ответить",
+                en = "Reply",
+                de = "Antworten",
+                es = "Responder",
+                fr = "Répondre",
+                pt = "Responder",
+                tr = "Yanıtla"
+            ),
             replyPendingIntent
         ).addRemoteInput(remoteInput)
             .setSemanticAction(NotificationCompat.Action.SEMANTIC_ACTION_REPLY)
@@ -98,7 +140,16 @@ internal object GroupNotificationService {
         )
         val markReadAction = NotificationCompat.Action.Builder(
             R.drawable.ic_logo_default_fg,
-            "Прочитано",
+            Localizations.tr(
+                appLanguage,
+                ru = "Прочитано",
+                en = "Mark as read",
+                de = "Als gelesen markieren",
+                es = "Marcar como leído",
+                fr = "Marquer comme lu",
+                pt = "Marcar como lido",
+                tr = "Okundu olarak işaretle"
+            ),
             markReadPendingIntent
         ).setSemanticAction(NotificationCompat.Action.SEMANTIC_ACTION_MARK_AS_READ)
             .setShowsUserInterface(false)
@@ -149,11 +200,29 @@ internal object GroupNotificationService {
         ).containsMatchIn(text)
     }
 
-    private fun formatGroupNotificationText(text: String): String {
+    private fun formatGroupNotificationText(text: String, appLanguage: String = "English"): String {
         val trimmed = text.trim()
         return when {
-            trimmed.startsWith("2psticker_") || trimmed.lowercase().contains("sticker") -> "Стикер"
-            trimmed.startsWith("attachment-") -> "Вложение"
+            trimmed.startsWith("2psticker_") || trimmed.lowercase().contains("sticker") -> Localizations.tr(
+                appLanguage,
+                ru = "Стикер",
+                en = "Sticker",
+                de = "Sticker",
+                es = "Sticker",
+                fr = "Autocollant",
+                pt = "Figurinha",
+                tr = "Çıkartma"
+            )
+            trimmed.startsWith("attachment-") -> Localizations.tr(
+                appLanguage,
+                ru = "Вложение",
+                en = "Attachment",
+                de = "Anhang",
+                es = "Archivo adjunto",
+                fr = "Pièce jointe",
+                pt = "Anexo",
+                tr = "Ek"
+            )
             else -> trimmed.take(500)
         }
     }
@@ -205,22 +274,61 @@ internal object GroupNotificationService {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
 
-        val appLanguage = prefs.getString("app_language", "Русский") ?: "Русский"
-        val isRu = appLanguage == "Русский"
+        val appLanguage = P2PPreferences.getAppLanguage(context)
         val showPreview = prefs.getBoolean("settings_previews", true)
 
         val title = if (showPreview) {
-            if (isRu) "Приглашение в группу" else "Group Invitation"
+            Localizations.tr(
+                appLanguage,
+                ru = "Приглашение в группу",
+                en = "Group Invitation",
+                de = "Gruppeneinladung",
+                es = "Invitación al grupo",
+                fr = "Invitation de groupe",
+                pt = "Convite do grupo",
+                tr = "Grup Daveti"
+            )
         } else {
-            if (isRu) "Новое приглашение" else "New Invitation"
+            Localizations.tr(
+                appLanguage,
+                ru = "Новое приглашение",
+                en = "New Invitation",
+                de = "Neue Einladung",
+                es = "Nueva invitación",
+                fr = "Nouvelle invitation",
+                pt = "Novo convite",
+                tr = "Yeni Davet"
+            )
         }
 
         val body = if (showPreview) {
-            val safeInviter = inviterName.ifBlank { if (isRu) "Контакт" else "Contact" }
-            val safeTitle = groupTitle.ifBlank { if (isRu) "Группа" else "Group" }
-            if (isRu) "$safeInviter приглашает вас в «$safeTitle»" else "$safeInviter invited you to \"$safeTitle\""
+            val safeInviter = inviterName.ifBlank {
+                Localizations.tr(appLanguage, ru = "Контакт", en = "Contact", de = "Kontakt", es = "Contacto", fr = "Contact", pt = "Contato", tr = "Kişi")
+            }
+            val safeTitle = groupTitle.ifBlank {
+                Localizations.tr(appLanguage, ru = "Группа", en = "Group", de = "Gruppe", es = "Grupo", fr = "Groupe", pt = "Grupo", tr = "Grup")
+            }
+            Localizations.tr(
+                appLanguage,
+                ru = "$safeInviter приглашает вас в «$safeTitle»",
+                en = "$safeInviter invites you to \"$safeTitle\"",
+                de = "$safeInviter lädt dich zu „$safeTitle“ ein",
+                es = "$safeInviter te invita a «$safeTitle»",
+                fr = "$safeInviter vous invite à « $safeTitle »",
+                pt = "$safeInviter convida você para \"$safeTitle\"",
+                tr = "$safeInviter sizi \"$safeTitle\" grubuna davet ediyor"
+            )
         } else {
-            if (isRu) "Вас пригласили в группу" else "You were invited to a group"
+            Localizations.tr(
+                appLanguage,
+                ru = "Вас пригласили в группу",
+                en = "You were invited to a group",
+                de = "Du wurdest zu einer Gruppe eingeladen",
+                es = "Has sido invitado a un grupo",
+                fr = "Vous avez été invité à un groupe",
+                pt = "Você foi convidado para um grupo",
+                tr = "Bir gruba davet edildiniz"
+            )
         }
 
         // Direct Accept Action
@@ -238,7 +346,16 @@ internal object GroupNotificationService {
         )
         val acceptAction = NotificationCompat.Action.Builder(
             R.drawable.ic_check,
-            if (isRu) "Принять" else "Accept",
+            Localizations.tr(
+                appLanguage,
+                ru = "Принять",
+                en = "Accept",
+                de = "Annehmen",
+                es = "Aceptar",
+                fr = "Accepter",
+                pt = "Aceitar",
+                tr = "Kabul Et"
+            ),
             acceptPendingIntent,
         ).setSemanticAction(NotificationCompat.Action.SEMANTIC_ACTION_MARK_AS_READ)
             .setShowsUserInterface(false)
@@ -246,8 +363,19 @@ internal object GroupNotificationService {
 
         val publicNotification = NotificationCompat.Builder(context, INVITE_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_logo_default_fg)
-            .setContentTitle(if (isRu) "2PChat" else "2PChat")
-            .setContentText(if (isRu) "Новое приглашение в группу" else "New group invitation")
+            .setContentTitle("2PChat")
+            .setContentText(
+                Localizations.tr(
+                    appLanguage,
+                    ru = "Новое приглашение в группу",
+                    en = "New group invitation",
+                    de = "Neue Gruppeneinladung",
+                    es = "Nueva invitación al grupo",
+                    fr = "Nouvelle invitation de groupe",
+                    pt = "Novo convite para o grupo",
+                    tr = "Yeni grup daveti"
+                )
+            )
             .setContentIntent(pendingIntent)
             .setAutoCancel(true)
             .setPriority(NotificationCompat.PRIORITY_HIGH)

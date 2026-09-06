@@ -109,7 +109,16 @@ internal fun ChatHeader(
     if (isSearchMode) {
         ConversationSearchHeader(
             query = searchQuery,
-            placeholder = if (appLanguage == "Русский") "Поиск по сообщениям..." else "Search messages...",
+            placeholder = Localizations.tr(
+                appLanguage,
+                ru = "Поиск по сообщениям...",
+                en = "Search messages...",
+                de = "Nachrichten durchsuchen...",
+                es = "Buscar mensajes...",
+                fr = "Rechercher des messages...",
+                pt = "Pesquisar mensagens...",
+                tr = "Mesajlarda ara..."
+            ),
             primaryColor = primaryColor,
             surfaceColor = surfaceColor,
             onSurfaceColor = onSurfaceColor,
@@ -277,7 +286,16 @@ internal fun ChatHeader(
                     if (activeFingerprint.isBlank() || localFingerprint.isBlank()) {
                         Toast.makeText(
                             context,
-                            if (appLanguage == "Русский") "Fingerprint ещё недоступен" else "Fingerprint is not available yet",
+                            Localizations.tr(
+                                appLanguage,
+                                ru = "Fingerprint ещё недоступен",
+                                en = "Fingerprint is not available yet",
+                                de = "Fingerprint ist noch nicht verfügbar",
+                                es = "La huella digital aún no está disponible",
+                                fr = "L'empreinte n'est pas encore disponible",
+                                pt = "A impressão digital ainda não está disponível",
+                                tr = "Parmak izi henüz mevcut değil"
+                            ),
                             Toast.LENGTH_SHORT,
                         ).show()
                     } else onVerify()
@@ -420,15 +438,32 @@ internal fun ChatHeader(
             onDismissRequest = { showDeleteDialog = false },
             title = {
                 Text(
-                    text = if (appLanguage == "Русский") "Удалить чат?" else "Delete chat?",
+                    text = Localizations.tr(
+                        appLanguage,
+                        ru = "Удалить чат?",
+                        en = "Delete chat?",
+                        de = "Chat löschen?",
+                        es = "¿Eliminar chat?",
+                        fr = "Supprimer le chat ?",
+                        pt = "Excluir conversa?",
+                        tr = "Sohbeti sil?"
+                    ),
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold
                 )
             },
             text = {
                 Text(
-                    text = if (appLanguage == "Русский") "Вы уверены, что хотите полностью удалить этот чат? Все сообщения будут безвозвратно удалены."
-                    else "Are you sure you want to delete this chat? All message history will be permanently lost.",
+                    text = Localizations.tr(
+                        appLanguage,
+                        ru = "Вы уверены, что хотите полностью удалить этот чат? Все сообщения будут безвозвратно удалены.",
+                        en = "Are you sure you want to delete this chat? All message history will be permanently lost.",
+                        de = "Möchten Sie diesen Chat wirklich löschen? Der gesamte Verlauf geht dauerhaft verloren.",
+                        es = "¿Estás seguro de que deseas eliminar este chat? Todo el historial se perderá permanentemente.",
+                        fr = "Voulez-vous vraiment supprimer ce chat ? Tout l'historique sera définitivement perdu.",
+                        pt = "Tem certeza de que deseja excluir esta conversa? Todo o histórico será perdido permanentemente.",
+                        tr = "Bu sohbeti silmek istediğinizden emin misiniz? Tüm mesaj geçmişi kalıcı olarak kaybolacak."
+                    ),
                     fontSize = 14.sp
                 )
             },
@@ -442,14 +477,34 @@ internal fun ChatHeader(
                     shape = RoundedCornerShape(12.dp)
                 ) {
                     Text(
-                        text = if (appLanguage == "Русский") "Удалить" else "Delete",
+                        text = Localizations.tr(
+                            appLanguage,
+                            ru = "Удалить",
+                            en = "Delete",
+                            de = "Löschen",
+                            es = "Eliminar",
+                            fr = "Supprimer",
+                            pt = "Excluir",
+                            tr = "Sil"
+                        ),
                         fontWeight = FontWeight.Bold
                     )
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showDeleteDialog = false }) {
-                    Text(if (appLanguage == "Русский") "Отмена" else "Cancel")
+                    Text(
+                        Localizations.tr(
+                            appLanguage,
+                            ru = "Отмена",
+                            en = "Cancel",
+                            de = "Abbrechen",
+                            es = "Cancelar",
+                            fr = "Annuler",
+                            pt = "Cancelar",
+                            tr = "İptal"
+                        )
+                    )
                 }
             },
             shape = RoundedCornerShape(20.dp)
@@ -508,7 +563,16 @@ internal fun ConnectionTypeBadge(
             )
         }
         TransportType.DISCONNECTED -> {
-            val text = if (appLanguage == "Русский") "Не в сети" else "Offline"
+            val text = Localizations.tr(
+                appLanguage,
+                ru = "Не в сети",
+                en = "Offline",
+                de = "Offline",
+                es = "Desconectado",
+                fr = "Hors ligne",
+                pt = "Offline",
+                tr = "Çevrimdışı"
+            )
             BadgeData(
                 bg = onSurfaceVariant.copy(alpha = 0.08f),
                 content = onSurfaceVariant.copy(alpha = 0.70f),

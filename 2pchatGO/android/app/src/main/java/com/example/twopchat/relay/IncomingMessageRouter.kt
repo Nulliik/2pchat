@@ -397,8 +397,17 @@ internal class IncomingMessageRouter(
             fileTransferCoordinator.fileTransferPreviews[offerKey] = preview
             fileTransferCoordinator.fileTransferPreviews[messageId] = preview
         }
-        val isRu = runCatching { P2PPreferences.getAppLanguage(context) == "Русский" }.getOrDefault(false)
-        val notifText = if (isRu) "Началось получение файла: $fileName" else "Receiving file: $fileName"
+        val appLang = runCatching { P2PPreferences.getAppLanguage(context) }.getOrDefault("English")
+        val notifText = com.example.twopchat.data.Localizations.tr(
+            appLang,
+            ru = "Началось получение файла: %s",
+            en = "Receiving file: %s",
+            de = "Dateiempfang gestartet: %s",
+            es = "Recibiendo archivo: %s",
+            fr = "Réception du fichier : %s",
+            pt = "Recebendo arquivo: %s",
+            tr = "Dosya alınıyor: %s"
+        ).replace("%s", fileName)
         persistAndDispatch(context, sender, offerMessage, notifText, isNewOffer)
     }
 

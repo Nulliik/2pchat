@@ -30,6 +30,10 @@ import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -97,6 +101,7 @@ internal fun ChatMessageList(
     highlightedMessageId: String? = null,
     onHighlightFinished: () -> Unit = {},
     onJumpToMessage: ((Message) -> Unit)? = null,
+    onSendGreeting: () -> Unit = {},
 ) {
     val coroutineScope = rememberCoroutineScope()
     val displayMessages = messages
@@ -194,6 +199,49 @@ internal fun ChatMessageList(
                 color = primaryColor,
                 modifier = Modifier.align(Alignment.Center)
             )
+        } else if (displayMessages.isEmpty() && (!isSearchMode || searchQuery.isBlank())) {
+            EmptyChatHeroCard(
+                peerName = peerName,
+                appLanguage = appLanguage,
+                primaryColor = primaryColor,
+                surfaceColor = surfaceColor,
+                onSurfaceColor = onSurfaceColor,
+                onSendGreeting = onSendGreeting,
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .padding(horizontal = 24.dp)
+            )
+        } else if (displayMessages.isEmpty() && isSearchMode && searchQuery.isNotBlank()) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .padding(24.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Surface(
+                    color = surfaceColor.copy(alpha = 0.85f),
+                    shape = RoundedCornerShape(16.dp),
+                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
+                    modifier = Modifier.padding(16.dp)
+                ) {
+                    Text(
+                        text = Localizations.tr(
+                            appLanguage,
+                            ru = "Сообщения не найдены",
+                            en = "No messages found",
+                            de = "Keine Nachrichten gefunden",
+                            es = "No se encontraron mensajes",
+                            fr = "Aucun message trouvé",
+                            pt = "Nenhuma mensagem encontrada",
+                            tr = "Mesaj bulunamadı"
+                        ),
+                        color = onSurfaceColor.copy(alpha = 0.7f),
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)
+                    )
+                }
+            }
         } else {
             CompositionLocalProvider(LocalScrollInProgress provides listState.isScrollInProgress) {
                 LazyColumn(
@@ -417,3 +465,205 @@ internal fun ChatMessageList(
 }
 
 private const val MAX_ACTIVE_CHAT_GIFS = 2
+
+@Composable
+internal fun EmptyChatHeroCard(
+    peerName: String,
+    appLanguage: String,
+    primaryColor: Color,
+    surfaceColor: Color,
+    onSurfaceColor: Color,
+    onSendGreeting: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val isSavedMessages = peerName == "Saved Messages"
+    Surface(
+        color = surfaceColor.copy(alpha = 0.88f),
+        shape = RoundedCornerShape(24.dp),
+        border = BorderStroke(1.dp, primaryColor.copy(alpha = 0.28f)),
+        shadowElevation = 10.dp,
+        modifier = modifier.fillMaxWidth()
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 24.dp)
+        ) {
+            // Shield Emblem
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .size(64.dp)
+                    .clip(CircleShape)
+                    .background(
+                        Brush.radialGradient(
+                            colors = listOf(
+                                primaryColor.copy(alpha = 0.24f),
+                                primaryColor.copy(alpha = 0.06f)
+                            )
+                        )
+                    )
+                    .border(1.5.dp, primaryColor.copy(alpha = 0.45f), CircleShape)
+            ) {
+                Text(
+                    text = if (isSavedMessages) "📑" else "🛡️",
+                    fontSize = 30.sp
+                )
+            }
+
+            Spacer(Modifier.height(14.dp))
+
+            // Title
+            Text(
+                text = if (isSavedMessages) {
+                    Localizations.tr(
+                        appLanguage,
+                        ru = "Избранное",
+                        en = "Saved Messages",
+                        de = "Gespeicherte Nachrichten",
+                        es = "Mensajes guardados",
+                        fr = "Messages enregistrés",
+                        pt = "Mensagens salvas",
+                        tr = "Kayıtlı Mesajlar"
+                    )
+                } else {
+                    Localizations.tr(
+                        appLanguage,
+                        ru = "Сквозное P2P-шифрование",
+                        en = "End-to-End P2P Encryption",
+                        de = "Ende-zu-Ende P2P-Verschlüsselung",
+                        es = "Cifrado P2P de extremo a extremo",
+                        fr = "Chiffrement P2P de bout en bout",
+                        pt = "Criptografia P2P ponta a ponta",
+                        tr = "Uçtan Uca P2P Şifreleme"
+                    )
+                },
+                fontSize = 17.sp,
+                fontWeight = FontWeight.Bold,
+                color = onSurfaceColor,
+                textAlign = TextAlign.Center
+            )
+
+            Spacer(Modifier.height(8.dp))
+
+            // Description
+            Text(
+                text = if (isSavedMessages) {
+                    Localizations.tr(
+                        appLanguage,
+                        ru = "Ваше личное зашифрованное хранилище. Сохраняйте сюда заметки, ссылки и файлы.",
+                        en = "Your private encrypted storage. Save notes, links and media files here.",
+                        de = "Ihr privater verschlüsselter Speicher. Speichern Sie hier Notizen, Links und Medien.",
+                        es = "Su almacenamiento privado cifrado. Guarde notas, enlaces y archivos aquí.",
+                        fr = "Votre espace de stockage privé chiffré. Enregistrez vos notes et fichiers ici.",
+                        pt = "Seu armazenamento criptografado privado. Salve notas, links e mídias aqui.",
+                        tr = "Özel şifreli depolama alanınız. Notları, bağlantıları ve medyayı buraya kaydedin."
+                    )
+                } else {
+                    Localizations.tr(
+                        appLanguage,
+                        ru = "Сообщения передаются напрямую между вашими устройствами по Double Ratchet. Никаких промежуточных серверов.",
+                        en = "Messages are exchanged directly between your devices via Double Ratchet. No intermediate servers.",
+                        de = "Nachrichten werden direkt zwischen Ihren Geräten über Double Ratchet ausgetauscht. Keine Zwischenserver.",
+                        es = "Los mensajes se intercambian directamente entre sus dispositivos mediante Double Ratchet. Sin servidores intermediarios.",
+                        fr = "Les messages sont échangés directement entre vos appareils via Double Ratchet. Aucun serveur intermédiaire.",
+                        pt = "As mensagens são trocadas diretamente entre seus dispositivos via Double Ratchet. Sem servidores intermediários.",
+                        tr = "Mesajlar cihazlarınız arasında doğrudan Double Ratchet ile iletilir. Ara sunucu yoktur."
+                    )
+                },
+                fontSize = 13.sp,
+                lineHeight = 18.sp,
+                color = onSurfaceColor.copy(alpha = 0.72f),
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(horizontal = 8.dp)
+            )
+
+            Spacer(Modifier.height(14.dp))
+
+            // Micro Trust Chips
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Surface(
+                    color = Color.White.copy(alpha = 0.05f),
+                    shape = RoundedCornerShape(8.dp),
+                    border = BorderStroke(0.5.dp, Color.White.copy(alpha = 0.1f))
+                ) {
+                    Text(
+                        text = "🔒 Double Ratchet",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = primaryColor,
+                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
+                    )
+                }
+                Surface(
+                    color = Color.White.copy(alpha = 0.05f),
+                    shape = RoundedCornerShape(8.dp),
+                    border = BorderStroke(0.5.dp, Color.White.copy(alpha = 0.1f))
+                ) {
+                    Text(
+                        text = "⚡ Direct P2P",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color(0xFF34D399),
+                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
+                    )
+                }
+                Surface(
+                    color = Color.White.copy(alpha = 0.05f),
+                    shape = RoundedCornerShape(8.dp),
+                    border = BorderStroke(0.5.dp, Color.White.copy(alpha = 0.1f))
+                ) {
+                    Text(
+                        text = "🛡️ Zero Cloud",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color(0xFF60A5FA),
+                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
+                    )
+                }
+            }
+
+            if (!isSavedMessages) {
+                Spacer(Modifier.height(18.dp))
+
+                // Fast Action Greeting Button
+                Button(
+                    onClick = onSendGreeting,
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = primaryColor.copy(alpha = 0.18f),
+                        contentColor = primaryColor
+                    ),
+                    border = BorderStroke(1.dp, primaryColor.copy(alpha = 0.45f)),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(44.dp)
+                ) {
+                    Text(
+                        text = "👋",
+                        fontSize = 18.sp
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = Localizations.tr(
+                            appLanguage,
+                            ru = "Помахать рукой",
+                            en = "Say Hello",
+                            de = "Hallo sagen",
+                            es = "Saludar",
+                            fr = "Dire bonjour",
+                            pt = "Acenar",
+                            tr = "Selam ver"
+                        ),
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = primaryColor
+                    )
+                }
+            }
+        }
+    }
+}
+
