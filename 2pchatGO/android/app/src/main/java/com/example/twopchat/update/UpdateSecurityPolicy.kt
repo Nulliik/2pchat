@@ -24,6 +24,7 @@ object UpdateSecurityPolicy {
         "objects.githubusercontent.com",
         "raw.githubusercontent.com",
         "github-releases.githubusercontent.com",
+        "release-assets.githubusercontent.com",
     )
 
     const val DEFAULT_CONNECT_TIMEOUT_MS = 10_000
@@ -90,7 +91,10 @@ object UpdateSecurityPolicy {
         if (url.host == "raw.githubusercontent.com") {
             return path.startsWith("$expectedOwner/$expectedRepo/")
         }
-        if (url.host == "objects.githubusercontent.com" || url.host == "github-releases.githubusercontent.com") {
+        if (url.host == "objects.githubusercontent.com" ||
+            url.host == "github-releases.githubusercontent.com" ||
+            url.host == "release-assets.githubusercontent.com"
+        ) {
             // Ephemeral CDN download links from authorized GitHub releases
             return true
         }

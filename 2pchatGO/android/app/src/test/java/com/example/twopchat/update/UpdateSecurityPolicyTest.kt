@@ -34,6 +34,7 @@ class UpdateSecurityPolicyTest {
         assertTrue(UpdateSecurityPolicy.isValidUpdateUrl("https://api.github.com/repos/kodzyfox/2pchat-releases/releases/latest"))
         assertTrue(UpdateSecurityPolicy.isValidUpdateUrl("https://github.com/kodzyfox/2pchat-releases/releases/download/v0.0.9/app.apk"))
         assertTrue(UpdateSecurityPolicy.isValidUpdateUrl("https://objects.githubusercontent.com/github-production-release-asset-2e65be/12345/app.apk"))
+        assertTrue(UpdateSecurityPolicy.isValidUpdateUrl("https://release-assets.githubusercontent.com/github-production-release-asset/1352774415/cfea4c30-f132?sp=r&sig=test"))
         assertTrue(UpdateSecurityPolicy.isValidUpdateUrl("https://raw.githubusercontent.com/kodzyfox/2pchat-releases/main/version.json"))
     }
 
@@ -92,6 +93,7 @@ class UpdateSecurityPolicyTest {
         assertTrue(UpdateSecurityPolicy.isValidAssetUrl("https://github.com/kodzyfox/2pchat-releases/releases/download/v1.0/app.apk"))
         assertTrue(UpdateSecurityPolicy.isValidAssetUrl("https://api.github.com/repos/kodzyfox/2pchat-releases/releases/latest"))
         assertTrue(UpdateSecurityPolicy.isValidAssetUrl("https://objects.githubusercontent.com/github-production-release-asset-2e65be/12345/app.apk"))
+        assertTrue(UpdateSecurityPolicy.isValidAssetUrl("https://release-assets.githubusercontent.com/github-production-release-asset/1352774415/cfea4c30-f132?sp=r&sig=test"))
 
         // Malicious / foreign repos targeting same filename
         assertFalse(UpdateSecurityPolicy.isValidAssetUrl("https://github.com/attacker/fake-2pchat/releases/download/v1.0/app.apk"))
@@ -102,12 +104,14 @@ class UpdateSecurityPolicyTest {
 
     @Test
     fun validatesEveryRedirectHop() {
-        val legitimateRedirectCdn = "https://objects.githubusercontent.com/github-production-release-asset-2e65be/12345/app.apk"
+        val legitimateRedirectObjectsCdn = "https://objects.githubusercontent.com/github-production-release-asset-2e65be/12345/app.apk"
+        val legitimateRedirectReleaseAssetsCdn = "https://release-assets.githubusercontent.com/github-production-release-asset/1352774415/cfea4c30-f132?sp=r&sig=test"
         val foreignRepoRedirect = "https://github.com/attacker/fake-2pchat/releases/download/v1.0/app.apk"
         val insecureSchemeRedirect = "http://objects.githubusercontent.com/asset.apk"
         val externalDomainRedirect = "https://evil-server.com/malicious.apk"
 
-        assertTrue(UpdateSecurityPolicy.validateRedirectHop(legitimateRedirectCdn))
+        assertTrue(UpdateSecurityPolicy.validateRedirectHop(legitimateRedirectObjectsCdn))
+        assertTrue(UpdateSecurityPolicy.validateRedirectHop(legitimateRedirectReleaseAssetsCdn))
         assertFalse(UpdateSecurityPolicy.validateRedirectHop(foreignRepoRedirect))
         assertFalse(UpdateSecurityPolicy.validateRedirectHop(insecureSchemeRedirect))
         assertFalse(UpdateSecurityPolicy.validateRedirectHop(externalDomainRedirect))

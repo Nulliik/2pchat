@@ -275,14 +275,17 @@ object AppUpdateManager {
                 setRequestProperty("User-Agent", USER_AGENT)
             }
 
-            // Handle GitHub direct redirects securely
-            val finalConn = if (connection.responseCode in 300..399) {
-                val redirectUrl = connection.getHeaderField("Location")
+            // Handle GitHub direct redirects securely (supporting chained CDN redirects up to 5 hops)
+            var currentConnection = connection
+            var redirectHops = 0
+            while (currentConnection.responseCode in 300..399 && redirectHops < 5) {
+                val redirectUrl = currentConnection.getHeaderField("Location")
                     ?: return@withContext Result.failure(SecurityException("Missing Location header on redirect"))
-                if (!UpdateSecurityPolicy.isValidUpdateUrl(redirectUrl)) {
+                if (!UpdateSecurityPolicy.validateRedirectHop(redirectUrl, GITHUB_OWNER, GITHUB_REPO)) {
                     return@withContext Result.failure(SecurityException("Redirect to untrusted update URL: $redirectUrl"))
                 }
-                UpdateSecurityPolicy.openSecureConnection(
+                redirectHops++
+                currentConnection = UpdateSecurityPolicy.openSecureConnection(
                     rawUrl = redirectUrl,
                     context = context,
                     connectTimeoutMs = 15000,
@@ -290,9 +293,8 @@ object AppUpdateManager {
                 ).getOrThrow().apply {
                     setRequestProperty("User-Agent", USER_AGENT)
                 }
-            } else {
-                connection
             }
+            val finalConn = currentConnection
 
             val totalBytes = finalConn.contentLengthLong
             var bytesDownloaded = 0L
