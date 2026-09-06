@@ -1,6 +1,8 @@
 package com.example.twopchat.ui.chat
 
 import android.widget.Toast
+import android.provider.Settings
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -15,6 +17,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
@@ -62,6 +66,46 @@ internal fun ChatHeader(
     var showMenu by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
 
+    // Check system setting for reduced motion
+    val reduceMotion = remember(context) {
+        try {
+            val transitionScale = Settings.Global.getFloat(
+                context.contentResolver,
+                Settings.Global.TRANSITION_ANIMATION_SCALE,
+                1f
+            )
+            val animatorScale = Settings.Global.getFloat(
+                context.contentResolver,
+                Settings.Global.ANIMATOR_DURATION_SCALE,
+                1f
+            )
+            transitionScale == 0f || animatorScale == 0f
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    // Breathing pulse animation for online status
+    val infiniteTransition = rememberInfiniteTransition(label = "chatHeaderAvatarPulse")
+    val pulseAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.55f,
+        targetValue = 0.0f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(2200, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "pulseAlpha"
+    )
+    val pulseScale by infiniteTransition.animateFloat(
+        initialValue = 1.0f,
+        targetValue = 1.75f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(2200, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "pulseScale"
+    )
+
     if (isSearchMode) {
         ConversationSearchHeader(
             query = searchQuery,
@@ -79,33 +123,38 @@ internal fun ChatHeader(
         return
     }
 
+    val isLight = surfaceColor.luminance() > 0.5f
+    val headerBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(
+        alpha = if (isLight) 0.16f else 0.10f
+    )
+
     Surface(
         color = surfaceColor,
         modifier = Modifier
             .fillMaxWidth()
-            .border(0.5.dp, onSurfaceColor.copy(alpha = 0.08f))
+            .border(0.5.dp, headerBorderColor)
     ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .statusBarsPadding()
-            .padding(horizontal = 10.dp, vertical = 6.dp),
+            .padding(horizontal = 8.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         IconButton(
             onClick = onBack,
             modifier = Modifier
-                .size(36.dp)
+                .size(42.dp)
                 .background(onSurfaceColor.copy(alpha = 0.04f), CircleShape),
         ) {
             Icon(
                 painterResource(R.drawable.ic_back_arrow),
                 "Back",
                 tint = onSurfaceColor,
-                modifier = Modifier.size(18.dp),
+                modifier = Modifier.size(19.dp),
             )
         }
-        Spacer(Modifier.width(12.dp))
+        Spacer(Modifier.width(8.dp))
         val savedMessages = peerName == "Saved Messages"
         val isRaw = P2PMessageRelay.isRawFingerprint(peerName) ||
             (peerName.length == 44 && peerName.endsWith("="))
@@ -156,13 +205,38 @@ internal fun ChatHeader(
                     }
                 }
                 if (!savedMessages && isOnline) {
+                    val onlineGreen = Color(0xFF10B981)
                     Box(
                         modifier = Modifier
-                            .size(10.dp)
-                            .background(primaryColor, CircleShape)
-                            .border(1.5.dp, surfaceColor, CircleShape)
-                            .align(Alignment.BottomEnd)
-                    )
+                            .size(13.dp)
+                            .align(Alignment.BottomEnd),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (!reduceMotion) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .graphicsLayer {
+                                        scaleX = pulseScale
+                                        scaleY = pulseScale
+                                        alpha = pulseAlpha
+                                    }
+                                    .background(onlineGreen, CircleShape)
+                            )
+                        }
+                        Box(
+                            modifier = Modifier
+                                .size(10.dp)
+                                .background(surfaceColor, CircleShape)
+                                .padding(1.5.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(onlineGreen, CircleShape)
+                            )
+                        }
+                    }
                 }
             }
             Spacer(Modifier.width(10.dp))
@@ -208,19 +282,17 @@ internal fun ChatHeader(
                         ).show()
                     } else onVerify()
                 },
-                modifier = Modifier.size(34.dp),
+                modifier = Modifier.size(42.dp),
             ) {
-                Icon(painterResource(R.drawable.ic_shield_status), "Verify", tint = shieldColor, modifier = Modifier.size(17.dp))
+                Icon(painterResource(R.drawable.ic_shield_status), "Verify", tint = shieldColor, modifier = Modifier.size(18.dp))
             }
-            Spacer(Modifier.width(2.dp))
         }
-        IconButton(onClick = { onSearchModeChange(true) }, modifier = Modifier.size(34.dp)) {
-            Icon(painterResource(R.drawable.ic_menu_search), "Search", tint = onSurfaceColor.copy(alpha = 0.85f), modifier = Modifier.size(19.dp))
+        IconButton(onClick = { onSearchModeChange(true) }, modifier = Modifier.size(42.dp)) {
+            Icon(painterResource(R.drawable.ic_menu_search), "Search", tint = onSurfaceColor.copy(alpha = 0.85f), modifier = Modifier.size(20.dp))
         }
-        Spacer(Modifier.width(2.dp))
         Box {
-            IconButton(onClick = { showMenu = true }, modifier = Modifier.size(34.dp)) {
-                Text("⋮", fontSize = 18.sp, color = onSurfaceColor.copy(alpha = 0.85f), fontWeight = FontWeight.Bold)
+            IconButton(onClick = { showMenu = true }, modifier = Modifier.size(42.dp)) {
+                Text("⋮", fontSize = 20.sp, color = onSurfaceColor.copy(alpha = 0.85f), fontWeight = FontWeight.Bold)
             }
             DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }, modifier = Modifier.background(surfaceColor)) {
                 if (!savedMessages) {
@@ -395,49 +467,54 @@ internal fun ConnectionTypeBadge(
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
-    val (badgeBg, contentColor, iconRes, label) = when (transportType) {
+    // Filter RTT metric: noise reduction (< 50ms omitted), formatted as integer ms
+    val shouldShowRtt = rttMs != null && rttMs >= 50
+    val rttText = if (shouldShowRtt) " • ${rttMs} ms" else ""
+
+    val badgeData = when (transportType) {
         TransportType.ONION -> {
             val text = "Tor Onion"
-            val rttText = rttMs?.let { " • ${it}ms" }.orEmpty()
             val purple = Color(0xFFA78BFA)
             BadgeData(
-                Color(0xFF7C3AED).copy(alpha = 0.20f),
-                purple,
-                R.drawable.ic_tor,
-                "$text$rttText",
+                bg = Color(0xFF7C3AED).copy(alpha = 0.18f),
+                content = purple,
+                iconRes = R.drawable.ic_tor,
+                iconEmoji = null,
+                text = "$text$rttText",
             )
         }
         TransportType.DIRECT -> {
             val text = "Direct P2P"
-            val rttText = rttMs?.let { " • ${it}ms" }.orEmpty()
-            val green = Color(0xFF22C55E)
+            val green = Color(0xFF10B981)
             BadgeData(
-                green.copy(alpha = 0.15f),
-                green,
-                null,
-                "$text$rttText",
+                bg = green.copy(alpha = 0.15f),
+                content = green,
+                iconRes = null,
+                iconEmoji = "⚡",
+                text = "$text$rttText",
             )
         }
         TransportType.YGGDRASIL -> {
             val yggMode = com.example.twopchat.config.P2PPreferences.getYggdrasilMode(context)
             val modeSuffix = if (yggMode == com.example.twopchat.config.P2PPreferences.YggdrasilMode.PROXY) " (Proxy)" else " (VPN)"
             val text = "Yggdrasil$modeSuffix"
-            val rttText = rttMs?.let { " • ${it}ms" }.orEmpty()
-            val teal = if (yggMode == com.example.twopchat.config.P2PPreferences.YggdrasilMode.PROXY) Color(0xFF06B6D4) else Color(0xFF10B981)
+            val cyan = Color(0xFF06B6D4)
             BadgeData(
-                teal.copy(alpha = 0.16f),
-                teal,
-                null,
-                "$text$rttText",
+                bg = cyan.copy(alpha = 0.15f),
+                content = cyan,
+                iconRes = null,
+                iconEmoji = "🌐",
+                text = "$text$rttText",
             )
         }
         TransportType.DISCONNECTED -> {
             val text = if (appLanguage == "Русский") "Не в сети" else "Offline"
             BadgeData(
-                onSurfaceVariant.copy(alpha = 0.10f),
-                onSurfaceVariant.copy(alpha = 0.70f),
-                null,
-                text,
+                bg = onSurfaceVariant.copy(alpha = 0.08f),
+                content = onSurfaceVariant.copy(alpha = 0.70f),
+                iconRes = null,
+                iconEmoji = "○",
+                text = text,
             )
         }
     }
@@ -445,32 +522,31 @@ internal fun ConnectionTypeBadge(
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = modifier
-            .clip(RoundedCornerShape(6.dp))
-            .background(badgeBg)
-            .padding(horizontal = 6.dp, vertical = 2.dp),
+            .clip(RoundedCornerShape(8.dp))
+            .background(badgeData.bg)
+            .border(0.5.dp, badgeData.content.copy(alpha = 0.25f), RoundedCornerShape(8.dp))
+            .padding(horizontal = 7.dp, vertical = 3.dp),
     ) {
-        if (iconRes != null) {
+        if (badgeData.iconRes != null) {
             Icon(
-                painter = painterResource(iconRes),
-                contentDescription = "Tor Onion",
+                painter = painterResource(badgeData.iconRes),
+                contentDescription = badgeData.text,
                 tint = Color.Unspecified,
                 modifier = Modifier.size(12.dp),
             )
             Spacer(Modifier.width(4.dp))
-        } else {
-            Box(
-                Modifier
-                    .size(5.dp)
-                    .clip(CircleShape)
-                    .background(contentColor)
+        } else if (badgeData.iconEmoji != null) {
+            Text(
+                text = badgeData.iconEmoji,
+                fontSize = 10.sp,
+                modifier = Modifier.padding(end = 4.dp)
             )
-            Spacer(Modifier.width(4.dp))
         }
         Text(
-            text = label,
+            text = badgeData.text,
             fontSize = 11.sp,
             fontWeight = FontWeight.Medium,
-            color = contentColor,
+            color = badgeData.content,
             maxLines = 1,
             overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
         )
@@ -480,7 +556,8 @@ internal fun ConnectionTypeBadge(
 private data class BadgeData(
     val bg: Color,
     val content: Color,
-    val icon: Int?,
+    val iconRes: Int?,
+    val iconEmoji: String?,
     val text: String,
 )
 

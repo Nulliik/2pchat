@@ -64,6 +64,11 @@ import com.example.twopchat.ui.disguise.CurrencyRatesScreen
 
 @OptIn(InternalComposeUiApi::class)
 class MainActivity : ComponentActivity() {
+    companion object {
+        const val EXTRA_OPEN_GROUP_INVITES = "com.example.twopchat.EXTRA_OPEN_GROUP_INVITES"
+        val pendingOpenGroupInvites = mutableStateOf(false)
+    }
+
     private var lastInteractionTime = System.currentTimeMillis()
     private var pauseTime = 0L
     private val isAppLockedState = mutableStateOf(false)
@@ -194,9 +199,23 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleNavigationIntent(intent)
+    }
+
+    private fun handleNavigationIntent(intent: Intent?) {
+        if (intent?.getBooleanExtra(EXTRA_OPEN_GROUP_INVITES, false) == true) {
+            com.example.twopchat.group.runtime.GroupChatCoordinator.activeChatsSubTab = 1
+            pendingOpenGroupInvites.value = true
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         applyScreenSecurity()
+        handleNavigationIntent(intent)
 
         if (android.os.Build.VERSION.SDK_INT >= 33) {
             if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {

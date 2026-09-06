@@ -89,6 +89,15 @@ fun MainNavigation(
     )
   } else {
     val backStack = rememberNavBackStack(Main)
+    val shouldOpenInvites by MainActivity.pendingOpenGroupInvites
+    LaunchedEffect(shouldOpenInvites) {
+      if (shouldOpenInvites) {
+        MainActivity.pendingOpenGroupInvites.value = false
+        if (backStack.lastOrNull() != GroupInvites) {
+          backStack.add(GroupInvites)
+        }
+      }
+    }
     val groupController = remember(backStack) {
       AndroidGroupUiController(
         onBackNavigation = { backStack.removeLastOrNull() },

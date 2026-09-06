@@ -87,6 +87,8 @@ import com.example.twopchat.group.ui.GroupSummary
 import com.example.twopchat.group.ui.GroupSyncStatus
 import com.example.twopchat.group.ui.GroupTimelineMessage
 import com.example.twopchat.group.ui.PendingGroupInvite
+import com.example.twopchat.ui.chat.Message
+import com.example.twopchat.data.ChatDatabaseHelper
 import com.example.twopchat.group.ui.PendingGroupInvitesUiState
 import java.security.MessageDigest
 import java.security.SecureRandom
@@ -662,7 +664,7 @@ object GroupChatCoordinator {
             val context = requireNotNull(applicationContext)
             val prefs = P2PPreferences.prefs(context)
             contactIds.forEach { peerName ->
-                val fingerprint = prefs.getString(P2PPreferences.peerFingerprint(peerName), null)
+                val fingerprint = P2PPreferences.getPeerFingerprint(context, peerName)
                     ?.takeIf { it.isNotBlank() }
                     ?: return@forEach
                 requestSerializedControl(
@@ -1020,6 +1022,57 @@ object GroupChatCoordinator {
             return true
         }
         return false
+    }
+
+    fun isGroupJoined(groupId: String): Boolean {
+        val group = database?.getGroup(groupId) ?: return false
+        val member = database?.getMember(groupId, group.localDeviceId) ?: return false
+        return member.isParticipating()
+    }
+
+    private fun postInviteMessageToDirectChat(
+        senderPeerName: String,
+        groupId: String,
+        inviteId: String,
+        groupTitle: String,
+        inviterName: String,
+        createdAtMs: Long,
+        isMe: Boolean,
+    ) {
+        val context = applicationContext ?: return
+        if (senderPeerName.isBlank()) return
+        try {
+            val inviteLink = "2pchat://connect?group=${Uri.encode(groupId)}&group_token=${Uri.encode(inviteId)}&name=${Uri.encode(inviterName)}"
+            val inviteText = "👋 Приглашение в группу «$groupTitle»!\n\n$inviteLink"
+            val timeFormatted = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(createdAtMs))
+            val msgId = "invite_${groupId}_${inviteId}"
+            val inviteMessage = Message(
+                id = msgId,
+                text = inviteText,
+                isMe = isMe,
+                timestamp = timeFormatted,
+            )
+            val db = ChatDatabaseHelper.getInstance(context)
+            if (db.getMessageById(msgId) == null) {
+                if (isMe) {
+                    db.saveMessage(senderPeerName, inviteMessage)
+                    P2PPreferences.lastMessageCache[senderPeerName] = "Приглашение в группу «$groupTitle»"
+                    P2PMessageRelay.runOnMain {
+                        P2PMessageRelay.messageListeners.forEach { it.onMessageReceived(senderPeerName, inviteMessage) }
+                    }
+                } else {
+                    P2PMessageRelay.persistAndDispatchIncoming(
+                        context = context,
+                        sender = senderPeerName,
+                        message = inviteMessage,
+                        notificationText = "Приглашение в группу «$groupTitle»",
+                        countAsNew = true,
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            SafeLog.e(TAG, "Failed to post invite message to direct chat with $senderPeerName", e)
+        }
     }
 
     fun votePoll(groupId: String, pollId: String, optionId: Int) {
@@ -1601,7 +1654,7 @@ object GroupChatCoordinator {
         val prefs = P2PPreferences.prefs(context)
         val local = localIdentity()
         val contacts = contactIds.map { peerName ->
-            val fingerprint = prefs.getString(P2PPreferences.peerFingerprint(peerName), null)
+            val fingerprint = P2PPreferences.getPeerFingerprint(context, peerName)
                 ?.takeIf { it.isNotBlank() }
                 ?: throw IllegalArgumentException("$peerName has no verified identity")
             StoredGroupMember(
@@ -1726,8 +1779,8 @@ object GroupChatCoordinator {
         ) {
             throw SecurityException("invalid group invite capability")
         }
-        val prefs = P2PPreferences.prefs(requireNotNull(applicationContext))
-        val fingerprint = prefs.getString(P2PPreferences.peerFingerprint(senderPeerName), null)
+        val context = requireNotNull(applicationContext)
+        val fingerprint = P2PPreferences.getPeerFingerprint(context, senderPeerName)
             ?.takeIf(String::isNotBlank)
             ?: return
         requestSerializedControl(
@@ -1848,6 +1901,24 @@ object GroupChatCoordinator {
                     GroupStoreAck(invite.groupId, invite.inviteId, local.deviceId, now),
                 )
                 refreshPendingInvites()
+                applicationContext?.let { ctx ->
+                    GroupNotificationService.showInvite(
+                        context = ctx,
+                        inviteId = invite.inviteId,
+                        groupId = invite.groupId,
+                        groupTitle = invite.title,
+                        inviterName = invitingOwner.peerName.ifBlank { senderPeerName },
+                    )
+                }
+                postInviteMessageToDirectChat(
+                    senderPeerName = senderPeerName,
+                    groupId = invite.groupId,
+                    inviteId = invite.inviteId,
+                    groupTitle = invite.title,
+                    inviterName = invitingOwner.peerName.ifBlank { senderPeerName },
+                    createdAtMs = invite.createdAtMs,
+                    isMe = false,
+                )
                 return
             }
             require(
@@ -1900,6 +1971,24 @@ object GroupChatCoordinator {
             GroupStoreAck(invite.groupId, invite.inviteId, local.deviceId, now),
         )
         refreshPendingInvites()
+        applicationContext?.let { ctx ->
+            GroupNotificationService.showInvite(
+                context = ctx,
+                inviteId = invite.inviteId,
+                groupId = invite.groupId,
+                groupTitle = invite.title,
+                inviterName = invitingOwner.peerName.ifBlank { senderPeerName },
+            )
+        }
+        postInviteMessageToDirectChat(
+            senderPeerName = senderPeerName,
+            groupId = invite.groupId,
+            inviteId = invite.inviteId,
+            groupTitle = invite.title,
+            inviterName = invitingOwner.peerName.ifBlank { senderPeerName },
+            createdAtMs = invite.createdAtMs,
+            isMe = false,
+        )
     }
 
     private suspend fun acceptInviteInternal(inviteId: String) {
@@ -2074,6 +2163,9 @@ object GroupChatCoordinator {
             }
         }
         refreshPendingInvites()
+        applicationContext?.let { ctx ->
+            GroupNotificationService.cancelNotificationForInvite(ctx, inviteId)
+        }
         refreshGroup(invite.groupId)
         refreshAllGroups()
         flushDueOutbox()
@@ -2087,6 +2179,9 @@ object GroupChatCoordinator {
         require(invite.verifySignature())
         require(db().markInviteDeclined(inviteId))
         refreshPendingInvites()
+        applicationContext?.let { ctx ->
+            GroupNotificationService.cancelNotificationForInvite(ctx, inviteId)
+        }
         flushDeclinedInviteResponses()
     }
 
@@ -5230,6 +5325,18 @@ object GroupChatCoordinator {
                     recipient.deviceId,
                     GroupWireProtocol.inviteToJson(signed),
                 )
+                val targetPeerName = recipient.peerName.ifBlank { recipient.displayName }
+                if (targetPeerName.isNotBlank() && !targetPeerName.startsWith("peer_")) {
+                    postInviteMessageToDirectChat(
+                        senderPeerName = targetPeerName,
+                        groupId = groupId,
+                        inviteId = inviteId,
+                        groupTitle = group.title,
+                        inviterName = localMember.displayName,
+                        createdAtMs = now,
+                        isMe = true,
+                    )
+                }
             }
     }
 
@@ -6009,8 +6116,7 @@ object GroupChatCoordinator {
         return allPeers
             .asSequence()
             .mapNotNull { peerName ->
-                val fingerprint = P2PPreferences.getPeerFingerprint(context, peerName)
-                    ?: prefs.getString(P2PPreferences.peerFingerprint(peerName), null).orEmpty()
+                val fingerprint = P2PPreferences.getPeerFingerprint(context, peerName).orEmpty()
                 val avatar = P2PMessageRelay.peerAvatars[peerName]
                 GroupContactSummary(
                     contactId = peerName,
@@ -6232,8 +6338,7 @@ object GroupChatCoordinator {
 
     private fun transportFingerprint(peerName: String): String {
         val context = requireNotNull(applicationContext)
-        return P2PPreferences.prefs(context)
-            .getString(P2PPreferences.peerFingerprint(peerName), null)
+        return P2PPreferences.getPeerFingerprint(context, peerName)
             ?.takeIf { it.isNotBlank() }
             ?: throw SecurityException("group sender has no pinned transport identity")
     }
@@ -6250,11 +6355,18 @@ object GroupChatCoordinator {
         val preferences = P2PPreferences.prefs(context)
         val key = P2PPreferences.peerFingerprint(member.peerName)
         val existing = preferences.getString(key, null)
+            ?: P2PPreferences.getPeerFingerprint(context, member.peerName)
         if (existing.isNullOrBlank()) {
             preferences.edit().putString(key, member.transportFingerprint).apply()
             return true
         }
-        return existing == member.transportFingerprint
+        if (existing == member.transportFingerprint) {
+            if (preferences.getString(key, null) != member.transportFingerprint) {
+                preferences.edit().putString(key, member.transportFingerprint).apply()
+            }
+            return true
+        }
+        return false
     }
 
     private fun signedInviteResponse(

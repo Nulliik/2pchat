@@ -101,7 +101,7 @@ internal class P2POutboundMessenger(
         text: String,
         onResult: (Boolean) -> Unit = {},
     ) {
-        val fingerprint = P2PPreferences.prefs(context).getString(P2PPreferences.peerFingerprint(peerName), null)
+        val fingerprint = P2PPreferences.getPeerFingerprint(context, peerName)
         val isLive = getBridge(context).isPeerOnline(peerName, fingerprint)
         val endpoint = resolvePeerEndpoint(
             peerName = peerName,
@@ -144,7 +144,7 @@ internal class P2POutboundMessenger(
             val lock = getPeerLock(peerName)
             lock.withLock {
                 try {
-                    val fingerprint = P2PPreferences.prefs(context).getString(P2PPreferences.peerFingerprint(peerName), null).orEmpty()
+                    val fingerprint = P2PPreferences.getPeerFingerprint(context, peerName).orEmpty()
                     log(context, "Sending secure message via active P2P bridge", "DEBUG", null)
                     val success = getBridge(context).sendP2pMessage(peerName, endpoint, text, fingerprint)
                     if (success) {
@@ -316,7 +316,7 @@ internal class P2POutboundMessenger(
                 val rawEndpoint = peerEndpoints[peerName]
                     ?: prefs.getString(P2PPreferences.lastEndpoint(peerName), "").orEmpty()
                 val endpoint = P2PPreferences.getEffectiveEndpointsForPeer(context, peerName, rawEndpoint)
-                val fingerprint = prefs.getString(P2PPreferences.peerFingerprint(peerName), null)
+                val fingerprint = P2PPreferences.getPeerFingerprint(context, peerName)
                 if (endpoint.isBlank()) {
                     log(context, "Cannot reconnect to $peerName: endpoint is unknown. Peer must share invite link or Tor .onion address", "WARNING", null)
                     return@launch postResult(onResult, false)

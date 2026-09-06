@@ -29,9 +29,11 @@ class NotificationActionReceiver : BroadcastReceiver() {
         const val ACTION_MARK_READ = "com.example.twopchat.ACTION_NOTIFICATION_MARK_READ"
         const val ACTION_GROUP_REPLY = "com.example.twopchat.ACTION_GROUP_NOTIFICATION_REPLY"
         const val ACTION_GROUP_MARK_READ = "com.example.twopchat.ACTION_GROUP_NOTIFICATION_MARK_READ"
+        const val ACTION_ACCEPT_GROUP_INVITE = "com.example.twopchat.ACTION_ACCEPT_GROUP_INVITE"
         const val KEY_TEXT_REPLY = "key_text_reply"
         const val EXTRA_SENDER = "extra_sender"
         const val EXTRA_GROUP_ID = "extra_group_id"
+        const val EXTRA_INVITE_ID = "extra_invite_id"
         const val EXTRA_NOTIFICATION_ID = "extra_notification_id"
         const val EXTRA_MESSAGE_IDS = "extra_message_ids"
         private const val TAG = "NotificationAction"
@@ -55,6 +57,23 @@ class NotificationActionReceiver : BroadcastReceiver() {
         val notifId = intent.getIntExtra(EXTRA_NOTIFICATION_ID, 0)
         val pendingResult = goAsync()
         val appContext = context.applicationContext
+
+        val inviteId = intent.getStringExtra(EXTRA_INVITE_ID)
+        if (action == ACTION_ACCEPT_GROUP_INVITE && !inviteId.isNullOrBlank()) {
+            receiverScope.launch {
+                try {
+                    ensureRelayRunning(appContext)
+                    com.example.twopchat.group.runtime.GroupChatCoordinator.acceptInvite(inviteId)
+                    cancelNotification(appContext, notifId)
+                } catch (error: Exception) {
+                    if (error is kotlinx.coroutines.CancellationException) throw error
+                    SafeLog.e(TAG, "Group notification accept invite failed for $inviteId", error)
+                } finally {
+                    pendingResult.finish()
+                }
+            }
+            return
+        }
 
         val groupId = intent.getStringExtra(EXTRA_GROUP_ID)
         if (!groupId.isNullOrBlank()) {

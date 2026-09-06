@@ -14,7 +14,8 @@ import com.example.twopchat.R
 import com.example.twopchat.service.NotificationActionReceiver
 
 internal object GroupNotificationService {
-    private const val CHANNEL_ID = "p2p_group_messages"
+    const val CHANNEL_ID = "p2p_group_messages"
+    const val INVITE_CHANNEL_ID = "p2p_group_invites"
     private const val NOTIFICATION_GROUP_KEY = "com.example.twopchat.CHAT_NOTIFICATIONS"
 
     fun show(
@@ -161,6 +162,118 @@ internal object GroupNotificationService {
         try {
             val manager = context.getSystemService(NotificationManager::class.java)
             val notificationId = (groupId.hashCode() and 0x3fffffff) + 20_000
+            manager?.cancel(notificationId)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    fun showInvite(
+        context: Context,
+        inviteId: String,
+        groupId: String,
+        groupTitle: String,
+        inviterName: String,
+    ) {
+        val prefs = P2PPreferences.prefs(context)
+        if (!prefs.getBoolean("settings_notifications", true)) {
+            return
+        }
+        val manager = context.getSystemService(NotificationManager::class.java) ?: return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                INVITE_CHANNEL_ID,
+                "Group Invitations",
+                NotificationManager.IMPORTANCE_HIGH,
+            ).apply {
+                description = "Notifications for incoming group invitations"
+                enableVibration(true)
+            }
+            manager.createNotificationChannel(channel)
+        }
+
+        val launchIntent = (context.packageManager.getLaunchIntentForPackage(context.packageName)
+            ?: Intent(context, com.example.twopchat.MainActivity::class.java)).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra(com.example.twopchat.MainActivity.EXTRA_OPEN_GROUP_INVITES, true)
+        }
+        val notificationId = (inviteId.hashCode() and 0x3fffffff) + 30_000
+        val pendingIntent = PendingIntent.getActivity(
+            context,
+            notificationId,
+            launchIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+
+        val appLanguage = prefs.getString("app_language", "Русский") ?: "Русский"
+        val isRu = appLanguage == "Русский"
+        val showPreview = prefs.getBoolean("settings_previews", true)
+
+        val title = if (showPreview) {
+            if (isRu) "Приглашение в группу" else "Group Invitation"
+        } else {
+            if (isRu) "Новое приглашение" else "New Invitation"
+        }
+
+        val body = if (showPreview) {
+            val safeInviter = inviterName.ifBlank { if (isRu) "Контакт" else "Contact" }
+            val safeTitle = groupTitle.ifBlank { if (isRu) "Группа" else "Group" }
+            if (isRu) "$safeInviter приглашает вас в «$safeTitle»" else "$safeInviter invited you to \"$safeTitle\""
+        } else {
+            if (isRu) "Вас пригласили в группу" else "You were invited to a group"
+        }
+
+        // Direct Accept Action
+        val acceptIntent = Intent(context, NotificationActionReceiver::class.java).apply {
+            action = NotificationActionReceiver.ACTION_ACCEPT_GROUP_INVITE
+            putExtra(NotificationActionReceiver.EXTRA_INVITE_ID, inviteId)
+            putExtra(NotificationActionReceiver.EXTRA_NOTIFICATION_ID, notificationId)
+            `package` = context.packageName
+        }
+        val acceptPendingIntent = PendingIntent.getBroadcast(
+            context,
+            notificationId + 300_000,
+            acceptIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        val acceptAction = NotificationCompat.Action.Builder(
+            R.drawable.ic_check,
+            if (isRu) "Принять" else "Accept",
+            acceptPendingIntent,
+        ).setSemanticAction(NotificationCompat.Action.SEMANTIC_ACTION_MARK_AS_READ)
+            .setShowsUserInterface(false)
+            .build()
+
+        val publicNotification = NotificationCompat.Builder(context, INVITE_CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_logo_default_fg)
+            .setContentTitle(if (isRu) "2PChat" else "2PChat")
+            .setContentText(if (isRu) "Новое приглашение в группу" else "New group invitation")
+            .setContentIntent(pendingIntent)
+            .setAutoCancel(true)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .build()
+
+        val notification = NotificationCompat.Builder(context, INVITE_CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_logo_default_fg)
+            .setContentTitle(title)
+            .setContentText(body)
+            .setContentIntent(pendingIntent)
+            .addAction(acceptAction)
+            .setAutoCancel(true)
+            .setCategory(NotificationCompat.CATEGORY_SOCIAL)
+            .setGroup(NOTIFICATION_GROUP_KEY)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setPublicVersion(publicNotification)
+            .setVisibility(if (showPreview) NotificationCompat.VISIBILITY_PRIVATE else NotificationCompat.VISIBILITY_SECRET)
+            .build()
+
+        manager.notify(notificationId, notification)
+    }
+
+    fun cancelNotificationForInvite(context: Context, inviteId: String) {
+        try {
+            val manager = context.getSystemService(NotificationManager::class.java)
+            val notificationId = (inviteId.hashCode() and 0x3fffffff) + 30_000
             manager?.cancel(notificationId)
         } catch (e: Exception) {
             e.printStackTrace()

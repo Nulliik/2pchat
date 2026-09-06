@@ -209,7 +209,9 @@ fun ChatsTab(
     }
 
     val totalUnreadDirect = remember(peers) { peers.sumOf { it.unreadCount } }
-    val totalUnreadGroups = remember(groupSummaries) { groupSummaries.sumOf { it.unreadCount } }
+    val totalUnreadGroupMessages = remember(groupSummaries) { groupSummaries.sumOf { it.unreadCount } }
+    val pendingInvitesCount = pendingGroupInvites.invites.size
+    val totalUnreadGroups = totalUnreadGroupMessages + pendingInvitesCount
     var lastSelectedChatsTab by rememberSaveable { mutableIntStateOf(com.example.twopchat.group.runtime.GroupChatCoordinator.activeChatsSubTab) }
     val pagerState = rememberPagerState(initialPage = lastSelectedChatsTab) { 2 }
     val coroutineScope = rememberCoroutineScope()
@@ -716,6 +718,16 @@ fun ChatsTab(
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
                                             // 1. Guard Node Pill (Вход)
+                                            val guardCountry = guardNode?.countryCode?.uppercase() ?: com.example.twopchat.data.Localizations.tr(
+                                                appLanguage,
+                                                ru = "Вход",
+                                                en = "Guard",
+                                                de = "Eingang",
+                                                es = "Entrada",
+                                                fr = "Entrée",
+                                                pt = "Entrada",
+                                                tr = "Giriş"
+                                            )
                                             Box(
                                                 modifier = Modifier
                                                     .weight(1f)
@@ -730,20 +742,12 @@ fun ChatsTab(
                                                     verticalAlignment = Alignment.CenterVertically,
                                                     horizontalArrangement = Arrangement.Center
                                                 ) {
-                                                    Text(text = guardNode?.flagEmoji ?: "🛡️", fontSize = 11.sp)
+                                                    Text(text = "🛡️", fontSize = 11.sp)
                                                     Spacer(modifier = Modifier.width(3.dp))
                                                     Text(
-                                                        text = guardNode?.countryCode ?: com.example.twopchat.data.Localizations.tr(
-                                                            appLanguage,
-                                                            ru = "Вход",
-                                                            en = "Guard",
-                                                            de = "Eingang",
-                                                            es = "Entrada",
-                                                            fr = "Entrée",
-                                                            pt = "Entrada",
-                                                            tr = "Giriş"
-                                                        ),
+                                                        text = guardCountry,
                                                         fontSize = 11.sp,
+                                                        fontFamily = FontFamily.Monospace,
                                                         fontWeight = FontWeight.Bold,
                                                         color = Color(0xFF10B981),
                                                         maxLines = 1,
@@ -760,6 +764,16 @@ fun ChatsTab(
                                             )
 
                                             // 2. Middle Node Pill (Средн)
+                                            val middleCountry = middleNode?.countryCode?.uppercase() ?: com.example.twopchat.data.Localizations.tr(
+                                                appLanguage,
+                                                ru = "Средн",
+                                                en = "Middle",
+                                                de = "Mitte",
+                                                es = "Medio",
+                                                fr = "Milieu",
+                                                pt = "Médio",
+                                                tr = "Orta"
+                                            )
                                             Box(
                                                 modifier = Modifier
                                                     .weight(1f)
@@ -774,20 +788,12 @@ fun ChatsTab(
                                                     verticalAlignment = Alignment.CenterVertically,
                                                     horizontalArrangement = Arrangement.Center
                                                 ) {
-                                                    Text(text = middleNode?.flagEmoji ?: "⚡", fontSize = 11.sp)
+                                                    Text(text = "⚡", fontSize = 11.sp)
                                                     Spacer(modifier = Modifier.width(3.dp))
                                                     Text(
-                                                        text = middleNode?.countryCode ?: com.example.twopchat.data.Localizations.tr(
-                                                            appLanguage,
-                                                            ru = "Средн",
-                                                            en = "Middle",
-                                                            de = "Mitte",
-                                                            es = "Medio",
-                                                            fr = "Milieu",
-                                                            pt = "Médio",
-                                                            tr = "Orta"
-                                                        ),
+                                                        text = middleCountry,
                                                         fontSize = 11.sp,
+                                                        fontFamily = FontFamily.Monospace,
                                                         fontWeight = FontWeight.Bold,
                                                         color = primaryColor,
                                                         maxLines = 1,
@@ -804,6 +810,16 @@ fun ChatsTab(
                                             )
 
                                             // 3. Exit Node Pill (Выход)
+                                            val exitCountry = exitNode?.countryCode?.uppercase() ?: com.example.twopchat.data.Localizations.tr(
+                                                appLanguage,
+                                                ru = "Выход",
+                                                en = "Exit",
+                                                de = "Ausgang",
+                                                es = "Salida",
+                                                fr = "Sortie",
+                                                pt = "Saída",
+                                                tr = "Çıkış"
+                                            )
                                             Box(
                                                 modifier = Modifier
                                                     .weight(1f)
@@ -818,20 +834,12 @@ fun ChatsTab(
                                                     verticalAlignment = Alignment.CenterVertically,
                                                     horizontalArrangement = Arrangement.Center
                                                 ) {
-                                                    Text(text = exitNode?.flagEmoji ?: "🌍", fontSize = 11.sp)
+                                                    Text(text = "🌐", fontSize = 11.sp)
                                                     Spacer(modifier = Modifier.width(3.dp))
                                                     Text(
-                                                        text = exitNode?.countryCode ?: com.example.twopchat.data.Localizations.tr(
-                                                            appLanguage,
-                                                            ru = "Выход",
-                                                            en = "Exit",
-                                                            de = "Ausgang",
-                                                            es = "Salida",
-                                                            fr = "Sortie",
-                                                            pt = "Saída",
-                                                            tr = "Çıkış"
-                                                        ),
+                                                        text = exitCountry,
                                                         fontSize = 11.sp,
+                                                        fontFamily = FontFamily.Monospace,
                                                         fontWeight = FontWeight.Bold,
                                                         color = Color(0xFF3B82F6),
                                                         maxLines = 1,
@@ -983,12 +991,16 @@ fun ChatsTab(
         }
 
         // ─── SUB-TAB SEGMENT CONTROL (ЛИЧНЫЕ / ГРУППЫ) ──────────────────────
+        val isLightSubTab = surfaceColor.luminance() > 0.5f
+        val subTabBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = if (isLightSubTab) 0.16f else 0.10f)
+        val selectedTabTextColor = if (primaryColor.luminance() > 0.5f) Color(0xFF0F172A) else Color.White
+
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 6.dp)
                 .background(surfaceColor.copy(alpha = 0.5f), RoundedCornerShape(16.dp))
-                .border(1.dp, onSurfaceColor.copy(alpha = 0.08f), RoundedCornerShape(16.dp))
+                .border(1.dp, subTabBorderColor, RoundedCornerShape(16.dp))
                 .padding(4.dp),
             horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
@@ -1013,7 +1025,7 @@ fun ChatsTab(
                         text = directTitle,
                         fontSize = 13.sp,
                         fontWeight = if (isDirectSelected) FontWeight.Bold else FontWeight.Medium,
-                        color = if (isDirectSelected) Color.White else onSurfaceVariant
+                        color = if (isDirectSelected) selectedTabTextColor else onSurfaceVariant
                     )
                     if (!isDirectSelected && totalUnreadDirect > 0) {
                         Spacer(modifier = Modifier.width(6.dp))
@@ -1027,7 +1039,7 @@ fun ChatsTab(
                                 text = "$totalUnreadDirect",
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = Color.White
+                                color = selectedTabTextColor
                             )
                         }
                     }
@@ -1052,21 +1064,32 @@ fun ChatsTab(
                         text = groupsTitle,
                         fontSize = 13.sp,
                         fontWeight = if (isGroupsSelected) FontWeight.Bold else FontWeight.Medium,
-                        color = if (isGroupsSelected) Color.White else onSurfaceVariant
+                        color = if (isGroupsSelected) selectedTabTextColor else onSurfaceVariant
                     )
-                    if (!isGroupsSelected && totalUnreadGroups > 0) {
+                    if (!isGroupsSelected && (totalUnreadGroupMessages > 0 || pendingInvitesCount > 0)) {
                         Spacer(modifier = Modifier.width(6.dp))
+                        val isInviteOnly = pendingInvitesCount > 0 && totalUnreadGroupMessages == 0
+                        val badgeColor = if (isInviteOnly) {
+                            Color(0xFFF59E0B) // Amber accent for pending invites
+                        } else {
+                            primaryColor
+                        }
+                        val badgeText = if (isInviteOnly) {
+                            "+$pendingInvitesCount"
+                        } else {
+                            "$totalUnreadGroups"
+                        }
                         Box(
                             modifier = Modifier
-                                .background(primaryColor, CircleShape)
+                                .background(badgeColor, CircleShape)
                                 .padding(horizontal = 6.dp, vertical = 2.dp),
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
-                                text = "$totalUnreadGroups",
+                                text = badgeText,
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = Color.White
+                                color = if (badgeColor == primaryColor) selectedTabTextColor else Color.White
                             )
                         }
                     }
@@ -1135,7 +1158,7 @@ fun ChatsTab(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(top = 10.dp, bottom = 14.dp)
-                                    .border(1.dp, onSurfaceColor.copy(alpha = 0.06f), RoundedCornerShape(20.dp))
+                                    .border(1.dp, subTabBorderColor, RoundedCornerShape(20.dp))
                             ) {
                                 Column(
                                     modifier = Modifier
@@ -1237,18 +1260,26 @@ fun ChatsTab(
                                     fontSize = 13.sp
                                 )
                             }
+                            val count = pendingGroupInvites.invites.size
+                            val hasInvites = count > 0
+                            val inviteAccent = Color(0xFFF59E0B)
                             OutlinedButton(
                                 onClick = { onItemClick(GroupInvites) },
                                 modifier = Modifier.weight(1f).height(42.dp),
                                 shape = RoundedCornerShape(14.dp),
-                                border = androidx.compose.foundation.BorderStroke(1.dp, primaryColor.copy(alpha = 0.4f))
+                                border = androidx.compose.foundation.BorderStroke(
+                                    if (hasInvites) 1.5.dp else 1.dp,
+                                    if (hasInvites) inviteAccent else primaryColor.copy(alpha = 0.4f),
+                                ),
+                                colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(
+                                    containerColor = if (hasInvites) inviteAccent.copy(alpha = 0.12f) else Color.Transparent,
+                                ),
                             ) {
-                                val count = pendingGroupInvites.invites.size
                                 Icon(
                                     imageVector = Icons.Default.Notifications,
                                     contentDescription = null,
-                                    tint = primaryColor,
-                                    modifier = Modifier.size(18.dp)
+                                    tint = if (hasInvites) inviteAccent else primaryColor,
+                                    modifier = Modifier.size(18.dp),
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text(
@@ -1257,10 +1288,18 @@ fun ChatsTab(
                                     } else {
                                         "Invites${if (count > 0) " ($count)" else ""}"
                                     },
-                                    fontWeight = FontWeight.SemiBold,
+                                    fontWeight = if (hasInvites) FontWeight.Bold else FontWeight.SemiBold,
                                     fontSize = 13.sp,
-                                    color = primaryColor
+                                    color = if (hasInvites) inviteAccent else primaryColor,
                                 )
+                                if (hasInvites) {
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Box(
+                                        modifier = Modifier
+                                            .size(8.dp)
+                                            .background(inviteAccent, CircleShape),
+                                    )
+                                }
                             }
                         }
                     }
@@ -1313,7 +1352,7 @@ fun ChatsTab(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(top = 10.dp, bottom = 14.dp)
-                                    .border(1.dp, onSurfaceColor.copy(alpha = 0.06f), RoundedCornerShape(20.dp))
+                                    .border(1.dp, subTabBorderColor, RoundedCornerShape(20.dp))
                             ) {
                                 Column(
                                     modifier = Modifier

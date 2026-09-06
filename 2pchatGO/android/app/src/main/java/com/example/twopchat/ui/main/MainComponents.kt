@@ -4,11 +4,13 @@ package com.example.twopchat.ui.main
 import android.widget.Toast
 import android.content.Intent
 import android.net.VpnService
+import android.provider.Settings
 import com.example.twopchat.yggdrasil.PacketTunnelProvider
 import com.example.twopchat.config.P2PPreferences
 import com.example.twopchat.relay.ConnectionTransportKind
 import com.example.twopchat.relay.connectionTransportKind
 import org.json.JSONArray
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -218,14 +220,60 @@ fun PeerRow(
     val context = LocalContext.current
 
     val isLight = surfaceColor.luminance() > 0.5f
-    val borderAlpha = if (isLight) 0.08f else 0.04f
+    val borderColor = MaterialTheme.colorScheme.outlineVariant.copy(
+        alpha = if (isLight) 0.16f else 0.10f
+    )
 
+    // Check system setting for reduced motion
+    val reduceMotion = remember(context) {
+        try {
+            val transitionScale = Settings.Global.getFloat(
+                context.contentResolver,
+                Settings.Global.TRANSITION_ANIMATION_SCALE,
+                1f
+            )
+            val animatorScale = Settings.Global.getFloat(
+                context.contentResolver,
+                Settings.Global.ANIMATOR_DURATION_SCALE,
+                1f
+            )
+            transitionScale == 0f || animatorScale == 0f
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    // Micro-interaction: scale applied to content with spring physics (release feels natural)
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
-    val scale by androidx.compose.animation.core.animateFloatAsState(
-        targetValue = if (isPressed) 0.98f else 1.0f,
-        animationSpec = androidx.compose.animation.core.tween(120, easing = androidx.compose.animation.core.FastOutSlowInEasing),
-        label = "peerRowScale"
+    val contentScale by animateFloatAsState(
+        targetValue = if (isPressed) 0.985f else 1.0f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMedium
+        ),
+        label = "peerRowContentScale"
+    )
+
+    // Online breathing pulse animation (disabled if reduced motion is requested)
+    val infiniteTransition = rememberInfiniteTransition(label = "avatarPulse")
+    val pulseAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.55f,
+        targetValue = 0.0f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(2200, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "pulseAlpha"
+    )
+    val pulseScale by infiniteTransition.animateFloat(
+        initialValue = 1.0f,
+        targetValue = 1.75f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(2200, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "pulseScale"
     )
 
     Card(
@@ -234,25 +282,27 @@ fun PeerRow(
         elevation = CardDefaults.cardElevation(defaultElevation = if (isLight) 2.dp else 0.dp),
         modifier = Modifier
             .fillMaxWidth()
-            .graphicsLayer {
-                scaleX = scale
-                scaleY = scale
-            }
             .combinedClickable(
                 interactionSource = interactionSource,
                 indication = ripple(),
                 onClick = onClick,
                 onLongClick = onLongClick
             )
-            .border(0.75.dp, onSurfaceColor.copy(alpha = if (isLight) 0.12f else 0.08f), RoundedCornerShape(20.dp))
+            .border(0.75.dp, borderColor, RoundedCornerShape(20.dp))
     ) {
         Row(
-            modifier = Modifier.padding(15.dp).fillMaxWidth(),
+            modifier = Modifier
+                .graphicsLayer {
+                    scaleX = contentScale
+                    scaleY = contentScale
+                }
+                .padding(15.dp)
+                .fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
             Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
-                // Avatar representation with Online Status Dot
+                // Avatar representation with Online Status Dot + Breathing Halo
                 Box(modifier = Modifier.size(46.dp)) {
                     Box(
                         contentAlignment = Alignment.Center,
@@ -301,18 +351,37 @@ fun PeerRow(
                     if (peer.name != "Saved Messages") {
                         val isOnline = com.example.twopchat.relay.P2PMessageRelay.peerSessionStates[peer.name] == true
                         if (isOnline) {
+                            val onlineGreen = Color(0xFF10B981)
                             Box(
                                 modifier = Modifier
-                                    .size(12.dp)
-                                    .align(Alignment.BottomEnd)
-                                    .background(surfaceColor, shape = CircleShape)
-                                    .padding(2.dp)
+                                    .size(14.dp)
+                                    .align(Alignment.BottomEnd),
+                                contentAlignment = Alignment.Center
                             ) {
+                                if (!reduceMotion) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .graphicsLayer {
+                                                scaleX = pulseScale
+                                                scaleY = pulseScale
+                                                alpha = pulseAlpha
+                                            }
+                                            .background(onlineGreen, shape = CircleShape)
+                                    )
+                                }
                                 Box(
                                     modifier = Modifier
-                                        .fillMaxSize()
-                                        .background(primaryColor, shape = CircleShape)
-                                )
+                                        .size(12.dp)
+                                        .background(surfaceColor, shape = CircleShape)
+                                        .padding(2.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .background(onlineGreen, shape = CircleShape)
+                                    )
+                                }
                             }
                         }
                     }
@@ -365,7 +434,7 @@ fun PeerRow(
             
             Spacer(modifier = Modifier.width(8.dp))
 
-            // Transport Badge (Quiet Luxury design with icons)
+            // Transport Badge (Quiet Luxury design with icons & secondary visual channel)
             val isGroup = !peer.isDirect
             val isSavedMessages = peer.name == Localizations.getString("saved_messages_title", appLanguage) || peer.transport == "LOCAL RAM"
             // The route badge describes a live socket, not the last saved
@@ -387,7 +456,7 @@ fun PeerRow(
                     if (appLanguage == "Русский") "Заблокирован" else "Blocked"
                 )
                 isSavedMessages -> TransportBadgeSpec(
-                    onSurfaceColor.copy(alpha = 0.06f),
+                    onSurfaceColor.copy(alpha = 0.08f),
                     onSurfaceVariant,
                     "🔖",
                     if (appLanguage == "Русский") "Память" else "Storage"
@@ -412,19 +481,25 @@ fun PeerRow(
                 }
                 !hasActiveSession -> TransportBadgeSpec(
                     onSurfaceColor.copy(alpha = 0.06f),
-                    onSurfaceVariant,
+                    onSurfaceVariant.copy(alpha = 0.75f),
                     "○",
                     if (appLanguage == "Русский") "Не в сети" else "Offline"
                 )
                 transportKind == ConnectionTransportKind.DIRECT -> TransportBadgeSpec(
-                    primaryColor.copy(alpha = 0.12f),
-                    primaryColor,
+                    Color(0xFF10B981).copy(alpha = 0.15f),
+                    Color(0xFF10B981),
                     "⚡",
-                    if (appLanguage == "Русский") "Direct P2P" else "Direct P2P"
+                    "Direct P2P"
+                )
+                transportKind == ConnectionTransportKind.ONION -> TransportBadgeSpec(
+                    Color(0xFF7C3AED).copy(alpha = 0.16f),
+                    if (isLight) Color(0xFF7C3AED) else Color(0xFFA78BFA),
+                    "🧅",
+                    "Tor Onion"
                 )
                 transportKind == ConnectionTransportKind.YGGDRASIL -> TransportBadgeSpec(
-                    Color(0xFF8E24AA).copy(alpha = 0.12f),
-                    Color(0xFFAB47BC),
+                    Color(0xFF06B6D4).copy(alpha = 0.16f),
+                    if (isLight) Color(0xFF0891B2) else Color(0xFF22D3EE),
                     "🌐",
                     "Yggdrasil"
                 )
@@ -452,6 +527,7 @@ fun PeerRow(
                     )
                 }
                 if (peer.unreadCount > 0) {
+                    val unreadTextColor = if (primaryColor.luminance() > 0.5f) Color(0xFF0F172A) else Color.White
                     Box(
                         contentAlignment = Alignment.Center,
                         modifier = Modifier
@@ -461,7 +537,7 @@ fun PeerRow(
                     ) {
                         Text(
                             text = peer.unreadCount.toString(),
-                            color = if (primaryColor == com.example.twopchat.theme.MintGreen) com.example.twopchat.theme.StealthBlack else Color.White,
+                            color = unreadTextColor,
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Bold,
                             style = TextStyle(

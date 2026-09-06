@@ -1887,6 +1887,45 @@ internal fun GroupInviteCard(
     ) {
         val context = androidx.compose.ui.platform.LocalContext.current
         val appLanguage = remember(context) { com.example.twopchat.config.P2PPreferences.getAppLanguage(context) }
+        val isJoined = remember(inviteInfo.groupId) {
+            com.example.twopchat.group.runtime.GroupChatCoordinator.isGroupJoined(inviteInfo.groupId)
+        }
+        var localJoined by remember { mutableStateOf(false) }
+        val effectiveJoined = isJoined || localJoined
+
+        val buttonText = when {
+            effectiveJoined -> com.example.twopchat.data.Localizations.tr(
+                appLanguage,
+                ru = "✓ Вы в группе",
+                en = "✓ Joined",
+                de = "✓ Beigetreten",
+                es = "✓ Unido",
+                fr = "✓ Rejoint",
+                pt = "✓ No grupo",
+                tr = "✓ Katıldınız"
+            )
+            isMe -> com.example.twopchat.data.Localizations.tr(
+                appLanguage,
+                ru = "Приглашение отправлено",
+                en = "Invitation sent",
+                de = "Einladung gesendet",
+                es = "Invitación enviada",
+                fr = "Invitation envoyée",
+                pt = "Convite enviado",
+                tr = "Davet gönderildi"
+            )
+            else -> com.example.twopchat.data.Localizations.tr(
+                appLanguage,
+                ru = "Принять приглашение",
+                en = "Accept Invite",
+                de = "Einladung annehmen",
+                es = "Aceptar invitación",
+                fr = "Accepter l'invitation",
+                pt = "Aceitar convite",
+                tr = "Daveti Kabul Et"
+            )
+        }
+
         Column(
             modifier = Modifier.padding(14.dp)
         ) {
@@ -1933,10 +1972,18 @@ internal fun GroupInviteCard(
             Spacer(modifier = Modifier.height(12.dp))
 
             androidx.compose.material3.Button(
-                onClick = onJoinClick,
+                onClick = {
+                    if (!effectiveJoined && !isMe) {
+                        localJoined = true
+                        onJoinClick()
+                    }
+                },
+                enabled = !effectiveJoined && !isMe,
                 colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-                    containerColor = if (isMe) Color.White else primaryColor,
-                    contentColor = if (isMe) primaryColor else Color.White
+                    containerColor = if (effectiveJoined) Color(0xFF10B981).copy(alpha = 0.2f) else if (isMe) Color.White.copy(alpha = 0.2f) else primaryColor,
+                    contentColor = if (effectiveJoined) Color(0xFF10B981) else if (isMe) Color.White else Color.White,
+                    disabledContainerColor = if (effectiveJoined) Color(0xFF10B981).copy(alpha = 0.2f) else if (isMe) Color.White.copy(alpha = 0.15f) else primaryColor.copy(alpha = 0.5f),
+                    disabledContentColor = if (effectiveJoined) Color(0xFF10B981) else if (isMe) Color.White.copy(alpha = 0.85f) else onSurfaceColor.copy(alpha = 0.6f),
                 ),
                 shape = RoundedCornerShape(12.dp),
                 modifier = Modifier
@@ -1944,16 +1991,7 @@ internal fun GroupInviteCard(
                     .height(40.dp)
             ) {
                 Text(
-                    text = com.example.twopchat.data.Localizations.tr(
-                        appLanguage,
-                        ru = "Принять приглашение",
-                        en = "Accept Invite",
-                        de = "Einladung annehmen",
-                        es = "Aceptar invitación",
-                        fr = "Accepter l'invitation",
-                        pt = "Aceitar convite",
-                        tr = "Daveti Kabul Et"
-                    ),
+                    text = buttonText,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Bold
                 )
