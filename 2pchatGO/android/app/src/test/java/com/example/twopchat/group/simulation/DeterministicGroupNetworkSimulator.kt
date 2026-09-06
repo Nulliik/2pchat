@@ -98,6 +98,7 @@ class DeterministicGroupNetworkSimulator(
         kind: GroupEventKind = GroupEventKind.TEXT_MESSAGE,
         payload: String,
         broadcast: Boolean = true,
+        epoch: Long = 1L,
     ): GroupEvent {
         val node = node(author)
         val sequence = node.nextSenderSequence++
@@ -108,7 +109,7 @@ class DeterministicGroupNetworkSimulator(
             authorUserId = node.userId,
             authorDeviceId = author,
             senderSequence = sequence,
-            epoch = 1L,
+            epoch = epoch,
             timestamp = node.clock,
             kind = kind,
             state = GroupEventState.REPLICATED,

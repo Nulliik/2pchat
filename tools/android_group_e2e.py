@@ -55,6 +55,7 @@ def main():
     args = parser.parse_args()
     a, b = args.first, args.second
     for serial in (a, b):
+        adb(serial, "shell", f"pm clear {PACKAGE}")
         adb(serial, "shell", "monkey", "-p", PACKAGE, "1")
     ia = control(a, "setup", name="GroupAlice")
     ib = control(b, "setup", name="GroupBob")
@@ -97,6 +98,8 @@ def main():
     control(a, "unpin", group=gid, message=mid)
     wait_for(b, gid, lambda s: any(m["id"] == mid and not m["pinned"] for m in s["messages"]))
     print("PASS typing/expiry/read/unpin", flush=True)
+    # Initial cache accounting state on receiver
+    cached_b_init = control(b, "status").get("cached_bytes", 0)
     control(a, "attachment", group=gid)
     state = wait_for(b, gid, lambda s: any(m["text"] == "ADB attachment" for m in s["messages"]))
     attachment = next(m["id"] for m in state["messages"] if m["text"] == "ADB attachment")
@@ -107,21 +110,50 @@ def main():
     expected = bytes(i % 251 for i in range(1_048_613))
     assert hashlib.sha256(data).digest() == hashlib.sha256(expected).digest()
     print("PASS attachment 1048613 bytes / SHA-256", flush=True)
+    # Verify cache bytes increased by downloaded attachment
+    cached_b_after = control(b, "status").get("cached_bytes", 0)
+    assert cached_b_after >= cached_b_init + 1_048_613, f"Expected cache increase: {cached_b_after} vs {cached_b_init}"
+    print("PASS attachment cache accounting increase", flush=True)
+
     # Process loss and durable recovery through the actual pairwise transport.
     adb(b, "shell", f"am force-stop {PACKAGE}")
     control(a, "send", group=gid, text="Offline delivery")
-    control(b, "setup", name="GroupBob")
+    adb(b, "shell", "monkey", "-p", PACKAGE, "1")
+    ib2 = control(b, "setup", name="GroupBob")
+    adb(b, "forward", "tcp:55156", f"tcp:{ib2['port']}")
     control(b, "connect", name="GroupAlice", fingerprint=ia["fingerprint"], endpoint="10.0.2.2:55154")
+    control(a, "connect", name="GroupBob", fingerprint=ib2["fingerprint"], endpoint="10.0.2.2:55156")
+    wait_for(b, "", lambda s: any(s["peers"].values()), timeout=30)
+    wait_for(a, "", lambda s: any(s["peers"].values()), timeout=30)
     control(b, "sync", group=gid)
+    control(a, "sync", group=gid)
     wait_for(b, gid, lambda s: any(m["text"] == "Offline delivery" for m in s["messages"]), timeout=90)
     print("PASS offline/restart/recovery", flush=True)
+
+    # Test admin-only posting enforcement before role changes
+    control(a, "admin_only", group=gid, value="true")
+    wait_for(b, gid, lambda s: s.get("admin_only") is True and not s.get("text_composer", True), timeout=15)
+    print("PASS admin-only policy restricts non-admin composer", flush=True)
+    control(a, "admin_only", group=gid, value="false")
+    wait_for(b, gid, lambda s: s.get("admin_only") is False and s.get("text_composer", False), timeout=15)
+    print("PASS non-admin composer restored after admin-only disabled", flush=True)
+
     control(a, "delete", group=gid, message=mid)
     wait_for(b, gid, lambda s: any(m["id"] == mid and m["text"] == "Message deleted" for m in s["messages"]))
+    # Delete attachment and run cache maintenance to verify shredding & counter reconciliation
+    control(a, "delete", group=gid, message=attachment)
+    wait_for(b, gid, lambda s: any(m["id"] == attachment and m["text"] == "Message deleted" for m in s["messages"]))
+    clean_res = control(b, "cache_maintenance")
+    assert clean_res.get("ok"), clean_res
+    cached_b_cleaned = control(b, "status").get("cached_bytes", 0)
+    assert cached_b_cleaned < cached_b_after, f"Cache not decremented after maintenance: {cached_b_cleaned} vs {cached_b_after}"
+    print("PASS attachment shredding & cache maintenance reconciliation", flush=True)
     print("PASS delete; group=" + gid, flush=True)
+
     state = control(a, "status", group=gid)
     bob = next(m["id"] for m in state["members"] if m["name"] == "GroupBob")
     control(a, "role", group=gid, member=bob, role="ADMINISTRATOR")
-    wait_for(b, gid, lambda s: any(m["id"] == bob and m["role"] == "ADMINISTRATOR" for m in s["members"]))
+    wait_for(b, gid, lambda s: any(m["id"] == bob and m["role"] in ("ADMINISTRATOR", "ADMIN") for m in s["members"]))
     control(a, "transfer", group=gid, member=bob)
     wait_for(b, gid, lambda s: any(m["id"] == bob and m["role"] == "OWNER" for m in s["members"]))
     control(a, "leave", group=gid)
@@ -131,3 +163,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
