@@ -33,10 +33,11 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
 
     companion object {
         private const val DATABASE_NAME = "twopchat.db"
-        internal const val DATABASE_VERSION = 16
+        internal const val DATABASE_VERSION = 17
         private const val TABLE_MESSAGES = "messages"
         private const val TABLE_PENDING_CONTROLS = "pending_controls"
         private const val TABLE_PEERS = "peers"
+        private const val TABLE_MEDIA_ACCESS_LOG = "media_access_log"
         
         private const val KEY_ID = "id"
         private const val KEY_PEER_NAME = "peer_name"
@@ -197,6 +198,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
         // the next open and prevents repeated failed peer lookups at startup.
         createPeersTable(db)
         createCompositeIndices(db)
+        createMediaAccessLogTable(db)
         if (!isControlPurged) {
             synchronized(migrationLock) {
                 if (!isControlPurged) {
@@ -249,6 +251,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
         createCompositeIndices(db)
         createPendingControlsTable(db)
         createPeersTable(db)
+        createMediaAccessLogTable(db)
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -394,6 +397,9 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
             } catch (e: Exception) {
                 SafeLog.w(TAG, "Failed adding KEY_POLICY_CONFIRMED to $TABLE_PEERS", e)
             }
+        }
+        if (oldVersion < 17) {
+            createMediaAccessLogTable(db)
         }
     }
 
@@ -763,6 +769,110 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
             db.endTransaction()
         }
         return updated
+    }
+
+    fun hashUri(uri: String): String {
+        return try {
+            val digest = java.security.MessageDigest.getInstance("SHA-256")
+            val bytes = digest.digest(uri.toByteArray(Charsets.UTF_8))
+            val sb = StringBuilder(bytes.size * 2)
+            for (b in bytes) {
+                sb.append(String.format("%02x", b.toInt() and 0xFF))
+            }
+            sb.toString()
+        } catch (_: Throwable) {
+            uri.hashCode().toString()
+        }
+    }
+
+    fun logMediaAccess(uri: String, timestamp: Long = System.currentTimeMillis()) {
+        if (uri.isBlank()) return
+        try {
+            val hash = hashUri(uri)
+            val cv = ContentValues().apply {
+                put("uri_hash", hash)
+                put("last_accessed_ts", timestamp)
+            }
+            safeWritableDatabase.insertWithOnConflict(
+                TABLE_MEDIA_ACCESS_LOG,
+                null,
+                cv,
+                SQLiteDatabase.CONFLICT_REPLACE,
+            )
+        } catch (e: Exception) {
+            SafeLog.d(TAG, "Failed to log media access: ${e.javaClass.simpleName}")
+        }
+    }
+
+    fun getMediaAccessTimestamps(): Map<String, Long> {
+        val results = mutableMapOf<String, Long>()
+        try {
+            safeReadableDatabase.query(
+                TABLE_MEDIA_ACCESS_LOG,
+                arrayOf("uri_hash", "last_accessed_ts"),
+                null,
+                null,
+                null,
+                null,
+                null,
+            ).use { cursor ->
+                while (cursor.moveToNext()) {
+                    val hash = cursor.getString(0)
+                    val ts = cursor.getLong(1)
+                    results[hash] = ts
+                }
+            }
+        } catch (e: Exception) {
+            SafeLog.d(TAG, "Failed to query media access timestamps: ${e.javaClass.simpleName}")
+        }
+        return results
+    }
+
+    fun deleteMediaAccessLogs(uriHashes: Collection<String>): Int {
+        if (uriHashes.isEmpty()) return 0
+        var deleted = 0
+        try {
+            val db = safeWritableDatabase
+            uriHashes.distinct().chunked(400).forEach { chunk ->
+                val placeholders = chunk.joinToString(",") { "?" }
+                deleted += db.delete(
+                    TABLE_MEDIA_ACCESS_LOG,
+                    "uri_hash IN ($placeholders)",
+                    chunk.toTypedArray(),
+                )
+            }
+        } catch (e: Exception) {
+            SafeLog.d(TAG, "Failed to delete media access logs: ${e.javaClass.simpleName}")
+        }
+        return deleted
+    }
+
+    fun countMessagesWithAttachmentPath(canonicalPath: String): Int {
+        if (canonicalPath.isBlank()) return 0
+        val records = getStoredAttachments()
+        return records.count { record ->
+            if (record.uri.isBlank() || "://" in record.uri) return@count false
+            try {
+                java.io.File(record.uri).canonicalPath == canonicalPath
+            } catch (_: Throwable) {
+                record.uri == canonicalPath
+            }
+        }
+    }
+
+    private fun createMediaAccessLogTable(db: SQLiteDatabase) {
+        try {
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS $TABLE_MEDIA_ACCESS_LOG (
+                    uri_hash TEXT PRIMARY KEY,
+                    last_accessed_ts INTEGER NOT NULL DEFAULT 0
+                )
+                """.trimIndent(),
+            )
+        } catch (e: Exception) {
+            SafeLog.w(TAG, "Failed creating media_access_log table", e)
+        }
     }
 
     fun getMessagesForPeerPaged(peerName: String, limit: Int, offset: Int): List<Message> {

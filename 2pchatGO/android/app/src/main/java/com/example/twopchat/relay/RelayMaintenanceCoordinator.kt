@@ -57,6 +57,7 @@ internal class RelayMaintenanceCoordinator(
 
         sessionJob = scope.launch {
             var lastWakeLockRefreshAt = System.currentTimeMillis()
+            var lastMediaMaintenanceAt = 0L
             while (isActive && isRunning()) {
                 try {
                     val now = System.currentTimeMillis()
@@ -73,6 +74,22 @@ internal class RelayMaintenanceCoordinator(
                     if (isInteractive && now - lastWakeLockRefreshAt >= 8 * 60 * 1000L) {
                         lastWakeLockRefreshAt = now
                         P2PRelayService.refreshWakeLock()
+                    }
+
+                    if (now - lastMediaMaintenanceAt >= 60 * 60 * 1000L) {
+                        lastMediaMaintenanceAt = now
+                        try {
+                            com.example.twopchat.media.AttachmentStorageManager.runCacheMaintenance(
+                                appContext,
+                                force = false,
+                            )
+                        } catch (e: Exception) {
+                            if (e is CancellationException) throw e
+                            com.example.twopchat.logging.SafeLog.d(
+                                "RelayMaintenanceCoordinator",
+                                "Periodic media maintenance skipped: ${e.javaClass.simpleName}",
+                            )
+                        }
                     }
 
                     val prefs = P2PPreferences.prefs(appContext)

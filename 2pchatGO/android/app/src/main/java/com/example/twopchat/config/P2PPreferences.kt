@@ -26,6 +26,10 @@ object P2PPreferences {
     const val LISTENER_PORT = "listener_port"
     const val WIFI_DISCOVERY = "settings_wifi"
     const val STICKER_CACHE_LIMIT_MB = "settings_sticker_cache_limit_mb"
+    const val MEDIA_RETENTION_DAYS = "settings_media_retention_days"
+    const val MAX_CACHE_SIZE_MB = "settings_max_cache_size_mb"
+    const val LAST_CACHE_MAINTENANCE_TIME = "settings_last_cache_maintenance_time"
+    const val CACHED_MEDIA_BYTES = "settings_cached_media_bytes"
     const val UPNP_ENABLED = "settings_upnp"
     const val DEFAULT_LISTENER_PORT = 50001
     const val PROXY_ENABLED = "settings_proxy_enabled"
@@ -354,6 +358,10 @@ object P2PPreferences {
 
     const val DEFAULT_STICKER_CACHE_LIMIT_MB = 100
     val STICKER_CACHE_LIMIT_OPTIONS_MB = listOf(50, 100, 250, 500)
+    const val DEFAULT_MEDIA_RETENTION_DAYS = 0
+    val MEDIA_RETENTION_OPTIONS_DAYS = listOf(3, 7, 30, 0)
+    const val DEFAULT_MAX_CACHE_SIZE_MB = 0
+    val MAX_CACHE_SIZE_OPTIONS_MB = listOf(500, 1024, 2048, 5120, 0)
     const val MIN_LISTENER_PORT = 1024
     const val MAX_LISTENER_PORT = 65535
 
@@ -575,6 +583,50 @@ object P2PPreferences {
             "Unsupported sticker cache limit: $limitMb MB"
         }
         prefs(context).edit().putInt(STICKER_CACHE_LIMIT_MB, limitMb).apply()
+    }
+
+    fun mediaRetentionDays(context: Context): Int {
+        val stored = prefs(context).getInt(
+            MEDIA_RETENTION_DAYS,
+            DEFAULT_MEDIA_RETENTION_DAYS,
+        )
+        return if (stored in MEDIA_RETENTION_OPTIONS_DAYS) stored else DEFAULT_MEDIA_RETENTION_DAYS
+    }
+
+    fun setMediaRetentionDays(context: Context, days: Int) {
+        prefs(context).edit().putInt(MEDIA_RETENTION_DAYS, days).apply()
+    }
+
+    fun maxCacheSizeMb(context: Context): Int {
+        val stored = prefs(context).getInt(
+            MAX_CACHE_SIZE_MB,
+            DEFAULT_MAX_CACHE_SIZE_MB,
+        )
+        return if (stored in MAX_CACHE_SIZE_OPTIONS_MB) stored else DEFAULT_MAX_CACHE_SIZE_MB
+    }
+
+    fun setMaxCacheSizeMb(context: Context, sizeMb: Int) {
+        prefs(context).edit().putInt(MAX_CACHE_SIZE_MB, sizeMb).apply()
+    }
+
+    fun getLastCacheMaintenanceTime(context: Context): Long =
+        prefs(context).getLong(LAST_CACHE_MAINTENANCE_TIME, 0L)
+
+    fun setLastCacheMaintenanceTime(context: Context, timestamp: Long) {
+        prefs(context).edit().putLong(LAST_CACHE_MAINTENANCE_TIME, timestamp).apply()
+    }
+
+    fun getCachedMediaBytes(context: Context): Long =
+        prefs(context).getLong(CACHED_MEDIA_BYTES, 0L)
+
+    fun setCachedMediaBytes(context: Context, bytes: Long) {
+        prefs(context).edit().putLong(CACHED_MEDIA_BYTES, bytes.coerceAtLeast(0L)).apply()
+    }
+
+    fun adjustCachedMediaBytes(context: Context, delta: Long) {
+        val current = getCachedMediaBytes(context)
+        val updated = (current + delta).coerceAtLeast(0L)
+        setCachedMediaBytes(context, updated)
     }
 
     fun peerFingerprint(peerName: String) = "peer_fingerprint_$peerName"

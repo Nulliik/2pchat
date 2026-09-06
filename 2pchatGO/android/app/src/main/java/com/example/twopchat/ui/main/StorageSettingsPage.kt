@@ -103,6 +103,15 @@ fun StorageSettingsPage(
     }
     var showClearConfirmDialog by remember { mutableStateOf(false) }
     var showMediaCleanupDialog by remember { mutableStateOf(false) }
+    var showP2PWarningDialog by remember { mutableStateOf(false) }
+    var pendingRetentionDays by remember { mutableStateOf<Int?>(null) }
+    var pendingMaxCacheSizeMb by remember { mutableStateOf<Int?>(null) }
+    var mediaRetentionDays by remember {
+        mutableIntStateOf(P2PPreferences.mediaRetentionDays(context))
+    }
+    var maxCacheSizeMb by remember {
+        mutableIntStateOf(P2PPreferences.maxCacheSizeMb(context))
+    }
     var selectedMediaCategories by remember {
         mutableStateOf(emptySet<AttachmentCategory>())
     }
@@ -158,6 +167,97 @@ fun StorageSettingsPage(
 
     LaunchedEffect(Unit) {
         refreshStorageSizes()
+    }
+
+    if (showP2PWarningDialog) {
+        AlertDialog(
+            onDismissRequest = {
+                showP2PWarningDialog = false
+                pendingRetentionDays = null
+                pendingMaxCacheSizeMb = null
+            },
+            title = {
+                Text(
+                    text = if (appLanguage == "Русский") "Внимание: специфика P2P" else "P2P Network Warning",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = onSurfaceColor,
+                )
+            },
+            text = {
+                Text(
+                    text = if (appLanguage == "Русский") {
+                        "В P2P-сети удалённые файлы могут быть недоступны для повторной загрузки, если собеседник офлайн. Текст сообщений сохранится, но медиафайл будет удалён с устройства для экономии памяти. Продолжить?"
+                    } else {
+                        "In a P2P network, deleted files cannot be re-downloaded if the peer is offline. Message text remains intact, but media files will be deleted from your device to save storage. Continue?"
+                    },
+                    fontSize = 14.sp,
+                    color = onSurfaceVariant,
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val newRetention = pendingRetentionDays
+                        val newCacheLimit = pendingMaxCacheSizeMb
+                        showP2PWarningDialog = false
+                        pendingRetentionDays = null
+                        pendingMaxCacheSizeMb = null
+
+                        if (newRetention != null) {
+                            mediaRetentionDays = newRetention
+                            P2PPreferences.setMediaRetentionDays(context, newRetention)
+                        }
+                        if (newCacheLimit != null) {
+                            maxCacheSizeMb = newCacheLimit
+                            P2PPreferences.setMaxCacheSizeMb(context, newCacheLimit)
+                        }
+
+                        storageScope.launch {
+                            val res = withContext(Dispatchers.IO) {
+                                AttachmentStorageManager.runCacheMaintenance(context, force = true)
+                            }
+                            refreshStorageSizes()
+                            if (res.deletedFiles > 0) {
+                                val freedStr = formatStorageSize(res.deletedBytes)
+                                Toast.makeText(
+                                    context,
+                                    if (appLanguage == "Русский") {
+                                        "Освобождено $freedStr (${res.deletedFiles} файлов)"
+                                    } else {
+                                        "Freed $freedStr (${res.deletedFiles} files)"
+                                    },
+                                    Toast.LENGTH_SHORT,
+                                ).show()
+                            }
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = primaryColor,
+                        contentColor = Color.White,
+                    ),
+                    shape = RoundedCornerShape(12.dp),
+                ) {
+                    Text(if (appLanguage == "Русский") "Продолжить" else "Continue")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showP2PWarningDialog = false
+                        pendingRetentionDays = null
+                        pendingMaxCacheSizeMb = null
+                    },
+                ) {
+                    Text(
+                        if (appLanguage == "Русский") "Отмена" else "Cancel",
+                        color = primaryColor,
+                    )
+                }
+            },
+            containerColor = surfaceColor,
+            shape = RoundedCornerShape(20.dp),
+        )
     }
 
     if (showClearConfirmDialog) {
@@ -637,6 +737,206 @@ fun StorageSettingsPage(
                             Text(if (appLanguage == "Русский") "Зашифрованная история чатов" else "Encrypted chat history", fontSize = 11.sp, color = onSurfaceVariant)
                         }
                         Text(if (isCalculating) "..." else formatStorageSize(dbBytes), fontSize = 14.sp, color = onSurfaceVariant)
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            // Automatic Media Maintenance Card
+            Text(
+                text = if (appLanguage == "Русский") {
+                    "Автоматическая очистка медиа"
+                } else {
+                    "Automatic media cleanup"
+                },
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Bold,
+                color = onSurfaceColor,
+                modifier = Modifier.padding(bottom = 8.dp),
+            )
+            Card(
+                colors = CardDefaults.cardColors(containerColor = surfaceColor),
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(
+                        0.5.dp,
+                        onSurfaceColor.copy(alpha = 0.04f),
+                        RoundedCornerShape(16.dp),
+                    ),
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = if (appLanguage == "Русский") {
+                            "Срок хранения медиа"
+                        } else {
+                            "Keep media"
+                        },
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = onSurfaceColor,
+                    )
+                    Text(
+                        text = if (appLanguage == "Русский") {
+                            "Файлы старше выбранного срока удаляются с устройства"
+                        } else {
+                            "Files older than this will be removed from device cache"
+                        },
+                        fontSize = 11.sp,
+                        color = onSurfaceVariant,
+                        modifier = Modifier.padding(bottom = 8.dp),
+                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        val retentionLabels = mapOf(
+                            3 to (if (appLanguage == "Русский") "3 дня" else "3 days"),
+                            7 to (if (appLanguage == "Русский") "1 неделя" else "1 week"),
+                            30 to (if (appLanguage == "Русский") "1 месяц" else "1 month"),
+                            0 to (if (appLanguage == "Русский") "Всегда" else "Forever"),
+                        )
+                        P2PPreferences.MEDIA_RETENTION_OPTIONS_DAYS.forEach { days ->
+                            FilterChip(
+                                selected = mediaRetentionDays == days,
+                                onClick = {
+                                    if (mediaRetentionDays != days) {
+                                        if (days != 0 && mediaRetentionDays == 0) {
+                                            pendingRetentionDays = days
+                                            showP2PWarningDialog = true
+                                        } else {
+                                            mediaRetentionDays = days
+                                            P2PPreferences.setMediaRetentionDays(context, days)
+                                            storageScope.launch {
+                                                val res = withContext(Dispatchers.IO) {
+                                                    AttachmentStorageManager.runCacheMaintenance(
+                                                        context,
+                                                        force = true,
+                                                    )
+                                                }
+                                                refreshStorageSizes()
+                                                if (res.deletedFiles > 0) {
+                                                    val freedStr = formatStorageSize(res.deletedBytes)
+                                                    Toast.makeText(
+                                                        context,
+                                                        if (appLanguage == "Русский") {
+                                                            "Освобождено $freedStr (${res.deletedFiles} файлов)"
+                                                        } else {
+                                                            "Freed $freedStr (${res.deletedFiles} files)"
+                                                        },
+                                                        Toast.LENGTH_SHORT,
+                                                    ).show()
+                                                }
+                                            }
+                                        }
+                                    }
+                                },
+                                label = { Text(retentionLabels[days] ?: "$days d") },
+                                leadingIcon = if (mediaRetentionDays == days) {
+                                    {
+                                        Icon(
+                                            imageVector = Icons.Default.Check,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(16.dp),
+                                        )
+                                    }
+                                } else {
+                                    null
+                                },
+                            )
+                        }
+                    }
+
+                    HorizontalDivider(
+                        modifier = Modifier.padding(vertical = 12.dp),
+                        color = onSurfaceColor.copy(alpha = 0.05f),
+                    )
+
+                    Text(
+                        text = if (appLanguage == "Русский") {
+                            "Максимальный размер кэша"
+                        } else {
+                            "Maximum cache size"
+                        },
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = onSurfaceColor,
+                    )
+                    Text(
+                        text = if (appLanguage == "Русский") {
+                            "При превышении лимита самые старые файлы удаляются (LRU)"
+                        } else {
+                            "When cache exceeds limit, oldest accessed files are evicted (LRU)"
+                        },
+                        fontSize = 11.sp,
+                        color = onSurfaceVariant,
+                        modifier = Modifier.padding(bottom = 8.dp),
+                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        val sizeLabels = mapOf(
+                            500 to "500 MB",
+                            1024 to "1 GB",
+                            2048 to "2 GB",
+                            5120 to "5 GB",
+                            0 to (if (appLanguage == "Русский") "Без лимита" else "Unlimited"),
+                        )
+                        P2PPreferences.MAX_CACHE_SIZE_OPTIONS_MB.forEach { sizeMb ->
+                            FilterChip(
+                                selected = maxCacheSizeMb == sizeMb,
+                                onClick = {
+                                    if (maxCacheSizeMb != sizeMb) {
+                                        if (sizeMb != 0 && maxCacheSizeMb == 0) {
+                                            pendingMaxCacheSizeMb = sizeMb
+                                            showP2PWarningDialog = true
+                                        } else {
+                                            maxCacheSizeMb = sizeMb
+                                            P2PPreferences.setMaxCacheSizeMb(context, sizeMb)
+                                            storageScope.launch {
+                                                val res = withContext(Dispatchers.IO) {
+                                                    AttachmentStorageManager.runCacheMaintenance(
+                                                        context,
+                                                        force = true,
+                                                    )
+                                                }
+                                                refreshStorageSizes()
+                                                if (res.deletedFiles > 0) {
+                                                    val freedStr = formatStorageSize(res.deletedBytes)
+                                                    Toast.makeText(
+                                                        context,
+                                                        if (appLanguage == "Русский") {
+                                                            "Освобождено $freedStr (${res.deletedFiles} файлов)"
+                                                        } else {
+                                                            "Freed $freedStr (${res.deletedFiles} files)"
+                                                        },
+                                                        Toast.LENGTH_SHORT,
+                                                    ).show()
+                                                }
+                                            }
+                                        }
+                                    }
+                                },
+                                label = { Text(sizeLabels[sizeMb] ?: "$sizeMb MB") },
+                                leadingIcon = if (maxCacheSizeMb == sizeMb) {
+                                    {
+                                        Icon(
+                                            imageVector = Icons.Default.Check,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(16.dp),
+                                        )
+                                    }
+                                } else {
+                                    null
+                                },
+                            )
+                        }
                     }
                 }
             }

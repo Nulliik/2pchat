@@ -1,9 +1,13 @@
 package com.example.twopchat.media
 
 import android.content.Context
-import com.example.twopchat.relay.P2PMessageRelay
+import com.example.twopchat.config.P2PPreferences
 import com.example.twopchat.data.ChatDatabaseHelper
 import com.example.twopchat.data.StoredAttachmentRecord
+import com.example.twopchat.logging.SafeLog
+import com.example.twopchat.relay.P2PMessageRelay
+import com.example.twopchat.security.TemporaryCacheSanitizer
+import com.example.twopchat.ui.chat.AttachmentImageCache
 import java.io.File
 
 enum class AttachmentCategory(val messageType: String) {
@@ -63,6 +67,8 @@ internal fun attachmentCategory(
 }
 
 object AttachmentStorageManager {
+    private const val TAG = "AttachmentStorageManager"
+
     private fun managedRoots(context: Context): List<File> = listOf(
         File(context.filesDir, "attachments"),
         File(context.filesDir, "config/downloads"),
@@ -78,7 +84,44 @@ object AttachmentStorageManager {
     private fun protectedLibraryRoots(context: Context): List<File> = listOf(
         File(context.filesDir, "gif_library"),
         File(context.filesDir, "sticker_packs"),
+        File(context.filesDir, "sticker_cache/installed"),
     )
+
+    /**
+     * Path-based exclusion check: Ensures user sticker packs, GIF library, and installed
+     * collections are strictly protected from retention and LRU pruning regardless of timestamps.
+     */
+    fun isPathProtected(file: File, context: Context? = null): Boolean {
+        if (context != null && isFileInsideAnyRoot(file, protectedLibraryRoots(context))) return true
+        val normalized = try {
+            file.canonicalPath.replace('\\', '/')
+        } catch (_: Throwable) {
+            file.path.replace('\\', '/')
+        }
+        return normalized.contains("/sticker_packs/") ||
+            normalized.contains("/gif_library/") ||
+            normalized.contains("/sticker_cache/installed") ||
+            normalized.contains("/stickers/") ||
+            normalized.contains("/gifs/")
+    }
+
+    /**
+     * Overwrites file contents with zeros before unlinking.
+     *
+     * Note on Flash Storage (NAND wear leveling):
+     * On modern mobile storage (UFS/eMMC), hardware wear leveling and garbage collection
+     * can leave remnants of overwritten sectors in physically relocated NAND blocks.
+     * Zero-filling provides best-effort mitigation against casual software inspection,
+     * but does not replace full-disk hardware-backed encryption (FBE/Keystore).
+     */
+    fun secureDelete(file: File): Boolean {
+        return try {
+            if (!file.exists()) return true
+            TemporaryCacheSanitizer.shredFile(file)
+        } catch (_: Throwable) {
+            file.delete()
+        }
+    }
 
     private fun recordFile(
         record: StoredAttachmentRecord,
@@ -126,6 +169,7 @@ object AttachmentStorageManager {
 
         records.forEach { record ->
             val file = recordFile(record, allowedRoots, protectedRoots) ?: return@forEach
+            if (isPathProtected(file, appContext)) return@forEach
             val canonicalPath = runCatching { file.canonicalPath }.getOrNull() ?: return@forEach
             attachmentCategory(
                 record.attachmentType,
@@ -134,6 +178,7 @@ object AttachmentStorageManager {
             )?.let { categoryByPath.putIfAbsent(canonicalPath, it) }
         }
         scanManagedFiles(appContext).forEach { file ->
+            if (isPathProtected(file, appContext)) return@forEach
             val canonicalPath = runCatching { file.canonicalPath }.getOrNull() ?: return@forEach
             managedFileCategory(appContext, file)?.let {
                 categoryByPath.putIfAbsent(canonicalPath, it)
@@ -152,6 +197,8 @@ object AttachmentStorageManager {
                 fileCount = current.fileCount + 1,
             )
         }
+        val totalBytes = totals.values.sumOf { it.bytes }
+        P2PPreferences.setCachedMediaBytes(appContext, totalBytes)
         return totals
     }
 
@@ -169,6 +216,7 @@ object AttachmentStorageManager {
         val protectedRoots = protectedLibraryRoots(appContext)
         val recordsByPath = records.mapNotNull { record ->
             val file = recordFile(record, allowedRoots, protectedRoots) ?: return@mapNotNull null
+            if (isPathProtected(file, appContext)) return@mapNotNull null
             val canonicalPath = runCatching { file.canonicalPath }.getOrNull()
                 ?: return@mapNotNull null
             canonicalPath to record
@@ -189,7 +237,7 @@ object AttachmentStorageManager {
             }
         }.toMutableSet()
         scanManagedFiles(appContext).forEach { file ->
-            if (managedFileCategory(appContext, file) in categories) {
+            if (!isPathProtected(file, appContext) && managedFileCategory(appContext, file) in categories) {
                 runCatching { file.canonicalPath }.getOrNull()?.let(selectedPaths::add)
             }
         }
@@ -199,29 +247,54 @@ object AttachmentStorageManager {
         var failedFiles = 0
         var skippedActiveTransfers = 0
         val detachedMessageIds = mutableSetOf<String>()
+        val pathsToShred = mutableSetOf<String>()
 
         selectedPaths.forEach { path ->
             val pathRecords = recordsByPath[path].orEmpty()
-            if (pathRecords.any { P2PMessageRelay.isFileTransferActive(it.messageId) }) {
+            if (pathRecords.any { P2PMessageRelay.isFileTransferActive(it.messageId) } ||
+                P2PMessageRelay.isFileTransferActive(path)
+            ) {
                 skippedActiveTransfers += 1
                 return@forEach
             }
+            detachedMessageIds += pathRecords.map(StoredAttachmentRecord::messageId)
+            pathsToShred += path
+        }
+
+        // Phase 1: Atomically clear attachment URIs in SQLCipher
+        val detachedMessages = database.clearAttachmentUris(detachedMessageIds)
+
+        // Phase 2: Shred physical files after verifying zero remaining DB references (refcount protection)
+        val deletedHashes = mutableListOf<String>()
+        pathsToShred.forEach { path ->
             val file = File(path)
-            val existed = file.isFile
-            val size = if (file.isFile) file.length().coerceAtLeast(0L) else 0L
-            val removed = !file.exists() || (file.isFile && file.delete())
-            if (removed) {
-                if (existed) {
-                    deletedBytes += size
-                    deletedFiles += 1
+            val remainingRefs = database.countMessagesWithAttachmentPath(path)
+            if (remainingRefs == 0) {
+                val existed = file.isFile
+                val size = if (file.isFile) file.length().coerceAtLeast(0L) else 0L
+                val shredded = secureDelete(file)
+                if (shredded) {
+                    if (existed) {
+                        deletedBytes += size
+                        deletedFiles += 1
+                        deletedHashes += database.hashUri(path)
+                    }
+                } else {
+                    failedFiles += 1
                 }
-                detachedMessageIds += pathRecords.map(StoredAttachmentRecord::messageId)
             } else {
-                failedFiles += 1
+                SafeLog.d(TAG, "Skipping physical shred for $path; $remainingRefs active references remain")
             }
         }
 
-        val detachedMessages = database.clearAttachmentUris(detachedMessageIds)
+        if (deletedHashes.isNotEmpty()) {
+            database.deleteMediaAccessLogs(deletedHashes)
+        }
+        if (deletedBytes > 0L) {
+            P2PPreferences.adjustCachedMediaBytes(appContext, -deletedBytes)
+            AttachmentImageCache.clear()
+        }
+
         return AttachmentCleanupResult(
             deletedBytes = deletedBytes,
             deletedFiles = deletedFiles,
@@ -231,12 +304,320 @@ object AttachmentStorageManager {
         )
     }
 
+    /**
+     * Cleans files older than [days] based on media_access_log (with fallback to lastModified).
+     * Protected paths, active file transfers, and files still referenced by active messages are preserved.
+     */
+    fun applyRetentionPolicy(context: Context, days: Int): AttachmentCleanupResult {
+        if (days <= 0) {
+            return AttachmentCleanupResult(0L, 0, 0, 0, 0)
+        }
+        val appContext = context.applicationContext
+        val database = ChatDatabaseHelper.getInstance(appContext)
+        val cutoffMs = System.currentTimeMillis() - (days.toLong() * 86_400_000L)
+        val allowedRoots = allowedRoots(appContext)
+        val protectedRoots = protectedLibraryRoots(appContext)
+        val records = database.getStoredAttachments()
+        val accessTimestamps = database.getMediaAccessTimestamps()
+
+        val recordsByPath = records.mapNotNull { record ->
+            val file = recordFile(record, allowedRoots, protectedRoots) ?: return@mapNotNull null
+            if (isPathProtected(file, appContext)) return@mapNotNull null
+            val canonicalPath = runCatching { file.canonicalPath }.getOrNull() ?: return@mapNotNull null
+            canonicalPath to record
+        }.groupBy({ it.first }, { it.second })
+
+        val pathsToEvaluate = recordsByPath.keys.toMutableSet()
+        scanManagedFiles(appContext).forEach { file ->
+            if (!isPathProtected(file, appContext)) {
+                runCatching { file.canonicalPath }.getOrNull()?.let(pathsToEvaluate::add)
+            }
+        }
+
+        val expiredPaths = mutableSetOf<String>()
+        val expiredMessageIds = mutableSetOf<String>()
+
+        pathsToEvaluate.forEach { path ->
+            val file = File(path)
+            if (!file.isFile) return@forEach
+            val pathRecords = recordsByPath[path].orEmpty()
+            if (pathRecords.any { P2PMessageRelay.isFileTransferActive(it.messageId) } ||
+                P2PMessageRelay.isFileTransferActive(path)
+            ) {
+                return@forEach
+            }
+            val uriHash = database.hashUri(path)
+            val lastAccess = accessTimestamps[uriHash]
+                ?: file.lastModified().coerceAtMost(System.currentTimeMillis())
+
+            if (lastAccess < cutoffMs) {
+                expiredPaths += path
+                expiredMessageIds += pathRecords.map(StoredAttachmentRecord::messageId)
+            }
+        }
+
+        if (expiredPaths.isEmpty() && expiredMessageIds.isEmpty()) {
+            return AttachmentCleanupResult(0L, 0, 0, 0, 0)
+        }
+
+        // Phase 1: Atomically clear attachment URIs in SQLCipher
+        val detachedMessages = database.clearAttachmentUris(expiredMessageIds)
+
+        // Phase 2: Shred physical files that have zero remaining DB references
+        var deletedBytes = 0L
+        var deletedFiles = 0
+        var failedFiles = 0
+        var skippedActiveTransfers = 0
+        val deletedHashes = mutableListOf<String>()
+
+        expiredPaths.forEach { path ->
+            val file = File(path)
+            if (P2PMessageRelay.isFileTransferActive(path)) {
+                skippedActiveTransfers += 1
+                return@forEach
+            }
+            val remainingRefs = database.countMessagesWithAttachmentPath(path)
+            if (remainingRefs == 0) {
+                val size = if (file.isFile) file.length().coerceAtLeast(0L) else 0L
+                val existed = file.isFile
+                if (secureDelete(file)) {
+                    if (existed) {
+                        deletedBytes += size
+                        deletedFiles += 1
+                        deletedHashes += database.hashUri(path)
+                    }
+                } else {
+                    failedFiles += 1
+                }
+            } else {
+                SafeLog.d(TAG, "Skipping file shred for $path; $remainingRefs active references remain")
+            }
+        }
+
+        if (deletedHashes.isNotEmpty()) {
+            database.deleteMediaAccessLogs(deletedHashes)
+        }
+        if (deletedBytes > 0L) {
+            P2PPreferences.adjustCachedMediaBytes(appContext, -deletedBytes)
+            AttachmentImageCache.clear()
+        }
+
+        return AttachmentCleanupResult(
+            deletedBytes = deletedBytes,
+            deletedFiles = deletedFiles,
+            detachedMessages = detachedMessages,
+            failedFiles = failedFiles,
+            skippedActiveTransfers = skippedActiveTransfers,
+        )
+    }
+
+    /**
+     * Enforces [limitMb] maximum cache size using LRU eviction based on media_access_log.
+     * Features Fast Check via [P2PPreferences.getCachedMediaBytes] to skip heavy I/O if within limits.
+     */
+    fun enforceMaxCacheSize(context: Context, limitMb: Int): AttachmentCleanupResult {
+        if (limitMb <= 0) {
+            return AttachmentCleanupResult(0L, 0, 0, 0, 0)
+        }
+        val appContext = context.applicationContext
+        val maxBytes = limitMb * 1024L * 1024L
+
+        // Fast Check: If cached total size is already known and within limit, skip heavy scan!
+        val currentCachedBytes = P2PPreferences.getCachedMediaBytes(appContext)
+        if (currentCachedBytes in 1..maxBytes) {
+            return AttachmentCleanupResult(0L, 0, 0, 0, 0)
+        }
+
+        val database = ChatDatabaseHelper.getInstance(appContext)
+        val allowedRoots = allowedRoots(appContext)
+        val protectedRoots = protectedLibraryRoots(appContext)
+        val records = database.getStoredAttachments()
+        val accessTimestamps = database.getMediaAccessTimestamps()
+
+        val recordsByPath = records.mapNotNull { record ->
+            val file = recordFile(record, allowedRoots, protectedRoots) ?: return@mapNotNull null
+            if (isPathProtected(file, appContext)) return@mapNotNull null
+            val canonicalPath = runCatching { file.canonicalPath }.getOrNull() ?: return@mapNotNull null
+            canonicalPath to record
+        }.groupBy({ it.first }, { it.second })
+
+        val candidatePaths = recordsByPath.keys.toMutableSet()
+        scanManagedFiles(appContext).forEach { file ->
+            if (!isPathProtected(file, appContext)) {
+                runCatching { file.canonicalPath }.getOrNull()?.let(candidatePaths::add)
+            }
+        }
+
+        data class CacheItem(val path: String, val size: Long, val lastAccess: Long)
+        val items = mutableListOf<CacheItem>()
+        var totalSize = 0L
+
+        candidatePaths.forEach { path ->
+            val file = File(path)
+            if (!file.isFile) return@forEach
+            val size = file.length().coerceAtLeast(0L)
+            totalSize += size
+            val uriHash = database.hashUri(path)
+            val ts = accessTimestamps[uriHash]
+                ?: file.lastModified().coerceAtMost(System.currentTimeMillis())
+            items += CacheItem(path, size, ts)
+        }
+
+        // Sync cached total size with reality
+        P2PPreferences.setCachedMediaBytes(appContext, totalSize)
+
+        if (totalSize <= maxBytes) {
+            return AttachmentCleanupResult(0L, 0, 0, 0, 0)
+        }
+
+        // Sort LRU: oldest accessed first
+        items.sortBy { it.lastAccess }
+
+        val targetEvictionBytes = totalSize - maxBytes
+        var plannedEvictionBytes = 0L
+        val pathsToEvict = mutableListOf<String>()
+        val messageIdsToDetach = mutableSetOf<String>()
+
+        for (item in items) {
+            if (plannedEvictionBytes >= targetEvictionBytes) break
+            val pathRecords = recordsByPath[item.path].orEmpty()
+            if (pathRecords.any { P2PMessageRelay.isFileTransferActive(it.messageId) } ||
+                P2PMessageRelay.isFileTransferActive(item.path)
+            ) {
+                continue
+            }
+            pathsToEvict += item.path
+            messageIdsToDetach += pathRecords.map(StoredAttachmentRecord::messageId)
+            plannedEvictionBytes += item.size
+        }
+
+        if (pathsToEvict.isEmpty() && messageIdsToDetach.isEmpty()) {
+            return AttachmentCleanupResult(0L, 0, 0, 0, 0)
+        }
+
+        // Phase 1: Atomically clear DB URIs
+        val detachedMessages = database.clearAttachmentUris(messageIdsToDetach)
+
+        // Phase 2: Shred physical files after refcount re-check
+        var deletedBytes = 0L
+        var deletedFiles = 0
+        var failedFiles = 0
+        var skippedActiveTransfers = 0
+        val deletedHashes = mutableListOf<String>()
+
+        pathsToEvict.forEach { path ->
+            val file = File(path)
+            if (P2PMessageRelay.isFileTransferActive(path)) {
+                skippedActiveTransfers += 1
+                return@forEach
+            }
+            val remainingRefs = database.countMessagesWithAttachmentPath(path)
+            if (remainingRefs == 0) {
+                val size = if (file.isFile) file.length().coerceAtLeast(0L) else 0L
+                val existed = file.isFile
+                if (secureDelete(file)) {
+                    if (existed) {
+                        deletedBytes += size
+                        deletedFiles += 1
+                        deletedHashes += database.hashUri(path)
+                    }
+                } else {
+                    failedFiles += 1
+                }
+            } else {
+                SafeLog.d(TAG, "Skipping physical shred for $path; $remainingRefs active references remain")
+            }
+        }
+
+        if (deletedHashes.isNotEmpty()) {
+            database.deleteMediaAccessLogs(deletedHashes)
+        }
+        if (deletedBytes > 0L) {
+            P2PPreferences.adjustCachedMediaBytes(appContext, -deletedBytes)
+            AttachmentImageCache.clear()
+        }
+
+        return AttachmentCleanupResult(
+            deletedBytes = deletedBytes,
+            deletedFiles = deletedFiles,
+            detachedMessages = detachedMessages,
+            failedFiles = failedFiles,
+            skippedActiveTransfers = skippedActiveTransfers,
+        )
+    }
+
+    /**
+     * Executes retention and cache size limits in background or on user request.
+     * When [force] is true (e.g. settings change in UI), bypasses 24h background cooldown.
+     */
+    fun runCacheMaintenance(context: Context, force: Boolean = false): AttachmentCleanupResult {
+        val appContext = context.applicationContext
+        val retentionDays = P2PPreferences.mediaRetentionDays(appContext)
+        val maxCacheSizeMb = P2PPreferences.maxCacheSizeMb(appContext)
+
+        if (retentionDays <= 0 && maxCacheSizeMb <= 0) {
+            return AttachmentCleanupResult(0L, 0, 0, 0, 0)
+        }
+
+        val now = System.currentTimeMillis()
+        val lastMaintenance = P2PPreferences.getLastCacheMaintenanceTime(appContext)
+        val cooldownMs = 24 * 60 * 60 * 1000L
+
+        if (!force && (now - lastMaintenance < cooldownMs)) {
+            // If cache size limit is set, check if cached bytes exceed limit; otherwise defer
+            if (maxCacheSizeMb > 0) {
+                val cachedBytes = P2PPreferences.getCachedMediaBytes(appContext)
+                val maxBytes = maxCacheSizeMb * 1024L * 1024L
+                if (cachedBytes in 1..maxBytes) {
+                    return AttachmentCleanupResult(0L, 0, 0, 0, 0)
+                }
+            } else {
+                return AttachmentCleanupResult(0L, 0, 0, 0, 0)
+            }
+        }
+
+        var totalDeletedBytes = 0L
+        var totalDeletedFiles = 0
+        var totalDetachedMessages = 0
+        var totalFailedFiles = 0
+        var totalSkippedActiveTransfers = 0
+
+        if (retentionDays > 0) {
+            val res = applyRetentionPolicy(appContext, retentionDays)
+            totalDeletedBytes += res.deletedBytes
+            totalDeletedFiles += res.deletedFiles
+            totalDetachedMessages += res.detachedMessages
+            totalFailedFiles += res.failedFiles
+            totalSkippedActiveTransfers += res.skippedActiveTransfers
+        }
+
+        if (maxCacheSizeMb > 0) {
+            val res = enforceMaxCacheSize(appContext, maxCacheSizeMb)
+            totalDeletedBytes += res.deletedBytes
+            totalDeletedFiles += res.deletedFiles
+            totalDetachedMessages += res.detachedMessages
+            totalFailedFiles += res.failedFiles
+            totalSkippedActiveTransfers += res.skippedActiveTransfers
+        }
+
+        P2PPreferences.setLastCacheMaintenanceTime(appContext, now)
+
+        return AttachmentCleanupResult(
+            deletedBytes = totalDeletedBytes,
+            deletedFiles = totalDeletedFiles,
+            detachedMessages = totalDetachedMessages,
+            failedFiles = totalFailedFiles,
+            skippedActiveTransfers = totalSkippedActiveTransfers,
+        )
+    }
+
     fun deleteMessageAttachments(
         context: Context,
         attachmentUri: String?,
         albumMediaUris: List<String> = emptyList(),
     ) {
         val appContext = context.applicationContext
+        val database = ChatDatabaseHelper.getInstance(appContext)
         val roots = managedRoots(appContext) + listOf(appContext.cacheDir)
         val allPaths = (listOfNotNull(attachmentUri) + albumMediaUris)
             .filter { it.isNotBlank() && "://" !in it }
@@ -245,11 +626,16 @@ object AttachmentStorageManager {
         allPaths.forEach { path ->
             try {
                 val file = File(path)
-                if (file.isFile && isFileInsideAnyRoot(file, roots)) {
-                    com.example.twopchat.security.TemporaryCacheSanitizer.shredFile(file)
+                if (file.isFile && isFileInsideAnyRoot(file, roots) && !isPathProtected(file, appContext)) {
+                    // Refcount awareness: only shred if no other message still points to this path
+                    val canonicalPath = runCatching { file.canonicalPath }.getOrElse { file.path }
+                    val remaining = database.countMessagesWithAttachmentPath(canonicalPath)
+                    if (remaining <= 1) {
+                        secureDelete(file)
+                    }
                 }
             } catch (e: Exception) {
-                com.example.twopchat.logging.SafeLog.d("AttachmentStorageManager", "Failed to shred attachment file: ${e.javaClass.simpleName}")
+                SafeLog.d(TAG, "Failed to shred attachment file: ${e.javaClass.simpleName}")
             }
         }
     }

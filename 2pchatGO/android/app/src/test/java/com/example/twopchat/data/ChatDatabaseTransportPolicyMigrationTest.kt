@@ -8,8 +8,8 @@ import org.junit.Test
 class ChatDatabaseTransportPolicyMigrationTest {
 
     @Test
-    fun testDatabaseVersionIsBumpedTo16() {
-        assertEquals("ChatDatabaseHelper DATABASE_VERSION must be 16", 16, ChatDatabaseHelper.DATABASE_VERSION)
+    fun testDatabaseVersionIsBumpedToAtLeast16() {
+        assertTrue("ChatDatabaseHelper DATABASE_VERSION must be at least 16", ChatDatabaseHelper.DATABASE_VERSION >= 16)
     }
 
     @Test

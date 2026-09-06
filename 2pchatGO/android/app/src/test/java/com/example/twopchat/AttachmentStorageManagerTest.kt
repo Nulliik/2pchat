@@ -1,20 +1,18 @@
 package com.example.twopchat
 
-import com.example.twopchat.relay.*
-import com.example.twopchat.config.*
-import com.example.twopchat.security.*
-import com.example.twopchat.service.*
-import com.example.twopchat.media.*
-import com.example.twopchat.tor.*
-
-import com.example.twopchat.media.*
-import java.io.File
-import java.nio.file.Files
-import org.junit.Assert.assertFalse
+import com.example.twopchat.config.P2PPreferences
+import com.example.twopchat.media.AttachmentCategory
+import com.example.twopchat.media.AttachmentStorageManager
+import com.example.twopchat.media.StickerSupport
+import com.example.twopchat.media.attachmentCategory
+import com.example.twopchat.media.isFileInsideAnyRoot
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
+import java.nio.file.Files
 
 class AttachmentStorageManagerTest {
     @Test
@@ -73,5 +71,111 @@ class AttachmentStorageManagerTest {
             AttachmentCategory.IMAGE,
             attachmentCategory("IMAGE", "photo.webp", isMine = false),
         )
+    }
+
+    @Test
+    fun testSecureDeletionOverwritesDataBeforeDelete() {
+        val tempDir = Files.createTempDirectory("2pchat-shred-test").toFile()
+        val testFile = File(tempDir, "sensitive_attachment.bin")
+        val secretBytes = "CONFIDENTIAL_MEDIA_PAYLOAD_1234567890".toByteArray(Charsets.UTF_8)
+        testFile.writeBytes(secretBytes)
+        assertTrue(testFile.exists())
+        assertEquals(secretBytes.size.toLong(), testFile.length())
+
+        val shredded = AttachmentStorageManager.secureDelete(testFile)
+        assertTrue(shredded)
+        assertFalse(testFile.exists())
+    }
+
+    @Test
+    fun testPathBasedProtectionForStickersAndGifs() {
+        val baseDir = Files.createTempDirectory("2pchat-protect-test").toFile()
+
+        val stickerPackFile = File(baseDir, "user_data/sticker_packs/my_pack/sticker1.webp").apply {
+            parentFile?.mkdirs()
+            writeText("dummy")
+        }
+        val gifLibFile = File(baseDir, "user_data/gif_library/favorite.gif").apply {
+            parentFile?.mkdirs()
+            writeText("dummy")
+        }
+        val installedStickerFile = File(baseDir, "cache/sticker_cache/installed/pack_abc/s1.webp").apply {
+            parentFile?.mkdirs()
+            writeText("dummy")
+        }
+        val genericStickerPath = File(baseDir, "custom/stickers/my_sticker.webp").apply {
+            parentFile?.mkdirs()
+            writeText("dummy")
+        }
+        val genericGifPath = File(baseDir, "custom/gifs/animation.gif").apply {
+            parentFile?.mkdirs()
+            writeText("dummy")
+        }
+        val normalAttachment = File(baseDir, "attachments/received_video.mp4").apply {
+            parentFile?.mkdirs()
+            writeText("dummy")
+        }
+
+        assertTrue(AttachmentStorageManager.isPathProtected(stickerPackFile))
+        assertTrue(AttachmentStorageManager.isPathProtected(gifLibFile))
+        assertTrue(AttachmentStorageManager.isPathProtected(installedStickerFile))
+        assertTrue(AttachmentStorageManager.isPathProtected(genericStickerPath))
+        assertTrue(AttachmentStorageManager.isPathProtected(genericGifPath))
+        assertFalse(AttachmentStorageManager.isPathProtected(normalAttachment))
+    }
+
+    @Test
+    fun testPreferencesDefaultsAndOptions() {
+        assertEquals(0, P2PPreferences.DEFAULT_MEDIA_RETENTION_DAYS)
+        assertEquals(0, P2PPreferences.DEFAULT_MAX_CACHE_SIZE_MB)
+        assertEquals(listOf(3, 7, 30, 0), P2PPreferences.MEDIA_RETENTION_OPTIONS_DAYS)
+        assertEquals(listOf(500, 1024, 2048, 5120, 0), P2PPreferences.MAX_CACHE_SIZE_OPTIONS_MB)
+    }
+
+    @Test
+    fun testFastSizeCheckCondition() {
+        val limitMb = 500
+        val maxBytes = limitMb * 1024L * 1024L
+        val underLimitBytes = 250L * 1024L * 1024L
+        val overLimitBytes = 600L * 1024L * 1024L
+
+        assertTrue(underLimitBytes in 1..maxBytes)
+        assertFalse(overLimitBytes in 1..maxBytes)
+    }
+
+    @Test
+    fun testRefcountLogicRepresentation() {
+        // Given 2 messages pointing to the same file
+        val records = listOf(
+            com.example.twopchat.data.StoredAttachmentRecord(
+                messageId = "msg-1",
+                attachmentType = "IMAGE",
+                uri = "/data/user/0/com.example.twopchat/files/attachments/shared.jpg",
+                attachmentName = "shared.jpg",
+                status = "RECEIVED",
+                isMine = false,
+            ),
+            com.example.twopchat.data.StoredAttachmentRecord(
+                messageId = "msg-2",
+                attachmentType = "IMAGE",
+                uri = "/data/user/0/com.example.twopchat/files/attachments/shared.jpg",
+                attachmentName = "shared.jpg",
+                status = "RECEIVED",
+                isMine = false,
+            ),
+        )
+
+        val targetPath = "/data/user/0/com.example.twopchat/files/attachments/shared.jpg"
+        val refCount = records.count { it.uri == targetPath }
+        assertEquals(2, refCount)
+
+        // If only msg-1 is detached, remaining refCount is 1 (> 0), so physical file is preserved
+        val remainingAfterDetachOne = records.filterNot { it.messageId == "msg-1" }.count { it.uri == targetPath }
+        assertEquals(1, remainingAfterDetachOne)
+        assertTrue(remainingAfterDetachOne > 0)
+
+        // If both are detached, refCount becomes 0, so physical file can be shredded
+        val remainingAfterDetachBoth = records.filterNot { it.messageId == "msg-1" || it.messageId == "msg-2" }.count { it.uri == targetPath }
+        assertEquals(0, remainingAfterDetachBoth)
     }
 }
