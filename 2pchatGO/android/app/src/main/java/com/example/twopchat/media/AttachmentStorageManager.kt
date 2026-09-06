@@ -72,6 +72,7 @@ object AttachmentStorageManager {
     private fun managedRoots(context: Context): List<File> = listOf(
         File(context.filesDir, "attachments"),
         File(context.filesDir, "config/downloads"),
+        File(context.filesDir, "group_downloads"),
         File(context.filesDir, "sticker_cache/received"),
         File(context.filesDir, "sticker_cache/received_packs"),
     )

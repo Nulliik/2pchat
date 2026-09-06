@@ -6927,15 +6927,16 @@ object GroupChatCoordinator {
             }
             val destination = attachmentDestination(groupId, manifest)
             if (!isDestinationReferencedByOtherActiveEvents(groupId, destination, targetEventId)) {
-                if (destination.exists()) {
-                    TemporaryCacheSanitizer.shredFile(destination)
-                }
                 val verFile = attachmentVerificationFile(destination)
                 if (verFile.exists()) {
                     TemporaryCacheSanitizer.shredFile(verFile)
                 }
                 applicationContext?.let { ctx ->
                     AttachmentStorageManager.deleteMessageAttachments(ctx, destination.absolutePath)
+                } ?: run {
+                    if (destination.exists()) {
+                        TemporaryCacheSanitizer.shredFile(destination)
+                    }
                 }
             }
         }
