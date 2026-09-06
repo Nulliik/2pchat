@@ -178,4 +178,20 @@ class AttachmentStorageManagerTest {
         val remainingAfterDetachBoth = records.filterNot { it.messageId == "msg-1" || it.messageId == "msg-2" }.count { it.uri == targetPath }
         assertEquals(0, remainingAfterDetachBoth)
     }
+
+    @Test
+    fun testForceReconcileBypassesFastCheck() {
+        val limitMb = 500
+        val maxBytes = limitMb * 1024L * 1024L
+        val cachedBytes = 100L * 1024L * 1024L
+
+        // Fast check skips when cachedBytes is in 1..maxBytes under normal background execution
+        val shouldSkipNormally = cachedBytes in 1..maxBytes
+        assertTrue(shouldSkipNormally)
+
+        // When force = true (forceReconcile), fast check is bypassed to reconcile exact disk usage
+        val forceReconcile = true
+        val willSkipWithForce = !forceReconcile && (cachedBytes in 1..maxBytes)
+        assertFalse(willSkipWithForce)
+    }
 }

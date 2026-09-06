@@ -412,10 +412,27 @@ object AttachmentStorageManager {
     }
 
     /**
-     * Enforces [limitMb] maximum cache size using LRU eviction based on media_access_log.
-     * Features Fast Check via [P2PPreferences.getCachedMediaBytes] to skip heavy I/O if within limits.
+     * Rescans all managed media files on disk and synchronizes CACHED_MEDIA_BYTES in preferences
+     * to eliminate any counter drift over time.
      */
-    fun enforceMaxCacheSize(context: Context, limitMb: Int): AttachmentCleanupResult {
+    fun reconcileCachedMediaBytes(context: Context): Long {
+        val appContext = context.applicationContext
+        val usage = calculateUsage(appContext)
+        val total = usage.values.sumOf { it.bytes }
+        P2PPreferences.setCachedMediaBytes(appContext, total)
+        return total
+    }
+
+    /**
+     * Enforces [limitMb] maximum cache size using LRU eviction based on media_access_log.
+     * Features Fast Check via [P2PPreferences.getCachedMediaBytes] to skip heavy I/O if within limits,
+     * unless [forceReconcile] is requested.
+     */
+    fun enforceMaxCacheSize(
+        context: Context,
+        limitMb: Int,
+        forceReconcile: Boolean = false,
+    ): AttachmentCleanupResult {
         if (limitMb <= 0) {
             return AttachmentCleanupResult(0L, 0, 0, 0, 0)
         }
@@ -423,9 +440,11 @@ object AttachmentStorageManager {
         val maxBytes = limitMb * 1024L * 1024L
 
         // Fast Check: If cached total size is already known and within limit, skip heavy scan!
-        val currentCachedBytes = P2PPreferences.getCachedMediaBytes(appContext)
-        if (currentCachedBytes in 1..maxBytes) {
-            return AttachmentCleanupResult(0L, 0, 0, 0, 0)
+        if (!forceReconcile) {
+            val currentCachedBytes = P2PPreferences.getCachedMediaBytes(appContext)
+            if (currentCachedBytes in 1..maxBytes) {
+                return AttachmentCleanupResult(0L, 0, 0, 0, 0)
+            }
         }
 
         val database = ChatDatabaseHelper.getInstance(appContext)
@@ -548,12 +567,19 @@ object AttachmentStorageManager {
 
     /**
      * Executes retention and cache size limits in background or on user request.
-     * When [force] is true (e.g. settings change in UI), bypasses 24h background cooldown.
+     * When [force] is true (e.g. settings change in UI), bypasses 24h background cooldown,
+     * performs full disk reconciliation of [P2PPreferences.CACHED_MEDIA_BYTES],
+     * and forces size verification.
      */
     fun runCacheMaintenance(context: Context, force: Boolean = false): AttachmentCleanupResult {
         val appContext = context.applicationContext
         val retentionDays = P2PPreferences.mediaRetentionDays(appContext)
         val maxCacheSizeMb = P2PPreferences.maxCacheSizeMb(appContext)
+
+        if (force) {
+            // Full reconciliation: Rescan all managed media and synchronize CACHED_MEDIA_BYTES
+            reconcileCachedMediaBytes(appContext)
+        }
 
         if (retentionDays <= 0 && maxCacheSizeMb <= 0) {
             return AttachmentCleanupResult(0L, 0, 0, 0, 0)
@@ -592,7 +618,7 @@ object AttachmentStorageManager {
         }
 
         if (maxCacheSizeMb > 0) {
-            val res = enforceMaxCacheSize(appContext, maxCacheSizeMb)
+            val res = enforceMaxCacheSize(appContext, maxCacheSizeMb, forceReconcile = force)
             totalDeletedBytes += res.deletedBytes
             totalDeletedFiles += res.deletedFiles
             totalDetachedMessages += res.detachedMessages
