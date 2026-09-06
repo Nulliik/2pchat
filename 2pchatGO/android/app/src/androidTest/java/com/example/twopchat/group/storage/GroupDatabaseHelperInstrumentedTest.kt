@@ -359,7 +359,7 @@ class GroupDatabaseHelperInstrumentedTest {
             null,
             null,
         )
-        legacy.execSQL("CREATE TABLE groups(group_id TEXT PRIMARY KEY)")
+        legacy.execSQL("CREATE TABLE IF NOT EXISTS groups(group_id TEXT PRIMARY KEY)")
         legacy.execSQL("CREATE TABLE migration_marker(value TEXT NOT NULL)")
         legacy.execSQL("INSERT INTO migration_marker(value) VALUES ('preserved')")
         legacy.version = 2
@@ -412,7 +412,7 @@ class GroupDatabaseHelperInstrumentedTest {
             groupId = GROUP_ID,
             expectedHead = null,
             newHead = "c1",
-            updatedMembers = listOf(bob),
+            members = listOf(bob),
         )
         assertTrue(helper.isMemberActiveAtEpoch(GROUP_ID, "bob-device", 1))
         assertTrue(helper.isMemberActiveAtEpoch(GROUP_ID, "bob-device", 2))
@@ -424,7 +424,7 @@ class GroupDatabaseHelperInstrumentedTest {
             expectedHead = "c1",
             newHead = "c2",
             currentEpoch = 3,
-            updatedMembers = listOf(bobRemoved),
+            members = listOf(bobRemoved),
         )
         assertTrue(helper.isMemberActiveAtEpoch(GROUP_ID, "bob-device", 1))
         assertTrue(helper.isMemberActiveAtEpoch(GROUP_ID, "bob-device", 2))
@@ -438,7 +438,7 @@ class GroupDatabaseHelperInstrumentedTest {
             expectedHead = "c2",
             newHead = "c3",
             currentEpoch = 5,
-            updatedMembers = listOf(bobReadded),
+            members = listOf(bobReadded),
         )
         assertTrue(helper.isMemberActiveAtEpoch(GROUP_ID, "bob-device", 1))
         assertTrue(helper.isMemberActiveAtEpoch(GROUP_ID, "bob-device", 2))
@@ -475,7 +475,7 @@ class GroupDatabaseHelperInstrumentedTest {
             groupId = GROUP_ID,
             expectedHead = null,
             newHead = "c1",
-            updatedMembers = listOf(bob),
+            members = listOf(bob),
         )
         val bobRemoved = bob.copy(status = "LEFT", removedEpoch = 3, updatedAtMs = 200)
         helper.applyControlMutation(
@@ -483,7 +483,7 @@ class GroupDatabaseHelperInstrumentedTest {
             expectedHead = "c1",
             newHead = "c2",
             currentEpoch = 3,
-            updatedMembers = listOf(bobRemoved),
+            members = listOf(bobRemoved),
         )
         val bobReadded = bob.copy(status = "ACTIVE", joinedEpoch = 5, removedEpoch = null, updatedAtMs = 300)
         helper.applyControlMutation(
@@ -491,7 +491,7 @@ class GroupDatabaseHelperInstrumentedTest {
             expectedHead = "c2",
             newHead = "c3",
             currentEpoch = 5,
-            updatedMembers = listOf(bobReadded),
+            members = listOf(bobReadded),
         )
 
         // Store control events in group_events so rebuildMembershipIntervals can replay
@@ -503,7 +503,7 @@ class GroupDatabaseHelperInstrumentedTest {
             authorSeq = 1,
             hlcPhysicalMs = 100,
             hlcLogical = 0,
-            kind = StoredGroupEventKind.CONTROL_MUTATION.name,
+            kind = StoredGroupEventKind.CONTROL.name,
             body = """{"kind":"MEMBER_ADDED","target_member_device_id":"bob-device","epoch":1}""",
             createdAtMs = 100,
             receivedAtMs = 100,
@@ -516,7 +516,7 @@ class GroupDatabaseHelperInstrumentedTest {
             authorSeq = 2,
             hlcPhysicalMs = 200,
             hlcLogical = 0,
-            kind = StoredGroupEventKind.CONTROL_MUTATION.name,
+            kind = StoredGroupEventKind.CONTROL.name,
             body = """{"kind":"MEMBER_REMOVED","target_member_device_id":"bob-device","epoch":3}""",
             createdAtMs = 200,
             receivedAtMs = 200,
@@ -529,14 +529,14 @@ class GroupDatabaseHelperInstrumentedTest {
             authorSeq = 3,
             hlcPhysicalMs = 300,
             hlcLogical = 0,
-            kind = StoredGroupEventKind.CONTROL_MUTATION.name,
+            kind = StoredGroupEventKind.CONTROL.name,
             body = """{"kind":"MEMBER_ADDED","target_member_device_id":"bob-device","epoch":5}""",
             createdAtMs = 300,
             receivedAtMs = 300,
         )
-        helper.ingestEvent(c1Event)
-        helper.ingestEvent(c2Event)
-        helper.ingestEvent(c3Event)
+        helper.ingestEvent(c1Event, countAsUnread = false)
+        helper.ingestEvent(c2Event, countAsUnread = false)
+        helper.ingestEvent(c3Event, countAsUnread = false)
 
         // Rebuild projections
         helper.rebuildProjections(GROUP_ID)
@@ -568,9 +568,8 @@ class GroupDatabaseHelperInstrumentedTest {
             null,
             null,
             null,
-            null,
         )
-        v6Db.execSQL("CREATE TABLE groups(group_id TEXT PRIMARY KEY, title TEXT NOT NULL, local_device_id TEXT NOT NULL, owner_device_id TEXT NOT NULL, current_epoch INTEGER NOT NULL, control_head TEXT, control_depth INTEGER NOT NULL DEFAULT 0, created_at_ms INTEGER NOT NULL, updated_at_ms INTEGER NOT NULL, avatar_uri TEXT, direct_peer_pubkey TEXT, direct_transport_type TEXT, unread_count INTEGER NOT NULL DEFAULT 0, last_read_hlc_physical_ms INTEGER NOT NULL DEFAULT 0, last_read_hlc_logical INTEGER NOT NULL DEFAULT 0, is_archived INTEGER NOT NULL DEFAULT 0, is_muted INTEGER NOT NULL DEFAULT 0, admin_only_posting INTEGER NOT NULL DEFAULT 0)")
+        v6Db.execSQL("CREATE TABLE IF NOT EXISTS groups(group_id TEXT PRIMARY KEY, title TEXT NOT NULL, local_device_id TEXT NOT NULL, owner_device_id TEXT NOT NULL, current_epoch INTEGER NOT NULL, control_head TEXT, control_depth INTEGER NOT NULL DEFAULT 0, created_at_ms INTEGER NOT NULL, updated_at_ms INTEGER NOT NULL, avatar_uri TEXT, direct_peer_pubkey TEXT, direct_transport_type TEXT, unread_count INTEGER NOT NULL DEFAULT 0, last_read_hlc_physical_ms INTEGER NOT NULL DEFAULT 0, last_read_hlc_logical INTEGER NOT NULL DEFAULT 0, is_archived INTEGER NOT NULL DEFAULT 0, is_muted INTEGER NOT NULL DEFAULT 0, admin_only_posting INTEGER NOT NULL DEFAULT 0)")
         v6Db.execSQL("CREATE TABLE group_members(group_id TEXT NOT NULL, device_id TEXT NOT NULL, account_id TEXT NOT NULL, display_name TEXT NOT NULL, role TEXT NOT NULL, permissions INTEGER NOT NULL, status TEXT NOT NULL, joined_epoch INTEGER NOT NULL, removed_epoch INTEGER, created_at_ms INTEGER NOT NULL, updated_at_ms INTEGER NOT NULL, transport_fingerprint TEXT, peer_name TEXT, signing_key_base64 TEXT, PRIMARY KEY (group_id, device_id))")
         v6Db.execSQL("CREATE TABLE group_epoch_keys(group_id TEXT NOT NULL, epoch INTEGER NOT NULL, key_material BLOB NOT NULL, created_at_ms INTEGER NOT NULL, PRIMARY KEY (group_id, epoch))")
         v6Db.execSQL("CREATE TABLE group_events(group_id TEXT NOT NULL, event_id TEXT PRIMARY KEY, epoch INTEGER NOT NULL, author_device_id TEXT NOT NULL, author_seq INTEGER NOT NULL, hlc_physical_ms INTEGER NOT NULL, hlc_logical INTEGER NOT NULL, kind TEXT NOT NULL, body TEXT NOT NULL, created_at_ms INTEGER NOT NULL, received_at_ms INTEGER NOT NULL)")
