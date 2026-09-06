@@ -242,3 +242,6 @@ Launch_2PChat_GUI.log
 /__tmp_*
 /tools/temp-ui.xml
 /.playwright-mcp/
+
+# 2PChat AI Engineering Pack
+.agents/mcp/.venv/
