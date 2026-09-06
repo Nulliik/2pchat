@@ -156,7 +156,7 @@ def semgrep_scan() -> dict:
 @mcp.tool()
 def gitleaks_scan() -> dict:
     """Run a read-only Gitleaks scan against the working tree."""
-    return _run(["gitleaks", "detect", "--no-banner", "--redact"], timeout=600)
+    return _run(["gitleaks", "detect", "--no-banner", "--redact", "--no-git"], timeout=600)
 
 
 @mcp.tool()
