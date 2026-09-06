@@ -85,9 +85,9 @@ class GlobalApplication: Application(), YggStateReceiver.StateReceiver {
             android.os.StrictMode.setThreadPolicy(oldPolicy)
         }
 
-        // Asynchronously initialize and warm up EncryptedSharedPreferences on Dispatchers.IO
-        // so that KeyStore / Tink AES256-GCM operations do not stall the UI thread or cause frame skips.
-        P2PPreferences.warmUp(applicationContext)
+        // Asynchronously initialize and warm up Android Keystore, MasterKey, SecureStorage, and
+        // EncryptedSharedPreferences on Dispatchers.IO so that crypto operations do not stall the UI thread.
+        com.example.twopchat.security.KeystoreProvider.initAsync(applicationContext)
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 val prefs = yggdrasilPrefs(applicationContext)

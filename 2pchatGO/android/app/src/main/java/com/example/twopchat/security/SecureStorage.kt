@@ -21,6 +21,9 @@ object SecureStorage {
     @Volatile
     private var cachedKey: SecretKey? = null
 
+    @Volatile
+    private var cachedDbPassphrase: ByteArray? = null
+
     /** Asynchronously pre-warms the Keystore key and DB passphrase on background thread. */
     fun prewarm(context: android.content.Context) {
         try {
@@ -39,6 +42,9 @@ object SecureStorage {
         cachedKey?.let { return it }
         return synchronized(this) {
             cachedKey?.let { return it }
+            if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) {
+                SafeLog.w("SecureStorage", "Keystore key() requested synchronously on Main Thread before prewarm completed!")
+            }
             val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
             val existing = store.getKey(KEY_ALIAS, null) as? SecretKey
             if (existing != null) {
@@ -189,6 +195,7 @@ object SecureStorage {
 
     @Synchronized
     fun getOrGenerateDbPassphrase(context: android.content.Context): ByteArray {
+        cachedDbPassphrase?.let { return it.clone() }
         val sharedPrefs = P2PPreferences.prefs(context)
         val enc = sharedPrefs.getString("db_passphrase_enc", null)
         if (enc != null) {
@@ -209,13 +216,16 @@ object SecureStorage {
                         )
                         val plainBytes = cipher.doFinal(packed, 12, packed.size - 12)
                         SecurityUtils.zeroize(packed)
+                        cachedDbPassphrase = plainBytes.clone()
                         return plainBytes
                     } catch (e: Exception) {
                         SafeLog.e("SecureStorage", "Failed to decrypt existing db passphrase; generating fresh", e)
                     }
                 }
             } else {
-                return enc.toByteArray(Charsets.UTF_8)
+                val bytes = enc.toByteArray(Charsets.UTF_8)
+                cachedDbPassphrase = bytes.clone()
+                return bytes
             }
         }
 
@@ -233,6 +243,7 @@ object SecureStorage {
         SecurityUtils.zeroize(packed)
 
         sharedPrefs.edit().putString("db_passphrase_enc", encString).apply()
+        cachedDbPassphrase = b64Passphrase.clone()
         return b64Passphrase
     }
 
@@ -269,6 +280,10 @@ object SecureStorage {
     fun clearDbPassphrase() {
         synchronized(this) {
             cachedKey = null
+            cachedDbPassphrase?.let {
+                SecurityUtils.zeroize(it)
+                cachedDbPassphrase = null
+            }
         }
         stringDecryptionCache.evictAll()
         com.example.twopchat.data.ChatDatabaseHelper.closeAllConnections()
@@ -278,6 +293,10 @@ object SecureStorage {
     fun deleteKey() {
         synchronized(this) {
             cachedKey = null
+            cachedDbPassphrase?.let {
+                SecurityUtils.zeroize(it)
+                cachedDbPassphrase = null
+            }
         }
         stringDecryptionCache.evictAll()
         KeyStore.getInstance("AndroidKeyStore").apply {

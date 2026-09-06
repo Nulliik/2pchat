@@ -511,9 +511,7 @@ object P2PPreferences {
             cachedPrefs?.let { return it }
             val appContext = context.applicationContext
             val preferences = try {
-                val masterKey = MasterKey.Builder(appContext)
-                    .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-                    .build()
+                val masterKey = com.example.twopchat.security.KeystoreProvider.getOrBuildMasterKey(appContext)
                 EncryptedSharedPreferences.create(
                     appContext,
                     ENCRYPTED_FILE_NAME,

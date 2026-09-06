@@ -594,24 +594,37 @@ object NativeBridge {
         return false
     }
 
+    private val TRACKER_WHITESPACE_REGEX = Regex("[\\r\\n]+")
+
     @JvmStatic
     fun onTrackerStatus(trackerUrl: String, success: Boolean, peerCount: Int, elapsedMs: Long, detail: String) {
-        val result = if (success) "OK" else "FAIL"
-        val cleanDetail = detail.replace(Regex("[\\r\\n]+"), " ").take(160)
-        val summary = "announce=$result, peers=${peerCount.coerceAtLeast(0)}, announce_rtt=${elapsedMs.coerceAtLeast(0)}ms" +
-            cleanDetail.takeIf { it.isNotBlank() }?.let { ", detail=$it" }.orEmpty()
-        if (success) SafeLog.i(TAG, "[TRACKER] $trackerUrl $summary") else SafeLog.w(TAG, "[TRACKER] $trackerUrl $summary")
-        bridgeScope.launch {
-            val context = runCatching { com.example.twopchat.yggdrasil.GlobalApplication.appContext }.getOrNull()
-            if (context != null) {
-                com.example.twopchat.config.TrackerPreferences.recordDiagnosticStatus(
-                    context, trackerUrl, success, peerCount, elapsedMs, cleanDetail,
-                )
-                if (shouldLogTrackerEvent(trackerUrl, success, peerCount, cleanDetail)) {
+        val cleanDetail = detail.replace(TRACKER_WHITESPACE_REGEX, " ").take(160)
+        val shouldLog = shouldLogTrackerEvent(trackerUrl, success, peerCount, cleanDetail)
+        if (shouldLog) {
+            val result = if (success) "OK" else "FAIL"
+            val summary = "announce=$result, peers=${peerCount.coerceAtLeast(0)}, announce_rtt=${elapsedMs.coerceAtLeast(0)}ms" +
+                cleanDetail.takeIf { it.isNotBlank() }?.let { ", detail=$it" }.orEmpty()
+            if (success) SafeLog.i(TAG, "[TRACKER] $trackerUrl $summary") else SafeLog.w(TAG, "[TRACKER] $trackerUrl $summary")
+        }
+
+        val context = runCatching { com.example.twopchat.yggdrasil.GlobalApplication.appContext }.getOrNull()
+        if (context != null) {
+            com.example.twopchat.config.TrackerPreferences.recordDiagnosticStatus(
+                context, trackerUrl, success, peerCount, elapsedMs, cleanDetail,
+            )
+            if (shouldLog) {
+                val result = if (success) "OK" else "FAIL"
+                val summary = "announce=$result, peers=${peerCount.coerceAtLeast(0)}, announce_rtt=${elapsedMs.coerceAtLeast(0)}ms" +
+                    cleanDetail.takeIf { it.isNotBlank() }?.let { ", detail=$it" }.orEmpty()
+                bridgeScope.launch {
                     AppLog.append(context, "[TRACKER] $trackerUrl $summary\n")
                 }
             }
-            onTrackerStatusListener?.invoke(trackerUrl, success, peerCount, elapsedMs, cleanDetail)
+        }
+        onTrackerStatusListener?.let { listener ->
+            bridgeScope.launch {
+                listener.invoke(trackerUrl, success, peerCount, elapsedMs, cleanDetail)
+            }
         }
     }
 

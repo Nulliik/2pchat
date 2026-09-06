@@ -373,6 +373,9 @@ object GroupChatCoordinator {
             activeGroupChatCounts.clear()
             lastReadReceiptTargets.clear()
             pendingSyncRequests.clear()
+            activeRefreshJobs.values.forEach { it.cancel() }
+            activeRefreshJobs.clear()
+            dirtyGroupRefreshes.clear()
             pendingTombstones.clear()
             syncingGroups.clear()
             lastSyncRequestAtMs.clear()
@@ -419,7 +422,7 @@ object GroupChatCoordinator {
             activeGroupChats += groupId
             scope.launch {
                 markReadAndSendReceipt(groupId)
-                refreshGroup(groupId)
+                refreshGroup(groupId, force = true)
             }
         } else {
             val count = activeGroupChatCounts[groupId]?.decrementAndGet() ?: 0
@@ -434,7 +437,7 @@ object GroupChatCoordinator {
     fun markRead(groupId: String) {
         scope.launch {
             markReadAndSendReceipt(groupId)
-            refreshGroup(groupId)
+            refreshGroup(groupId, force = true)
             refreshAllSummariesWithoutRecursion()
         }
     }
@@ -5598,7 +5601,7 @@ object GroupChatCoordinator {
         invalidateActiveMemberCache()
         finalizeConfirmedDepartures()
         val groups = visibleGroups()
-        groups.forEach { refreshGroup(it.groupId) }
+        groups.forEach { refreshGroup(it.groupId, force = true) }
         _summaries.value = groups.map { group ->
             val last = db().loadTimeline(group.groupId, 1).firstOrNull()
             GroupSummary(
@@ -5635,7 +5638,48 @@ object GroupChatCoordinator {
         return rows.take(requested) to hasMore
     }
 
-    private suspend fun refreshGroup(groupId: String) {
+    private val dirtyGroupRefreshes = java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.atomic.AtomicBoolean>()
+    private val activeRefreshJobs = java.util.concurrent.ConcurrentHashMap<String, Job>()
+
+    fun requestRefresh(groupId: String, force: Boolean = false) {
+        if (force) {
+            scope.launch { doRefreshGroup(groupId) }
+            return
+        }
+        val dirty = dirtyGroupRefreshes.computeIfAbsent(groupId) { java.util.concurrent.atomic.AtomicBoolean(false) }
+        dirty.set(true)
+        val currentJob = activeRefreshJobs[groupId]
+        if (currentJob != null && currentJob.isActive) {
+            return
+        }
+        activeRefreshJobs[groupId] = scope.launch {
+            delay(200L)
+            while (dirty.getAndSet(false)) {
+                doRefreshGroup(groupId)
+            }
+        }
+    }
+
+    private suspend fun refreshGroup(groupId: String, force: Boolean = false) {
+        if (force) {
+            doRefreshGroup(groupId)
+        } else {
+            val dirty = dirtyGroupRefreshes.computeIfAbsent(groupId) { java.util.concurrent.atomic.AtomicBoolean(false) }
+            dirty.set(true)
+            val currentJob = activeRefreshJobs[groupId]
+            if (currentJob != null && currentJob.isActive) {
+                return
+            }
+            activeRefreshJobs[groupId] = scope.launch {
+                delay(200L)
+                while (dirty.getAndSet(false)) {
+                    doRefreshGroup(groupId)
+                }
+            }
+        }
+    }
+
+    private suspend fun doRefreshGroup(groupId: String) {
         val group = db().getGroup(groupId) ?: return
         val members = db().listMembers(groupId)
         val memberByDevice = members.associateBy { it.deviceId }

@@ -1,10 +1,19 @@
 package com.example.twopchat.config
 
 import android.content.Context
+import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.URI
 import java.util.UUID
+
+data class TrackerDiagnosticItem(
+    val success: Boolean,
+    val peers: Int,
+    val elapsedMs: Long,
+    val detail: String,
+    val updatedAt: Long,
+)
 
 data class BuiltInTracker(
     val name: String,
@@ -200,7 +209,41 @@ object TrackerPreferences {
         saveCustomTrackers(context, customTrackers(context).filterNot { it.id == id })
     }
 
+    private val inMemoryDiagnostics = java.util.concurrent.ConcurrentHashMap<String, TrackerDiagnosticItem>()
+    private val isLoadedFromDisk = java.util.concurrent.atomic.AtomicBoolean(false)
+    private val isFlushScheduled = java.util.concurrent.atomic.AtomicBoolean(false)
+    private val ioScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO + kotlinx.coroutines.SupervisorJob())
+    private val WHITESPACE_REGEX = Regex("[\\r\\n]+")
+
+    private fun ensureLoaded(context: Context) {
+        if (isLoadedFromDisk.compareAndSet(false, true)) {
+            val prefs = P2PPreferences.prefs(context)
+            val raw = prefs.getString(TRACKER_DIAGNOSTICS_JSON, null) ?: return
+            runCatching {
+                val json = JSONObject(raw)
+                val keys = json.keys()
+                while (keys.hasNext()) {
+                    val url = keys.next()
+                    val item = json.optJSONObject(url) ?: continue
+                    inMemoryDiagnostics.putIfAbsent(
+                        url,
+                        TrackerDiagnosticItem(
+                            success = item.optBoolean("success", false),
+                            peers = item.optInt("peers", 0),
+                            elapsedMs = item.optLong("elapsed_ms", 0),
+                            detail = item.optString("detail", ""),
+                            updatedAt = item.optLong("updated_at", 0),
+                        ),
+                    )
+                }
+            }.onFailure { e ->
+                com.example.twopchat.logging.SafeLog.w("TrackerPreferences", "Failed to parse cached diagnostics JSON", e)
+            }
+        }
+    }
+
     fun resetDefaults(context: Context) {
+        inMemoryDiagnostics.clear()
         P2PPreferences.prefs(context).edit()
             .remove(ANNOUNCE_ENABLED)
             .remove(DHT_ENABLED)
@@ -223,35 +266,59 @@ object TrackerPreferences {
         elapsedMs: Long,
         detail: String,
     ) {
-        val prefs = P2PPreferences.prefs(context)
-        val all = runCatching {
-            JSONObject(prefs.getString(TRACKER_DIAGNOSTICS_JSON, "{}") ?: "{}")
-        }.getOrDefault(JSONObject())
-        all.put(trackerUrl, JSONObject().apply {
-            put("success", success)
-            put("peers", peerCount.coerceAtLeast(0))
-            put("elapsed_ms", elapsedMs.coerceAtLeast(0))
-            put("detail", detail.replace(Regex("[\\r\\n]+"), " ").take(160))
-            put("updated_at", System.currentTimeMillis())
-        })
-        prefs.edit().putString(TRACKER_DIAGNOSTICS_JSON, all.toString()).apply()
+        val cleanDetail = detail.replace(WHITESPACE_REGEX, " ").take(160)
+        inMemoryDiagnostics[trackerUrl] = TrackerDiagnosticItem(
+            success = success,
+            peers = peerCount.coerceAtLeast(0),
+            elapsedMs = elapsedMs.coerceAtLeast(0),
+            detail = cleanDetail,
+            updatedAt = System.currentTimeMillis(),
+        )
+
+        // Throttle disk writes: schedule debounced flush every 2 seconds
+        if (isFlushScheduled.compareAndSet(false, true)) {
+            val appContext = context.applicationContext
+            ioScope.launch {
+                kotlinx.coroutines.delay(2000L)
+                isFlushScheduled.set(false)
+                flushDiagnosticsToPrefs(appContext)
+            }
+        }
+    }
+
+    private fun flushDiagnosticsToPrefs(context: Context) {
+        try {
+            val all = JSONObject()
+            for ((url, item) in inMemoryDiagnostics) {
+                all.put(url, JSONObject().apply {
+                    put("success", item.success)
+                    put("peers", item.peers)
+                    put("elapsed_ms", item.elapsedMs)
+                    put("detail", item.detail)
+                    put("updated_at", item.updatedAt)
+                })
+            }
+            P2PPreferences.prefs(context).edit().putString(TRACKER_DIAGNOSTICS_JSON, all.toString()).apply()
+        } catch (e: Throwable) {
+            com.example.twopchat.logging.SafeLog.w("TrackerPreferences", "Failed to flush tracker diagnostics to preferences", e)
+        }
     }
 
     /** Maps every built-in tracker name to its latest actual announce result. */
     fun diagnosticStatuses(context: Context): Map<String, String> {
-        val all = runCatching {
-            JSONObject(P2PPreferences.prefs(context).getString(TRACKER_DIAGNOSTICS_JSON, "{}") ?: "{}")
-        }.getOrDefault(JSONObject())
+        ensureLoaded(context)
         return builtInTrackers.associate { tracker ->
-            val item = all.optJSONObject(tracker.url)
+            val item = inMemoryDiagnostics[tracker.url]
             val status = if (item == null) {
                 "announce=NOT_RUN, peers=n/a, announce_rtt=n/ams"
             } else {
-                val result = if (item.optBoolean("success")) "OK" else "FAIL"
+                val result = if (item.success) "OK" else "FAIL"
                 buildString {
-                    append("announce=$result, peers=${item.optInt("peers", 0)}, ")
-                    append("announce_rtt=${item.optLong("elapsed_ms", 0)}ms")
-                    item.optString("detail").takeIf { it.isNotBlank() }?.let { append(", detail=$it") }
+                    append("announce=$result, peers=${item.peers}, ")
+                    append("announce_rtt=${item.elapsedMs}ms")
+                    if (item.detail.isNotBlank()) {
+                        append(", detail=${item.detail}")
+                    }
                 }
             }
             tracker.name to status
@@ -259,10 +326,8 @@ object TrackerPreferences {
     }
 
     fun activeTrackerSuccessCount(context: Context): Int {
-        val all = runCatching {
-            JSONObject(P2PPreferences.prefs(context).getString(TRACKER_DIAGNOSTICS_JSON, "{}") ?: "{}")
-        }.getOrDefault(JSONObject())
-        return getActiveTrackerUrls(context).count { url -> all.optJSONObject(url)?.optBoolean("success") == true }
+        ensureLoaded(context)
+        return getActiveTrackerUrls(context).count { url -> inMemoryDiagnostics[url]?.success == true }
     }
 
     fun configJson(context: Context): String = JSONObject().apply {
