@@ -616,17 +616,20 @@ object P2PPreferences {
         prefs(context).edit().putLong(LAST_CACHE_MAINTENANCE_TIME, timestamp).apply()
     }
 
-    fun getCachedMediaBytes(context: Context): Long =
-        prefs(context).getLong(CACHED_MEDIA_BYTES, 0L)
+    private val cacheSizeBytesLock = Any()
 
-    fun setCachedMediaBytes(context: Context, bytes: Long) {
+    fun getCachedMediaBytes(context: Context): Long = synchronized(cacheSizeBytesLock) {
+        prefs(context).getLong(CACHED_MEDIA_BYTES, 0L)
+    }
+
+    fun setCachedMediaBytes(context: Context, bytes: Long): Unit = synchronized(cacheSizeBytesLock) {
         prefs(context).edit().putLong(CACHED_MEDIA_BYTES, bytes.coerceAtLeast(0L)).apply()
     }
 
-    fun adjustCachedMediaBytes(context: Context, delta: Long) {
-        val current = getCachedMediaBytes(context)
+    fun adjustCachedMediaBytes(context: Context, delta: Long): Unit = synchronized(cacheSizeBytesLock) {
+        val current = prefs(context).getLong(CACHED_MEDIA_BYTES, 0L)
         val updated = (current + delta).coerceAtLeast(0L)
-        setCachedMediaBytes(context, updated)
+        prefs(context).edit().putLong(CACHED_MEDIA_BYTES, updated).apply()
     }
 
     fun peerFingerprint(peerName: String) = "peer_fingerprint_$peerName"

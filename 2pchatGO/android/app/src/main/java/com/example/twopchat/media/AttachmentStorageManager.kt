@@ -414,9 +414,16 @@ object AttachmentStorageManager {
     /**
      * Rescans all managed media files on disk and synchronizes CACHED_MEDIA_BYTES in preferences
      * to eliminate any counter drift over time.
+     * Guaranteed deduplication: Each physical file canonical path is counted exactly once.
      */
-    fun reconcileCachedMediaBytes(context: Context): Long {
+    fun reconcileCachedMediaBytes(context: Context, force: Boolean = true): Long {
         val appContext = context.applicationContext
+        if (!force) {
+            val cached = P2PPreferences.getCachedMediaBytes(appContext)
+            if (cached < 100 * 1024 * 1024L) {
+                return cached
+            }
+        }
         val usage = calculateUsage(appContext)
         val total = usage.values.sumOf { it.bytes }
         P2PPreferences.setCachedMediaBytes(appContext, total)
@@ -567,9 +574,11 @@ object AttachmentStorageManager {
 
     /**
      * Executes retention and cache size limits in background or on user request.
-     * When [force] is true (e.g. settings change in UI), bypasses 24h background cooldown,
-     * performs full disk reconciliation of [P2PPreferences.CACHED_MEDIA_BYTES],
-     * and forces size verification.
+     * Order of operations:
+     * 1. If [force] is true, perform initial full reconciliation with disk.
+     * 2. Apply retention policy (time-based cleanup).
+     * 3. Apply maximum cache size policy (LRU size-based cleanup).
+     * 4. If [force] is true or items were deleted, perform final disk reconciliation as source of truth.
      */
     fun runCacheMaintenance(context: Context, force: Boolean = false): AttachmentCleanupResult {
         val appContext = context.applicationContext
@@ -577,8 +586,8 @@ object AttachmentStorageManager {
         val maxCacheSizeMb = P2PPreferences.maxCacheSizeMb(appContext)
 
         if (force) {
-            // Full reconciliation: Rescan all managed media and synchronize CACHED_MEDIA_BYTES
-            reconcileCachedMediaBytes(appContext)
+            // Step 1: Initial full reconciliation before eviction checks
+            reconcileCachedMediaBytes(appContext, force = true)
         }
 
         if (retentionDays <= 0 && maxCacheSizeMb <= 0) {
@@ -608,6 +617,7 @@ object AttachmentStorageManager {
         var totalFailedFiles = 0
         var totalSkippedActiveTransfers = 0
 
+        // Step 2: Time-based retention
         if (retentionDays > 0) {
             val res = applyRetentionPolicy(appContext, retentionDays)
             totalDeletedBytes += res.deletedBytes
@@ -617,6 +627,7 @@ object AttachmentStorageManager {
             totalSkippedActiveTransfers += res.skippedActiveTransfers
         }
 
+        // Step 3: Size-based LRU eviction
         if (maxCacheSizeMb > 0) {
             val res = enforceMaxCacheSize(appContext, maxCacheSizeMb, forceReconcile = force)
             totalDeletedBytes += res.deletedBytes
@@ -624,6 +635,11 @@ object AttachmentStorageManager {
             totalDetachedMessages += res.detachedMessages
             totalFailedFiles += res.failedFiles
             totalSkippedActiveTransfers += res.skippedActiveTransfers
+        }
+
+        // Step 4: Final reconciliation as source of truth if forced or items were cleaned up
+        if (force || totalDeletedFiles > 0) {
+            reconcileCachedMediaBytes(appContext, force = true)
         }
 
         P2PPreferences.setLastCacheMaintenanceTime(appContext, now)
@@ -657,7 +673,14 @@ object AttachmentStorageManager {
                     val canonicalPath = runCatching { file.canonicalPath }.getOrElse { file.path }
                     val remaining = database.countMessagesWithAttachmentPath(canonicalPath)
                     if (remaining <= 1) {
-                        secureDelete(file)
+                        // Capture size BEFORE shredding to prevent drift
+                        val sizeBeforeShred = if (file.exists()) file.length().coerceAtLeast(0L) else 0L
+                        if (secureDelete(file)) {
+                            if (sizeBeforeShred > 0L) {
+                                P2PPreferences.adjustCachedMediaBytes(appContext, -sizeBeforeShred)
+                            }
+                            AttachmentImageCache.clear()
+                        }
                     }
                 }
             } catch (e: Exception) {

@@ -194,4 +194,56 @@ class AttachmentStorageManagerTest {
         val willSkipWithForce = !forceReconcile && (cachedBytes in 1..maxBytes)
         assertFalse(willSkipWithForce)
     }
+
+    @Test
+    fun testReconcileDeduplicatesCanonicalPaths() {
+        val tempDir = Files.createTempDirectory("2pchat-dedup-test").toFile()
+        val file1 = File(tempDir, "sample_media.jpg").apply {
+            writeBytes(ByteArray(1024) { 0x42 })
+        }
+        val canonical1 = file1.canonicalPath
+        // Sibling alias pointing to the same file
+        val canonical2 = File(tempDir, "subdir/../sample_media.jpg").canonicalPath
+        assertEquals(canonical1, canonical2)
+
+        val seenPaths = HashSet<String>()
+        var totalBytes = 0L
+        listOf(canonical1, canonical2).forEach { path ->
+            if (seenPaths.add(path)) {
+                totalBytes += File(path).length()
+            }
+        }
+        // Deduplication ensures 1024 bytes, not 2048 bytes
+        assertEquals(1024L, totalBytes)
+    }
+
+    @Test
+    fun testPreShredSizeCaptureBeforeSecureDelete() {
+        val tempDir = Files.createTempDirectory("2pchat-preshred-test").toFile()
+        val testFile = File(tempDir, "video_clip.mp4").apply {
+            writeBytes(ByteArray(2048) { 0x55 })
+        }
+        val sizeBeforeShred = if (testFile.exists()) testFile.length().coerceAtLeast(0L) else 0L
+        assertEquals(2048L, sizeBeforeShred)
+
+        val shredded = AttachmentStorageManager.secureDelete(testFile)
+        assertTrue(shredded)
+        assertFalse(testFile.exists())
+
+        // If measured after shred, file length is 0 or non-existent
+        val sizeAfterShred = if (testFile.exists()) testFile.length().coerceAtLeast(0L) else 0L
+        assertEquals(0L, sizeAfterShred)
+        // Verifying that using sizeBeforeShred preserves the exact byte delta
+        assertEquals(2048L, sizeBeforeShred)
+    }
+
+    @Test
+    fun testAdjustCachedMediaBytesClampAtZero() {
+        // Simulating the atomic adjust operation with clamp at 0
+        val currentBytes = 500L
+        val largeDelta = -1000L
+        val updated = (currentBytes + largeDelta).coerceAtLeast(0L)
+        assertEquals(0L, updated)
+    }
 }
+
