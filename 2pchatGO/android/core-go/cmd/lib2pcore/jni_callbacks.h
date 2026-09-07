@@ -122,6 +122,7 @@ void callbackOnPeerDiscovered(const char *infoHashHex, const char *endpoint, con
 void callbackOnFileProgress(const char *peerFP, const char *messageID, jlong transferred, jlong total, jdouble speedKbps);
 void callbackOnTrackerStatus(const char *trackerURL, jboolean success, jint peerCount, jlong elapsedMs, const char *detail);
 void callbackOnDiscoverySeqPersist(jlong seq);
+void callbackOnHeartbeatSeqPersist(const char *groupID, jlong seq);
 
 // Helper functions for C
 const char* getJStringUTFChars(JNIEnv *env, jstring str);

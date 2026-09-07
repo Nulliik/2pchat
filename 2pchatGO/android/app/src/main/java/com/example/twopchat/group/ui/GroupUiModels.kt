@@ -54,6 +54,9 @@ interface GroupUiController {
   fun createPoll(groupId: String, question: String, options: List<String>, isAnonymous: Boolean) = Unit
   fun votePoll(groupId: String, pollId: String, optionId: Int) = Unit
   fun sendTyping(groupId: String, isTyping: Boolean) = Unit
+  fun setupSuccessor(groupId: String, successorFP: String, timeoutDays: Int) = Unit
+  fun revokeSuccessor(groupId: String) = Unit
+  fun claimOwnership(groupId: String) = Unit
 }
 
 enum class GroupRole(val label: String) {
@@ -114,6 +117,20 @@ data class GroupReplyPreview(
   val messageId: String,
   val authorName: String,
   val text: String
+)
+
+@Immutable
+data class SuccessionUiState(
+  val successorFingerprint: String,
+  val timeoutDays: Int,
+  val lastHeartbeatTimestamp: Long?,
+  val expiresAt: Long,
+  val isOwner: Boolean,
+  val isSuccessor: Boolean,
+  val canClaim: Boolean,
+  val timeUntilClaimMs: Long,
+  val showGracePeriodBanner: Boolean,
+  val showExpiryWarning: Boolean,
 )
 
 @Immutable
@@ -242,7 +259,8 @@ data class GroupMember(
   val canRestrict: Boolean = false,
   val canRemove: Boolean = false,
   val canBan: Boolean = false,
-  val canTransferOwnership: Boolean = false
+  val canTransferOwnership: Boolean = false,
+  val transportFingerprint: String = ""
 )
 
 @Immutable

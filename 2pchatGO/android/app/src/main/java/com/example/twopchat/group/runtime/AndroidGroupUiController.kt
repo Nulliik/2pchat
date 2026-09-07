@@ -139,4 +139,16 @@ class AndroidGroupUiController(
 
     override fun sendTyping(groupId: String, isTyping: Boolean) =
         GroupChatCoordinator.sendTyping(groupId, isTyping)
+
+    override fun setupSuccessor(groupId: String, successorFP: String, timeoutDays: Int) {
+        GroupChatCoordinator.createSuccessionCertificate(groupId, successorFP, timeoutDays)
+    }
+
+    override fun revokeSuccessor(groupId: String) {
+        GroupChatCoordinator.revokeSuccessionCertificate(groupId)
+    }
+
+    override fun claimOwnership(groupId: String) {
+        GroupChatCoordinator.claimSuccession(groupId)
+    }
 }

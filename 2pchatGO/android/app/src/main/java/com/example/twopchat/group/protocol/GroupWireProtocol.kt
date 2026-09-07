@@ -24,6 +24,10 @@ object GroupWireProtocol {
     const val TYPE_JOIN_REQUEST = "group_join_request_v1"
     const val TYPE_TYPING = "group_typing_v1"
     const val TYPE_KEY_REQUEST = "group_key_request_v1"
+    const val TYPE_SUCCESSION_CERT = "group_succession_cert_v1"
+    const val TYPE_OWNER_HEARTBEAT = "group_owner_heartbeat_v1"
+    const val TYPE_SUCCESSION_REVOCATION = "group_succession_revocation_v1"
+    const val TYPE_SUCCESSION_CLAIM = "group_succession_claim_v1"
 
     const val MAX_WIRE_BYTES = 1536 * 1024
     const val MAX_EVENT_CIPHERTEXT_CHARS = 1024 * 1024
@@ -73,6 +77,10 @@ object GroupWireProtocol {
             TYPE_JOIN_REQUEST,
             TYPE_TYPING,
             TYPE_KEY_REQUEST,
+            TYPE_SUCCESSION_CERT,
+            TYPE_OWNER_HEARTBEAT,
+            TYPE_SUCCESSION_REVOCATION,
+            TYPE_SUCCESSION_CLAIM,
         )
 
     fun parseEvent(json: JSONObject): GroupWireEvent {

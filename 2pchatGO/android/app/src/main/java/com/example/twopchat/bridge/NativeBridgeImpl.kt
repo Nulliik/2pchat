@@ -397,6 +397,15 @@ class NativeBridgeImpl(
             }
         }
 
+        NativeBridge.onHeartbeatSeqPersistListener = { groupId, seq ->
+            try {
+                val appContext = com.example.twopchat.yggdrasil.GlobalApplication.appContext
+                P2PPreferences.setHeartbeatSeqCounter(appContext, groupId, seq)
+            } catch (_: Exception) {
+                // intentionally ignored: appContext uninitialized in pure JVM unit tests
+            }
+        }
+
         NativeBridge.onFileProgressListener = { peerFP, messageID, transferred, total, speed ->
             val senderName = resolvePeerName(peerFP) ?: peerNameMap[peerFP] ?: peerFP
             messageListener?.onFileProgress(senderName, messageID, transferred, total, speed)
@@ -1008,6 +1017,57 @@ class NativeBridgeImpl(
 
     override fun getDeterministicTorOnionKey(index: Int): NativeBridge.DeterministicTorOnionKey? =
         NativeBridge.getDeterministicTorOnionKey(index)
+
+    override fun createSuccessionCertificate(groupId: String, successorFP: String, successorPub: String, timeoutDays: Int): String? =
+        NativeBridge.createSuccessionCertificate(groupId, successorFP, successorPub, timeoutDays)
+
+    override fun verifySuccessionCertificate(certJson: String): Boolean =
+        NativeBridge.verifySuccessionCertificate(certJson)
+
+    override fun storeSuccessionCertificate(certJson: String): Boolean =
+        NativeBridge.storeSuccessionCertificate(certJson)
+
+    override fun getSuccessionCertificate(groupId: String): String? =
+        NativeBridge.getSuccessionCertificate(groupId)
+
+    override fun createOwnerHeartbeat(groupId: String): String? =
+        NativeBridge.createOwnerHeartbeat(groupId)
+
+    override fun verifyOwnerHeartbeat(hbJson: String): Boolean =
+        NativeBridge.verifyOwnerHeartbeat(hbJson)
+
+    override fun setHeartbeatSeqCounter(groupId: String, seq: Long) {
+        NativeBridge.setHeartbeatSeqCounter(groupId, seq)
+    }
+
+    override fun createSuccessionRevocation(groupId: String, certHash: String): String? =
+        NativeBridge.createSuccessionRevocation(groupId, certHash)
+
+    override fun verifySuccessionRevocation(revJson: String): Boolean =
+        NativeBridge.verifySuccessionRevocation(revJson)
+
+    override fun revokeCertificate(certHash: String) {
+        NativeBridge.revokeCertificate(certHash)
+    }
+
+    override fun isCertificateRevoked(certHash: String): Boolean =
+        NativeBridge.isCertificateRevoked(certHash)
+
+    override fun createSuccessionClaim(certJson: String, lastHeartbeatJson: String): String? =
+        NativeBridge.createSuccessionClaim(certJson, lastHeartbeatJson)
+
+    override fun verifySuccessionClaim(certJson: String, claimJson: String, lastHeartbeatJson: String): Boolean =
+        NativeBridge.verifySuccessionClaim(certJson, claimJson, lastHeartbeatJson)
+
+    override fun setLastHeartbeatHash(groupId: String, hash: String) {
+        NativeBridge.setLastHeartbeatHash(groupId, hash)
+    }
+
+    override fun getLastHeartbeatHash(groupId: String): String? =
+        NativeBridge.getLastHeartbeatHash(groupId)
+
+    override fun getCertificateHash(certJson: String): String? =
+        NativeBridge.getCertificateHash(certJson)
 }
 
 internal fun shouldPublishIdentitySessionEstablished(

@@ -1294,6 +1294,20 @@ object P2PPreferences : com.example.twopchat.security.SensitiveMemoryHolder {
     fun setDiscoverySeqCounter(context: Context, seq: Long) {
         prefs(context).edit().putLong(PREF_DISCOVERY_SEQ_COUNTER, seq).apply()
     }
+
+    fun getHeartbeatSeqCounter(context: Context, groupId: String): Long =
+        prefs(context).getLong("heartbeat_seq_$groupId", 0L)
+
+    fun setHeartbeatSeqCounter(context: Context, groupId: String, seq: Long) {
+        prefs(context).edit().putLong("heartbeat_seq_$groupId", seq).apply()
+    }
+
+    fun getLastHeartbeatEmitTime(context: Context, groupId: String): Long =
+        prefs(context).getLong("heartbeat_last_emit_$groupId", 0L)
+
+    fun setLastHeartbeatEmitTime(context: Context, groupId: String, timeMs: Long) {
+        prefs(context).edit().putLong("heartbeat_last_emit_$groupId", timeMs).apply()
+    }
 }
 
 internal data class AcceptedPeerIdentity(

@@ -28,6 +28,7 @@ object NativeBridge {
     var onTrackerStatusListener: ((trackerUrl: String, success: Boolean, peerCount: Int, elapsedMs: Long, detail: String) -> Unit)? = null
     var onFileProgressListener: ((peerFP: String, messageId: String, transferred: Long, total: Long, speedKbps: Double) -> Unit)? = null
     var onDiscoverySeqPersistListener: ((seq: Long) -> Unit)? = null
+    var onHeartbeatSeqPersistListener: ((groupId: String, seq: Long) -> Unit)? = null
 
     private fun logI(msg: String) {
         runCatching { SafeLog.i(TAG, msg) }
@@ -563,6 +564,18 @@ object NativeBridge {
         }
     }
 
+    @JvmStatic
+    fun onHeartbeatSeqPersist(groupId: String, seq: Long) {
+        SafeLog.d(TAG, "[P2P-Succession] Persisting heartbeat sequence counter for $groupId: $seq")
+        bridgeScope.launch {
+            try {
+                onHeartbeatSeqPersistListener?.invoke(groupId, seq)
+            } catch (e: Throwable) {
+                SafeLog.e(TAG, "Error in onHeartbeatSeqPersistListener", e)
+            }
+        }
+    }
+
     private data class TrackerLogRecord(
         val wasSuccess: Boolean,
         val peerCount: Int,
@@ -884,6 +897,163 @@ object NativeBridge {
         }
     }
 
+    fun createSuccessionCertificate(groupId: String, successorFP: String, successorPub: String, timeoutDays: Int): String? {
+        if (!isLoaded) return null
+        return try {
+            nativeCreateSuccessionCertificate(groupId, successorFP, successorPub, timeoutDays)
+        } catch (e: Throwable) {
+            SafeLog.e(TAG, "nativeCreateSuccessionCertificate failed", e)
+            null
+        }
+    }
+
+    fun verifySuccessionCertificate(certJson: String): Boolean {
+        if (!isLoaded || certJson.isBlank()) return false
+        return try {
+            nativeVerifySuccessionCertificate(certJson)
+        } catch (e: Throwable) {
+            SafeLog.e(TAG, "nativeVerifySuccessionCertificate failed", e)
+            false
+        }
+    }
+
+    fun storeSuccessionCertificate(certJson: String): Boolean {
+        if (!isLoaded || certJson.isBlank()) return false
+        return try {
+            nativeStoreSuccessionCertificate(certJson)
+        } catch (e: Throwable) {
+            SafeLog.e(TAG, "nativeStoreSuccessionCertificate failed", e)
+            false
+        }
+    }
+
+    fun getSuccessionCertificate(groupId: String): String? {
+        if (!isLoaded || groupId.isBlank()) return null
+        return try {
+            nativeGetSuccessionCertificate(groupId)
+        } catch (e: Throwable) {
+            SafeLog.e(TAG, "nativeGetSuccessionCertificate failed", e)
+            null
+        }
+    }
+
+    fun createOwnerHeartbeat(groupId: String): String? {
+        if (!isLoaded || groupId.isBlank()) return null
+        return try {
+            nativeCreateOwnerHeartbeat(groupId)
+        } catch (e: Throwable) {
+            SafeLog.e(TAG, "nativeCreateOwnerHeartbeat failed", e)
+            null
+        }
+    }
+
+    fun verifyOwnerHeartbeat(hbJson: String): Boolean {
+        if (!isLoaded || hbJson.isBlank()) return false
+        return try {
+            nativeVerifyOwnerHeartbeat(hbJson)
+        } catch (e: Throwable) {
+            SafeLog.e(TAG, "nativeVerifyOwnerHeartbeat failed", e)
+            false
+        }
+    }
+
+    fun setHeartbeatSeqCounter(groupId: String, seq: Long) {
+        if (!isLoaded || groupId.isBlank()) return
+        try {
+            nativeSetHeartbeatSeqCounter(groupId, seq)
+        } catch (e: Throwable) {
+            SafeLog.e(TAG, "nativeSetHeartbeatSeqCounter failed", e)
+        }
+    }
+
+    fun createSuccessionRevocation(groupId: String, certHash: String): String? {
+        if (!isLoaded || groupId.isBlank() || certHash.isBlank()) return null
+        return try {
+            nativeCreateSuccessionRevocation(groupId, certHash)
+        } catch (e: Throwable) {
+            SafeLog.e(TAG, "nativeCreateSuccessionRevocation failed", e)
+            null
+        }
+    }
+
+    fun verifySuccessionRevocation(revJson: String): Boolean {
+        if (!isLoaded || revJson.isBlank()) return false
+        return try {
+            nativeVerifySuccessionRevocation(revJson)
+        } catch (e: Throwable) {
+            SafeLog.e(TAG, "nativeVerifySuccessionRevocation failed", e)
+            false
+        }
+    }
+
+    fun revokeCertificate(certHash: String) {
+        if (!isLoaded || certHash.isBlank()) return
+        try {
+            nativeRevokeCertificate(certHash)
+        } catch (e: Throwable) {
+            SafeLog.e(TAG, "nativeRevokeCertificate failed", e)
+        }
+    }
+
+    fun isCertificateRevoked(certHash: String): Boolean {
+        if (!isLoaded || certHash.isBlank()) return false
+        return try {
+            nativeIsCertificateRevoked(certHash)
+        } catch (e: Throwable) {
+            SafeLog.e(TAG, "nativeIsCertificateRevoked failed", e)
+            false
+        }
+    }
+
+    fun createSuccessionClaim(certJson: String, lastHeartbeatJson: String): String? {
+        if (!isLoaded || certJson.isBlank() || lastHeartbeatJson.isBlank()) return null
+        return try {
+            nativeCreateSuccessionClaim(certJson, lastHeartbeatJson)
+        } catch (e: Throwable) {
+            SafeLog.e(TAG, "nativeCreateSuccessionClaim failed", e)
+            null
+        }
+    }
+
+    fun verifySuccessionClaim(certJson: String, claimJson: String, lastHeartbeatJson: String): Boolean {
+        if (!isLoaded || certJson.isBlank() || claimJson.isBlank() || lastHeartbeatJson.isBlank()) return false
+        return try {
+            nativeVerifySuccessionClaim(certJson, claimJson, lastHeartbeatJson)
+        } catch (e: Throwable) {
+            SafeLog.e(TAG, "nativeVerifySuccessionClaim failed", e)
+            false
+        }
+    }
+
+    fun setLastHeartbeatHash(groupId: String, hash: String) {
+        if (!isLoaded || groupId.isBlank()) return
+        try {
+            nativeSetLastHeartbeatHash(groupId, hash)
+        } catch (e: Throwable) {
+            SafeLog.e(TAG, "nativeSetLastHeartbeatHash failed", e)
+        }
+    }
+
+    fun getLastHeartbeatHash(groupId: String): String? {
+        if (!isLoaded || groupId.isBlank()) return null
+        return try {
+            nativeGetLastHeartbeatHash(groupId)
+        } catch (e: Throwable) {
+            SafeLog.e(TAG, "nativeGetLastHeartbeatHash failed", e)
+            null
+        }
+    }
+
+    fun getCertificateHash(certJson: String): String? {
+        if (!isLoaded || certJson.isBlank()) return null
+        return try {
+            nativeGetCertificateHash(certJson)
+        } catch (e: Throwable) {
+            SafeLog.e(TAG, "nativeGetCertificateHash failed", e)
+            null
+        }
+    }
+
     // --- Native JNI declarations ---
     private external fun nativeSetStorageKey(key: ByteArray): Boolean
     private external fun nativeSetStorageDir(dir: String)
@@ -953,4 +1123,20 @@ object NativeBridge {
     private external fun nativeGetDiscoverySeqCounter(): Long
     private external fun nativeSetDiscoveryStrictSignatures(strict: Boolean)
     private external fun nativeGetDeterministicTorOnionKey(index: Int): String?
+    private external fun nativeCreateSuccessionCertificate(groupId: String, successorFP: String, successorPub: String, timeoutDays: Int): String?
+    private external fun nativeVerifySuccessionCertificate(certJson: String): Boolean
+    private external fun nativeStoreSuccessionCertificate(certJson: String): Boolean
+    private external fun nativeGetSuccessionCertificate(groupId: String): String?
+    private external fun nativeCreateOwnerHeartbeat(groupId: String): String?
+    private external fun nativeVerifyOwnerHeartbeat(hbJson: String): Boolean
+    private external fun nativeSetHeartbeatSeqCounter(groupId: String, seq: Long)
+    private external fun nativeCreateSuccessionRevocation(groupId: String, certHash: String): String?
+    private external fun nativeVerifySuccessionRevocation(revJson: String): Boolean
+    private external fun nativeRevokeCertificate(certHash: String)
+    private external fun nativeIsCertificateRevoked(certHash: String): Boolean
+    private external fun nativeCreateSuccessionClaim(certJson: String, lastHeartbeatJson: String): String?
+    private external fun nativeVerifySuccessionClaim(certJson: String, claimJson: String, lastHeartbeatJson: String): Boolean
+    private external fun nativeSetLastHeartbeatHash(groupId: String, hash: String)
+    private external fun nativeGetLastHeartbeatHash(groupId: String): String?
+    private external fun nativeGetCertificateHash(certJson: String): String?
 }

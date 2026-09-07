@@ -33,12 +33,14 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
 
     companion object {
         private const val DATABASE_NAME = "twopchat.db"
-        internal const val DATABASE_VERSION = 18
+        internal const val DATABASE_VERSION = 19
         private const val TABLE_MESSAGES = "messages"
         private const val TABLE_PENDING_CONTROLS = "pending_controls"
         private const val TABLE_PEERS = "peers"
         private const val TABLE_MEDIA_ACCESS_LOG = "media_access_log"
         private const val TABLE_DISCOVERY_SEQUENCES = "discovery_sequences"
+        private const val TABLE_GROUP_SUCCESSION_STATE = "group_succession_state"
+        private const val TABLE_REVOKED_SUCCESSION_CERTIFICATES = "revoked_succession_certificates"
         
         private const val KEY_ID = "id"
         private const val KEY_PEER_NAME = "peer_name"
@@ -257,6 +259,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
         createPeersTable(db)
         createMediaAccessLogTable(db)
         createDiscoverySequencesTable(db)
+        createGroupSuccessionTables(db)
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -408,6 +411,9 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
         }
         if (oldVersion < 18) {
             createDiscoverySequencesTable(db)
+        }
+        if (oldVersion < 19) {
+            createGroupSuccessionTables(db)
         }
     }
 
@@ -960,6 +966,143 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
         } catch (e: Exception) {
             SafeLog.w(TAG, "Failed creating discovery_sequences table", e)
         }
+    }
+
+    private fun createGroupSuccessionTables(db: SQLiteDatabase) {
+        try {
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS $TABLE_GROUP_SUCCESSION_STATE (
+                    group_id TEXT PRIMARY KEY NOT NULL,
+                    active_certificate_json TEXT,
+                    last_heartbeat_json TEXT,
+                    last_heartbeat_hash TEXT,
+                    is_revoked INTEGER NOT NULL DEFAULT 0,
+                    updated_at INTEGER NOT NULL
+                )
+                """.trimIndent(),
+            )
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS $TABLE_REVOKED_SUCCESSION_CERTIFICATES (
+                    cert_hash TEXT PRIMARY KEY NOT NULL,
+                    group_id TEXT NOT NULL,
+                    revoked_at INTEGER NOT NULL
+                )
+                """.trimIndent(),
+            )
+        } catch (e: Exception) {
+            SafeLog.w(TAG, "Failed creating group succession tables", e)
+        }
+    }
+
+    fun saveGroupSuccessionState(
+        groupId: String,
+        activeCertJson: String?,
+        lastHbJson: String?,
+        lastHbHash: String?,
+        isRevoked: Boolean,
+        updatedAt: Long = System.currentTimeMillis(),
+    ) {
+        try {
+            val db = this.safeWritableDatabase
+            val cv = ContentValues().apply {
+                put("group_id", groupId)
+                put("active_certificate_json", activeCertJson)
+                put("last_heartbeat_json", lastHbJson)
+                put("last_heartbeat_hash", lastHbHash)
+                put("is_revoked", if (isRevoked) 1 else 0)
+                put("updated_at", updatedAt)
+            }
+            db.insertWithOnConflict(TABLE_GROUP_SUCCESSION_STATE, null, cv, SQLiteDatabase.CONFLICT_REPLACE)
+        } catch (e: Exception) {
+            SafeLog.e(TAG, "saveGroupSuccessionState failed for $groupId", e)
+        }
+    }
+
+    data class StoredGroupSuccession(
+        val groupId: String,
+        val activeCertJson: String?,
+        val lastHbJson: String?,
+        val lastHbHash: String?,
+        val isRevoked: Boolean,
+        val updatedAt: Long,
+    )
+
+    fun getGroupSuccessionState(groupId: String): StoredGroupSuccession? {
+        try {
+            val db = this.safeReadableDatabase
+            db.query(
+                TABLE_GROUP_SUCCESSION_STATE,
+                null,
+                "group_id = ?",
+                arrayOf(groupId),
+                null, null, null
+            ).use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val certJson = cursor.getString(cursor.getColumnIndexOrThrow("active_certificate_json"))
+                    val hbJson = cursor.getString(cursor.getColumnIndexOrThrow("last_heartbeat_json"))
+                    val hbHash = cursor.getString(cursor.getColumnIndexOrThrow("last_heartbeat_hash"))
+                    val isRevoked = cursor.getInt(cursor.getColumnIndexOrThrow("is_revoked")) == 1
+                    val updatedAt = cursor.getLong(cursor.getColumnIndexOrThrow("updated_at"))
+                    return StoredGroupSuccession(groupId, certJson, hbJson, hbHash, isRevoked, updatedAt)
+                }
+            }
+        } catch (e: Exception) {
+            SafeLog.e(TAG, "getGroupSuccessionState failed for $groupId", e)
+        }
+        return null
+    }
+
+    fun recordRevokedCertificate(certHash: String, groupId: String, revokedAt: Long = System.currentTimeMillis()) {
+        try {
+            val db = this.safeWritableDatabase
+            val cv = ContentValues().apply {
+                put("cert_hash", certHash)
+                put("group_id", groupId)
+                put("revoked_at", revokedAt)
+            }
+            db.insertWithOnConflict(TABLE_REVOKED_SUCCESSION_CERTIFICATES, null, cv, SQLiteDatabase.CONFLICT_REPLACE)
+        } catch (e: Exception) {
+            SafeLog.e(TAG, "recordRevokedCertificate failed for $certHash", e)
+        }
+    }
+
+    fun isSuccessionCertificateRevoked(certHash: String): Boolean {
+        try {
+            val db = this.safeReadableDatabase
+            db.query(
+                TABLE_REVOKED_SUCCESSION_CERTIFICATES,
+                arrayOf("cert_hash"),
+                "cert_hash = ?",
+                arrayOf(certHash),
+                null, null, null
+            ).use { cursor ->
+                return cursor.moveToFirst()
+            }
+        } catch (e: Exception) {
+            SafeLog.e(TAG, "isSuccessionCertificateRevoked failed for $certHash", e)
+            return false
+        }
+    }
+
+    fun getAllRevokedCertificates(): List<Pair<String, String>> {
+        val list = mutableListOf<Pair<String, String>>()
+        try {
+            val db = this.safeReadableDatabase
+            db.query(
+                TABLE_REVOKED_SUCCESSION_CERTIFICATES,
+                arrayOf("cert_hash", "group_id"),
+                null, null, null, null, null
+            ).use { cursor ->
+                while (cursor.moveToNext()) {
+                    list.add(cursor.getString(0) to cursor.getString(1))
+                }
+            }
+        } catch (e: Exception) {
+            SafeLog.e(TAG, "getAllRevokedCertificates failed", e)
+        }
+        return list
     }
 
     fun getMessagesForPeerPaged(peerName: String, limit: Int, offset: Int): List<Message> {

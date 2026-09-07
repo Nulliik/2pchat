@@ -384,3 +384,116 @@ func TestConcurrentCallbacksNoDeadlock(t *testing.T) {
 		t.Fatalf("Expected at least %d callback executions, got %d", goroutines*5, totalExecuted)
 	}
 }
+
+func TestManagerSuccessionFlow(t *testing.T) {
+	ownerMgr := &SessionManager{
+		sessions: make(map[string]*crypto.SessionState),
+		torProxy: "127.0.0.1:9050",
+		dialer:   transport.NewAdaptiveDialer("127.0.0.1:9050", false, 5*time.Second),
+	}
+	if err := ownerMgr.Init(); err != nil {
+		t.Fatalf("ownerMgr.Init failed: %v", err)
+	}
+
+	successorMgr := &SessionManager{
+		sessions: make(map[string]*crypto.SessionState),
+		torProxy: "127.0.0.1:9050",
+		dialer:   transport.NewAdaptiveDialer("127.0.0.1:9050", false, 5*time.Second),
+	}
+	if err := successorMgr.Init(); err != nil {
+		t.Fatalf("successorMgr.Init failed: %v", err)
+	}
+
+	successorFP := successorMgr.GetLocalFingerprint()
+	successorPub, err := successorMgr.GetLocalSigningPublicKey()
+	if err != nil {
+		t.Fatalf("GetLocalSigningPublicKey failed: %v", err)
+	}
+
+	groupID := "group-alpha-test"
+
+	// 1. Hook to test sequence counter persistence
+	var lastPersistedSeq uint64
+	var hookMu sync.Mutex
+	ownerMgr.SetHeartbeatPersistHook(func(gid string, seq uint64) {
+		hookMu.Lock()
+		lastPersistedSeq = seq
+		hookMu.Unlock()
+	})
+
+	// 2. Create Succession Certificate (30 days)
+	certJSON, err := ownerMgr.CreateSuccessionCertificate(groupID, successorFP, successorPub, 30)
+	if err != nil {
+		t.Fatalf("CreateSuccessionCertificate failed: %v", err)
+	}
+	if err := ownerMgr.VerifySuccessionCertificate(certJSON); err != nil {
+		t.Fatalf("VerifySuccessionCertificate failed: %v", err)
+	}
+
+	// 3. Create Genesis Heartbeat
+	hb1JSON, err := ownerMgr.CreateOwnerHeartbeat(groupID)
+	if err != nil {
+		t.Fatalf("CreateOwnerHeartbeat 1 failed: %v", err)
+	}
+	hb1, err := crypto.ParseOwnerHeartbeat(hb1JSON)
+	if err != nil {
+		t.Fatalf("ParseOwnerHeartbeat 1 failed: %v", err)
+	}
+	if hb1.Sequence != 1 {
+		t.Fatalf("Expected genesis heartbeat sequence 1, got %d", hb1.Sequence)
+	}
+	if hb1.PreviousEventHash != crypto.GenesisPreviousEventHash {
+		t.Fatalf("Expected genesis previous hash to be empty, got %s", hb1.PreviousEventHash)
+	}
+
+	hookMu.Lock()
+	if lastPersistedSeq != 1 {
+		t.Fatalf("Expected persisted seq 1, got %d", lastPersistedSeq)
+	}
+	hookMu.Unlock()
+
+	// 4. Create Second Heartbeat (Chained)
+	hb2JSON, err := ownerMgr.CreateOwnerHeartbeat(groupID)
+	if err != nil {
+		t.Fatalf("CreateOwnerHeartbeat 2 failed: %v", err)
+	}
+	hb2, err := crypto.ParseOwnerHeartbeat(hb2JSON)
+	if err != nil {
+		t.Fatalf("ParseOwnerHeartbeat 2 failed: %v", err)
+	}
+	if hb2.Sequence != 2 {
+		t.Fatalf("Expected heartbeat 2 sequence 2, got %d", hb2.Sequence)
+	}
+	if hb2.PreviousEventHash != hb1.EventHash() {
+		t.Fatalf("Expected hb2 to chain to hb1 hash %s, got %s", hb1.EventHash(), hb2.PreviousEventHash)
+	}
+
+	// 5. Premature Succession Claim (0 days elapsed < 30 days)
+	claimJSON, err := successorMgr.CreateSuccessionClaim(certJSON, hb2JSON)
+	if err != nil {
+		t.Fatalf("CreateSuccessionClaim failed: %v", err)
+	}
+	err = ownerMgr.VerifySuccessionClaim(certJSON, claimJSON, hb2JSON)
+	if err != crypto.ErrSuccessionPrematureClaim {
+		t.Fatalf("Expected ErrSuccessionPrematureClaim, got %v", err)
+	}
+
+	// 6. Revocation
+	parsedCert, _ := crypto.ParseSuccessionCertificate(certJSON)
+	revJSON, err := ownerMgr.CreateSuccessionRevocation(groupID, parsedCert.CertificateHash())
+	if err != nil {
+		t.Fatalf("CreateSuccessionRevocation failed: %v", err)
+	}
+	if err := ownerMgr.VerifySuccessionRevocation(revJSON); err != nil {
+		t.Fatalf("VerifySuccessionRevocation failed: %v", err)
+	}
+	if !ownerMgr.IsCertificateRevoked(parsedCert.CertificateHash()) {
+		t.Fatalf("Expected certificate to be marked as revoked")
+	}
+
+	// Verify that succession certificate is now rejected as revoked
+	if err := ownerMgr.VerifySuccessionCertificate(certJSON); err != crypto.ErrSuccessionCertRevoked {
+		t.Fatalf("Expected ErrSuccessionCertRevoked, got %v", err)
+	}
+}
+

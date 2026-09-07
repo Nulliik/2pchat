@@ -87,6 +87,11 @@ func init() {
 	bridge.GetManager().SetDiscoverySeqPersistHook(func(seq uint64) {
 		C.callbackOnDiscoverySeqPersist(C.jlong(seq))
 	})
+	bridge.GetManager().SetHeartbeatPersistHook(func(groupID string, seq uint64) {
+		cGroupID := C.CString(groupID)
+		defer C.free(unsafe.Pointer(cGroupID))
+		C.callbackOnHeartbeatSeqPersist(cGroupID, C.jlong(seq))
+	})
 }
 
 func main() {}
@@ -1268,3 +1273,396 @@ func Java_com_example_twopchat_NativeBridge_nativeGetDeterministicTorOnionKey(
 	defer C.free(unsafe.Pointer(cRes))
 	return C.createJString(env, cRes)
 }
+
+//export Java_com_example_twopchat_NativeBridge_nativeCreateSuccessionCertificate
+func Java_com_example_twopchat_NativeBridge_nativeCreateSuccessionCertificate(
+	env *C.JNIEnv,
+	clazz C.jclass,
+	jGroupID C.jstring,
+	jSuccessorFP C.jstring,
+	jSuccessorPub C.jstring,
+	jTimeoutDays C.jint,
+) C.jstring {
+	cGroupID := C.getJStringUTFChars(env, jGroupID)
+	if cGroupID == nil {
+		return C.nullJString()
+	}
+	groupID := C.GoString(cGroupID)
+	C.releaseJStringUTFChars(env, jGroupID, cGroupID)
+
+	cSuccessorFP := C.getJStringUTFChars(env, jSuccessorFP)
+	if cSuccessorFP == nil {
+		return C.nullJString()
+	}
+	successorFP := C.GoString(cSuccessorFP)
+	C.releaseJStringUTFChars(env, jSuccessorFP, cSuccessorFP)
+
+	cSuccessorPub := C.getJStringUTFChars(env, jSuccessorPub)
+	if cSuccessorPub == nil {
+		return C.nullJString()
+	}
+	successorPub := C.GoString(cSuccessorPub)
+	C.releaseJStringUTFChars(env, jSuccessorPub, cSuccessorPub)
+
+	if jTimeoutDays < 7 || jTimeoutDays > 180 {
+		return C.nullJString()
+	}
+
+	certJSON, err := bridge.GetManager().CreateSuccessionCertificate(groupID, successorFP, successorPub, uint32(jTimeoutDays))
+	if err != nil {
+		return C.nullJString()
+	}
+
+	cCert := C.CString(certJSON)
+	defer C.free(unsafe.Pointer(cCert))
+	return C.createJString(env, cCert)
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeVerifySuccessionCertificate
+func Java_com_example_twopchat_NativeBridge_nativeVerifySuccessionCertificate(
+	env *C.JNIEnv,
+	clazz C.jclass,
+	jCertJSON C.jstring,
+) C.jboolean {
+	cCert := C.getJStringUTFChars(env, jCertJSON)
+	if cCert == nil {
+		return C.JNI_FALSE
+	}
+	certJSON := C.GoString(cCert)
+	C.releaseJStringUTFChars(env, jCertJSON, cCert)
+
+	if err := bridge.GetManager().VerifySuccessionCertificate(certJSON); err != nil {
+		return C.JNI_FALSE
+	}
+	return C.JNI_TRUE
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeCreateOwnerHeartbeat
+func Java_com_example_twopchat_NativeBridge_nativeCreateOwnerHeartbeat(
+	env *C.JNIEnv,
+	clazz C.jclass,
+	jGroupID C.jstring,
+) C.jstring {
+	cGroupID := C.getJStringUTFChars(env, jGroupID)
+	if cGroupID == nil {
+		return C.nullJString()
+	}
+	groupID := C.GoString(cGroupID)
+	C.releaseJStringUTFChars(env, jGroupID, cGroupID)
+
+	hbJSON, err := bridge.GetManager().CreateOwnerHeartbeat(groupID)
+	if err != nil {
+		return C.nullJString()
+	}
+
+	cHb := C.CString(hbJSON)
+	defer C.free(unsafe.Pointer(cHb))
+	return C.createJString(env, cHb)
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeVerifyOwnerHeartbeat
+func Java_com_example_twopchat_NativeBridge_nativeVerifyOwnerHeartbeat(
+	env *C.JNIEnv,
+	clazz C.jclass,
+	jHbJSON C.jstring,
+) C.jboolean {
+	cHb := C.getJStringUTFChars(env, jHbJSON)
+	if cHb == nil {
+		return C.JNI_FALSE
+	}
+	hbJSON := C.GoString(cHb)
+	C.releaseJStringUTFChars(env, jHbJSON, cHb)
+
+	if err := bridge.GetManager().VerifyOwnerHeartbeat(hbJSON); err != nil {
+		return C.JNI_FALSE
+	}
+	return C.JNI_TRUE
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeCreateSuccessionRevocation
+func Java_com_example_twopchat_NativeBridge_nativeCreateSuccessionRevocation(
+	env *C.JNIEnv,
+	clazz C.jclass,
+	jGroupID C.jstring,
+	jCertHash C.jstring,
+) C.jstring {
+	cGroupID := C.getJStringUTFChars(env, jGroupID)
+	if cGroupID == nil {
+		return C.nullJString()
+	}
+	groupID := C.GoString(cGroupID)
+	C.releaseJStringUTFChars(env, jGroupID, cGroupID)
+
+	cHash := C.getJStringUTFChars(env, jCertHash)
+	if cHash == nil {
+		return C.nullJString()
+	}
+	certHash := C.GoString(cHash)
+	C.releaseJStringUTFChars(env, jCertHash, cHash)
+
+	revJSON, err := bridge.GetManager().CreateSuccessionRevocation(groupID, certHash)
+	if err != nil {
+		return C.nullJString()
+	}
+
+	cRev := C.CString(revJSON)
+	defer C.free(unsafe.Pointer(cRev))
+	return C.createJString(env, cRev)
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeVerifySuccessionRevocation
+func Java_com_example_twopchat_NativeBridge_nativeVerifySuccessionRevocation(
+	env *C.JNIEnv,
+	clazz C.jclass,
+	jRevJSON C.jstring,
+) C.jboolean {
+	cRev := C.getJStringUTFChars(env, jRevJSON)
+	if cRev == nil {
+		return C.JNI_FALSE
+	}
+	revJSON := C.GoString(cRev)
+	C.releaseJStringUTFChars(env, jRevJSON, cRev)
+
+	if err := bridge.GetManager().VerifySuccessionRevocation(revJSON); err != nil {
+		return C.JNI_FALSE
+	}
+	return C.JNI_TRUE
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeCreateSuccessionClaim
+func Java_com_example_twopchat_NativeBridge_nativeCreateSuccessionClaim(
+	env *C.JNIEnv,
+	clazz C.jclass,
+	jCertJSON C.jstring,
+	jLastHeartbeatJSON C.jstring,
+) C.jstring {
+	cCert := C.getJStringUTFChars(env, jCertJSON)
+	if cCert == nil {
+		return C.nullJString()
+	}
+	certJSON := C.GoString(cCert)
+	C.releaseJStringUTFChars(env, jCertJSON, cCert)
+
+	cHb := C.getJStringUTFChars(env, jLastHeartbeatJSON)
+	if cHb == nil {
+		return C.nullJString()
+	}
+	lastHbJSON := C.GoString(cHb)
+	C.releaseJStringUTFChars(env, jLastHeartbeatJSON, cHb)
+
+	claimJSON, err := bridge.GetManager().CreateSuccessionClaim(certJSON, lastHbJSON)
+	if err != nil {
+		return C.nullJString()
+	}
+
+	cClaim := C.CString(claimJSON)
+	defer C.free(unsafe.Pointer(cClaim))
+	return C.createJString(env, cClaim)
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeVerifySuccessionClaim
+func Java_com_example_twopchat_NativeBridge_nativeVerifySuccessionClaim(
+	env *C.JNIEnv,
+	clazz C.jclass,
+	jCertJSON C.jstring,
+	jClaimJSON C.jstring,
+	jLastHeartbeatJSON C.jstring,
+) C.jboolean {
+	cCert := C.getJStringUTFChars(env, jCertJSON)
+	if cCert == nil {
+		return C.JNI_FALSE
+	}
+	certJSON := C.GoString(cCert)
+	C.releaseJStringUTFChars(env, jCertJSON, cCert)
+
+	cClaim := C.getJStringUTFChars(env, jClaimJSON)
+	if cClaim == nil {
+		return C.JNI_FALSE
+	}
+	claimJSON := C.GoString(cClaim)
+	C.releaseJStringUTFChars(env, jClaimJSON, cClaim)
+
+	cHb := C.getJStringUTFChars(env, jLastHeartbeatJSON)
+	if cHb == nil {
+		return C.JNI_FALSE
+	}
+	lastHbJSON := C.GoString(cHb)
+	C.releaseJStringUTFChars(env, jLastHeartbeatJSON, cHb)
+
+	if err := bridge.GetManager().VerifySuccessionClaim(certJSON, claimJSON, lastHbJSON); err != nil {
+		return C.JNI_FALSE
+	}
+	return C.JNI_TRUE
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeSetHeartbeatSeqCounter
+func Java_com_example_twopchat_NativeBridge_nativeSetHeartbeatSeqCounter(
+	env *C.JNIEnv,
+	clazz C.jclass,
+	jGroupID C.jstring,
+	jSeq C.jlong,
+) {
+	cGroupID := C.getJStringUTFChars(env, jGroupID)
+	if cGroupID == nil {
+		return
+	}
+	groupID := C.GoString(cGroupID)
+	C.releaseJStringUTFChars(env, jGroupID, cGroupID)
+
+	if jSeq >= 0 {
+		bridge.GetManager().SetHeartbeatSeqCounter(groupID, uint64(jSeq))
+	}
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeStoreSuccessionCertificate
+func Java_com_example_twopchat_NativeBridge_nativeStoreSuccessionCertificate(
+	env *C.JNIEnv,
+	clazz C.jclass,
+	jCertJSON C.jstring,
+) C.jboolean {
+	cCert := C.getJStringUTFChars(env, jCertJSON)
+	if cCert == nil {
+		return C.JNI_FALSE
+	}
+	certJSON := C.GoString(cCert)
+	C.releaseJStringUTFChars(env, jCertJSON, cCert)
+
+	cert, err := crypto.ParseSuccessionCertificate(certJSON)
+	if err != nil {
+		return C.JNI_FALSE
+	}
+	if err := cert.Verify(); err != nil {
+		return C.JNI_FALSE
+	}
+	bridge.GetManager().StoreSuccessionCertificate(cert)
+	return C.JNI_TRUE
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeGetSuccessionCertificate
+func Java_com_example_twopchat_NativeBridge_nativeGetSuccessionCertificate(
+	env *C.JNIEnv,
+	clazz C.jclass,
+	jGroupID C.jstring,
+) C.jstring {
+	cGroupID := C.getJStringUTFChars(env, jGroupID)
+	if cGroupID == nil {
+		return C.nullJString()
+	}
+	groupID := C.GoString(cGroupID)
+	C.releaseJStringUTFChars(env, jGroupID, cGroupID)
+
+	cert := bridge.GetManager().GetSuccessionCertificate(groupID)
+	if cert == nil {
+		return C.nullJString()
+	}
+	jsonStr, err := cert.ToJSON()
+	if err != nil {
+		return C.nullJString()
+	}
+	cStr := C.CString(jsonStr)
+	defer C.free(unsafe.Pointer(cStr))
+	return C.createJString(env, cStr)
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeRevokeCertificate
+func Java_com_example_twopchat_NativeBridge_nativeRevokeCertificate(
+	env *C.JNIEnv,
+	clazz C.jclass,
+	jCertHash C.jstring,
+) {
+	cCertHash := C.getJStringUTFChars(env, jCertHash)
+	if cCertHash == nil {
+		return
+	}
+	certHash := C.GoString(cCertHash)
+	C.releaseJStringUTFChars(env, jCertHash, cCertHash)
+
+	bridge.GetManager().RevokeCertificate(certHash)
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeIsCertificateRevoked
+func Java_com_example_twopchat_NativeBridge_nativeIsCertificateRevoked(
+	env *C.JNIEnv,
+	clazz C.jclass,
+	jCertHash C.jstring,
+) C.jboolean {
+	cCertHash := C.getJStringUTFChars(env, jCertHash)
+	if cCertHash == nil {
+		return C.JNI_FALSE
+	}
+	certHash := C.GoString(cCertHash)
+	C.releaseJStringUTFChars(env, jCertHash, cCertHash)
+
+	if bridge.GetManager().IsCertificateRevoked(certHash) {
+		return C.JNI_TRUE
+	}
+	return C.JNI_FALSE
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeSetLastHeartbeatHash
+func Java_com_example_twopchat_NativeBridge_nativeSetLastHeartbeatHash(
+	env *C.JNIEnv,
+	clazz C.jclass,
+	jGroupID C.jstring,
+	jHash C.jstring,
+) {
+	cGroupID := C.getJStringUTFChars(env, jGroupID)
+	if cGroupID == nil {
+		return
+	}
+	groupID := C.GoString(cGroupID)
+	C.releaseJStringUTFChars(env, jGroupID, cGroupID)
+
+	cHash := C.getJStringUTFChars(env, jHash)
+	if cHash == nil {
+		return
+	}
+	hash := C.GoString(cHash)
+	C.releaseJStringUTFChars(env, jHash, cHash)
+
+	bridge.GetManager().StoreHeartbeatHash(groupID, hash)
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeGetLastHeartbeatHash
+func Java_com_example_twopchat_NativeBridge_nativeGetLastHeartbeatHash(
+	env *C.JNIEnv,
+	clazz C.jclass,
+	jGroupID C.jstring,
+) C.jstring {
+	cGroupID := C.getJStringUTFChars(env, jGroupID)
+	if cGroupID == nil {
+		return C.nullJString()
+	}
+	groupID := C.GoString(cGroupID)
+	C.releaseJStringUTFChars(env, jGroupID, cGroupID)
+
+	hash := bridge.GetManager().GetLastHeartbeatHash(groupID)
+	cHash := C.CString(hash)
+	defer C.free(unsafe.Pointer(cHash))
+	return C.createJString(env, cHash)
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeGetCertificateHash
+func Java_com_example_twopchat_NativeBridge_nativeGetCertificateHash(
+	env *C.JNIEnv,
+	clazz C.jclass,
+	jCertJSON C.jstring,
+) C.jstring {
+	cCert := C.getJStringUTFChars(env, jCertJSON)
+	if cCert == nil {
+		return C.nullJString()
+	}
+	certJSON := C.GoString(cCert)
+	C.releaseJStringUTFChars(env, jCertJSON, cCert)
+
+	cert, err := crypto.ParseSuccessionCertificate(certJSON)
+	if err != nil {
+		return C.nullJString()
+	}
+	hash := cert.CertificateHash()
+	cHash := C.CString(hash)
+	defer C.free(unsafe.Pointer(cHash))
+	return C.createJString(env, cHash)
+}
+
+

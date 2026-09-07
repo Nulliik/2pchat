@@ -92,6 +92,7 @@ import com.example.twopchat.group.ui.SYSTEM_MESSAGE_PLACEHOLDER
 import com.example.twopchat.ui.chat.Message
 import com.example.twopchat.data.ChatDatabaseHelper
 import com.example.twopchat.group.ui.PendingGroupInvitesUiState
+import com.example.twopchat.group.ui.SuccessionUiState
 import java.security.MessageDigest
 import java.security.SecureRandom
 import java.io.File
@@ -152,6 +153,7 @@ object GroupChatCoordinator {
     private const val ATTACHMENT_SERVE_WINDOW_MS = 60_000L
     private const val ATTACHMENT_SERVE_BYTES_PER_WINDOW = 32L * 1024L * 1024L
     private const val PENDING_DEPARTURE_PREFIX = "pending_group_departure_"
+    const val MIN_HEARTBEAT_INTERVAL_MS = 3600_000L
 
     @Volatile
     var activeChatsSubTab: Int = 0
@@ -177,6 +179,7 @@ object GroupChatCoordinator {
     private val lastReadReceiptTargets = ConcurrentHashMap<String, String>()
     private val activeGroupChats = ConcurrentHashMap.newKeySet<String>()
     private val activeGroupChatCounts = ConcurrentHashMap<String, java.util.concurrent.atomic.AtomicInteger>()
+    private val successionStates = ConcurrentHashMap<String, MutableStateFlow<SuccessionUiState?>>()
     private data class PendingSync(
         val groupId: String,
         val peerDeviceId: String,
@@ -346,6 +349,44 @@ object GroupChatCoordinator {
                 refreshAllGroups()
                 flushDueOutbox()
                 flushDeclinedInviteResponses()
+
+                // Restore group succession state from SQLite to Go Core
+                try {
+                    val chatDb = ChatDatabaseHelper.getInstance(appContext)
+                    val bridge = P2PBridgeProvider.get(appContext)
+                    db().listGroups().forEach { g ->
+                        val seq = P2PPreferences.getHeartbeatSeqCounter(appContext, g.groupId)
+                        bridge.setHeartbeatSeqCounter(g.groupId, seq)
+                        val s = chatDb.getGroupSuccessionState(g.groupId)
+                        if (s != null) {
+                            if (s.activeCertJson != null) bridge.storeSuccessionCertificate(s.activeCertJson)
+                            if (s.lastHbHash != null) bridge.setLastHeartbeatHash(g.groupId, s.lastHbHash)
+                        }
+                        updateSuccessionState(g.groupId)
+                    }
+                    chatDb.getAllRevokedCertificates().forEach { (hash, _) ->
+                        bridge.revokeCertificate(hash)
+                    }
+                } catch (e: Exception) {
+                    SafeLog.w(TAG, "Failed restoring group succession state", e)
+                }
+
+                // Periodic check for idle owner heartbeat emission (once per 24 hours)
+                activeScope.launch {
+                    while (true) {
+                        delay(MIN_HEARTBEAT_INTERVAL_MS)
+                        runCatching {
+                            db().listGroups().forEach { g ->
+                                if (g.localDeviceId == g.ownerDeviceId) {
+                                    val lastEmit = P2PPreferences.getLastHeartbeatEmitTime(appContext, g.groupId)
+                                    if (System.currentTimeMillis() - lastEmit >= 24 * 3600_000L) {
+                                        maybeEmitHeartbeat(g.groupId, force = false)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             } catch (e: Exception) {
                 SafeLog.e(TAG, "Failed during group coordinator startup initialization", e)
             }
@@ -1765,6 +1806,14 @@ object GroupChatCoordinator {
                 receiveJoinRequest(senderPeerName, json)
             GroupWireProtocol.TYPE_TYPING ->
                 receiveGroupTyping(senderPeerName, json)
+            GroupWireProtocol.TYPE_OWNER_HEARTBEAT ->
+                receiveOwnerHeartbeat(senderPeerName, json)
+            GroupWireProtocol.TYPE_SUCCESSION_CERT ->
+                receiveSuccessionCertificate(senderPeerName, json)
+            GroupWireProtocol.TYPE_SUCCESSION_REVOCATION ->
+                receiveSuccessionRevocation(senderPeerName, json)
+            GroupWireProtocol.TYPE_SUCCESSION_CLAIM ->
+                receiveSuccessionClaim(senderPeerName, json)
         }
     }
 
@@ -4056,6 +4105,9 @@ object GroupChatCoordinator {
         }
         refreshGroup(groupId)
         flushDueOutbox()
+        if (group.localDeviceId == group.ownerDeviceId) {
+            maybeEmitHeartbeat(groupId, force = false)
+        }
         event
     }
 
@@ -5985,7 +6037,8 @@ object GroupChatCoordinator {
                         tr = "Çevrimdışı"
                     )
                 },
-                isCurrentUser = member.deviceId == group.localDeviceId
+                isCurrentUser = member.deviceId == group.localDeviceId,
+                transportFingerprint = member.transportFingerprint.ifBlank { member.deviceId }
             )
         }
         val groupTypingMap = typingMembersByGroup[groupId]
@@ -7889,6 +7942,384 @@ object GroupChatCoordinator {
             )
             else -> body.take(120)
         }
+    }
+
+    fun shouldShowGracePeriodBanner(timeoutDays: Int, lastHeartbeatTimestamp: Long, nowMs: Long): Boolean {
+        if (lastHeartbeatTimestamp <= 0) return false
+        val timeoutMs = timeoutDays * 86400_000L
+        val gracePeriodMs = minOf(7 * 86400_000L, timeoutMs / 4)
+        val timeSinceLastHeartbeat = nowMs - lastHeartbeatTimestamp
+        val timeUntilTimeout = timeoutMs - timeSinceLastHeartbeat
+        return timeUntilTimeout in 0..gracePeriodMs
+    }
+
+    fun shouldShowExpiryWarning(expiresAt: Long, nowMs: Long): Boolean {
+        if (expiresAt <= 0) return false
+        val thirtyDaysMs = 30 * 86400_000L
+        return (expiresAt - nowMs) in 0..thirtyDaysMs
+    }
+
+    fun successionState(groupId: String): StateFlow<SuccessionUiState?> {
+        val flow = successionStates.computeIfAbsent(groupId) { MutableStateFlow(null) }
+        updateSuccessionState(groupId)
+        return flow.asStateFlow()
+    }
+
+    fun updateSuccessionState(groupId: String) {
+        val storage = database ?: return
+        val group = storage.getGroup(groupId) ?: return
+        val context = applicationContext ?: return
+        val bridge = P2PBridgeProvider.get(context)
+        val chatDb = ChatDatabaseHelper.getInstance(context)
+
+        var certJson = bridge.getSuccessionCertificate(groupId)
+        if (certJson == null) {
+            val stored = chatDb.getGroupSuccessionState(groupId)
+            if (stored != null && stored.activeCertJson != null) {
+                certJson = stored.activeCertJson
+                bridge.storeSuccessionCertificate(certJson)
+            }
+        }
+
+        val flow = successionStates.computeIfAbsent(groupId) { MutableStateFlow(null) }
+        if (certJson == null) {
+            flow.value = null
+            return
+        }
+
+        val certObj = runCatching { JSONObject(certJson) }.getOrNull()
+        if (certObj == null) {
+            flow.value = null
+            return
+        }
+
+        val successorFP = certObj.optString("successor")
+        val timeoutDays = certObj.optInt("heartbeat_timeout_days", 30)
+        val expiresAt = certObj.optLong("expires_at", 0L)
+        val certHash = bridge.getCertificateHash(certJson) ?: certObj.optString("signature")
+
+        val isRevoked = bridge.isCertificateRevoked(certHash) || chatDb.isSuccessionCertificateRevoked(certHash)
+        val now = System.currentTimeMillis()
+
+        if (isRevoked || (expiresAt > 0 && now > expiresAt)) {
+            flow.value = null
+            return
+        }
+
+        val lastHbStored = chatDb.getGroupSuccessionState(groupId)?.lastHbJson
+        val lastHbObj = lastHbStored?.let { runCatching { JSONObject(it) }.getOrNull() }
+        val lastHbTime = lastHbObj?.optLong("timestamp", 0L) ?: certObj.optLong("issued_at", 0L)
+
+        val local = runCatching { localIdentity() }.getOrNull()
+        val localFP = local?.fingerprint.orEmpty()
+        val isOwner = (group.localDeviceId == group.ownerDeviceId)
+        val isSuccessor = localFP.isNotBlank() && localFP.equals(successorFP, ignoreCase = true)
+
+        val timeoutMs = timeoutDays * 86400_000L
+        val timeSinceHeartbeat = now - lastHbTime
+        val timeUntilClaimMs = maxOf(0L, timeoutMs - timeSinceHeartbeat)
+        val canClaim = isSuccessor && (timeUntilClaimMs == 0L)
+
+        val showGracePeriod = shouldShowGracePeriodBanner(timeoutDays, lastHbTime, now)
+        val showExpiry = shouldShowExpiryWarning(expiresAt, now)
+
+        flow.value = SuccessionUiState(
+            successorFingerprint = successorFP,
+            timeoutDays = timeoutDays,
+            lastHeartbeatTimestamp = lastHbTime,
+            expiresAt = expiresAt,
+            isOwner = isOwner,
+            isSuccessor = isSuccessor,
+            canClaim = canClaim,
+            timeUntilClaimMs = timeUntilClaimMs,
+            showGracePeriodBanner = showGracePeriod,
+            showExpiryWarning = showExpiry,
+        )
+    }
+
+    fun maybeEmitHeartbeat(groupId: String, force: Boolean = false) {
+        val storage = database ?: return
+        val group = storage.getGroup(groupId) ?: return
+        if (group.localDeviceId != group.ownerDeviceId) return
+
+        val context = applicationContext ?: return
+        val now = System.currentTimeMillis()
+        val lastEmit = P2PPreferences.getLastHeartbeatEmitTime(context, groupId)
+        if (!force && (now - lastEmit < MIN_HEARTBEAT_INTERVAL_MS)) {
+            return
+        }
+
+        val bridge = P2PBridgeProvider.get(context)
+        val hbJson = bridge.createOwnerHeartbeat(groupId) ?: return
+        P2PPreferences.setLastHeartbeatEmitTime(context, groupId, now)
+
+        val hbHash = bridge.getLastHeartbeatHash(groupId)
+        val cert = bridge.getSuccessionCertificate(groupId)
+        val certHash = cert?.let { bridge.getCertificateHash(it) }
+        val isRevoked = certHash?.let { bridge.isCertificateRevoked(it) } ?: false
+
+        val chatDb = ChatDatabaseHelper.getInstance(context)
+        chatDb.saveGroupSuccessionState(
+            groupId = groupId,
+            activeCertJson = cert,
+            lastHbJson = hbJson,
+            lastHbHash = hbHash,
+            isRevoked = isRevoked,
+            updatedAt = now,
+        )
+
+        val frame = JSONObject().apply {
+            put("version", GroupWireProtocol.VERSION)
+            put("type", GroupWireProtocol.TYPE_OWNER_HEARTBEAT)
+            put("group_id", groupId)
+            put("heartbeat_json", hbJson)
+        }
+        broadcastFrame(groupId, "hb-" + UUID.randomUUID().toString(), frame)
+        updateSuccessionState(groupId)
+    }
+
+    fun createSuccessionCertificate(groupId: String, successorFP: String, timeoutDays: Int): Boolean {
+        val storage = database ?: return false
+        val group = storage.getGroup(groupId) ?: return false
+        if (group.localDeviceId != group.ownerDeviceId) return false
+
+        val members = storage.listMembers(groupId)
+        val successorMember = members.firstOrNull { 
+            (it.transportFingerprint.isNotBlank() && it.transportFingerprint.equals(successorFP, ignoreCase = true)) || 
+            it.deviceId.equals(successorFP, ignoreCase = true) 
+        } ?: return false
+        val successorPub = successorMember.signingKeyBase64
+        if (successorPub.isBlank()) return false
+        val successorRealFP = successorMember.transportFingerprint.ifBlank { successorMember.deviceId }
+
+        val context = applicationContext ?: return false
+        val bridge = P2PBridgeProvider.get(context)
+        val certJson = bridge.createSuccessionCertificate(groupId, successorRealFP, successorPub, timeoutDays)
+            ?: return false
+
+        val chatDb = ChatDatabaseHelper.getInstance(context)
+        chatDb.saveGroupSuccessionState(
+            groupId = groupId,
+            activeCertJson = certJson,
+            lastHbJson = null,
+            lastHbHash = null,
+            isRevoked = false,
+        )
+
+        val frame = JSONObject().apply {
+            put("version", GroupWireProtocol.VERSION)
+            put("type", GroupWireProtocol.TYPE_SUCCESSION_CERT)
+            put("group_id", groupId)
+            put("certificate_json", certJson)
+        }
+        broadcastFrame(groupId, "cert-" + UUID.randomUUID().toString(), frame)
+
+        maybeEmitHeartbeat(groupId, force = true)
+        updateSuccessionState(groupId)
+        scope.launch { refreshGroup(groupId) }
+        return true
+    }
+
+    fun revokeSuccessionCertificate(groupId: String): Boolean {
+        val storage = database ?: return false
+        val group = storage.getGroup(groupId) ?: return false
+        if (group.localDeviceId != group.ownerDeviceId) return false
+
+        val context = applicationContext ?: return false
+        val bridge = P2PBridgeProvider.get(context)
+        val chatDb = ChatDatabaseHelper.getInstance(context)
+
+        val certJson = bridge.getSuccessionCertificate(groupId)
+            ?: chatDb.getGroupSuccessionState(groupId)?.activeCertJson
+            ?: return false
+        val certHash = bridge.getCertificateHash(certJson) ?: ""
+
+        val revJson = bridge.createSuccessionRevocation(groupId, certHash) ?: return false
+        chatDb.recordRevokedCertificate(certHash, groupId)
+        val state = chatDb.getGroupSuccessionState(groupId)
+        if (state != null) {
+            chatDb.saveGroupSuccessionState(
+                groupId = groupId,
+                activeCertJson = state.activeCertJson,
+                lastHbJson = state.lastHbJson,
+                lastHbHash = state.lastHbHash,
+                isRevoked = true,
+            )
+        }
+
+        val frame = JSONObject().apply {
+            put("version", GroupWireProtocol.VERSION)
+            put("type", GroupWireProtocol.TYPE_SUCCESSION_REVOCATION)
+            put("group_id", groupId)
+            put("revocation_json", revJson)
+        }
+        broadcastFrame(groupId, "rev-" + UUID.randomUUID().toString(), frame)
+        updateSuccessionState(groupId)
+        scope.launch { refreshGroup(groupId) }
+        return true
+    }
+
+    fun claimSuccession(groupId: String): Boolean {
+        val storage = database ?: return false
+        val group = storage.getGroup(groupId) ?: return false
+        val context = applicationContext ?: return false
+        val bridge = P2PBridgeProvider.get(context)
+        val chatDb = ChatDatabaseHelper.getInstance(context)
+
+        val certJson = bridge.getSuccessionCertificate(groupId)
+            ?: chatDb.getGroupSuccessionState(groupId)?.activeCertJson
+            ?: return false
+        val lastHbJson = chatDb.getGroupSuccessionState(groupId)?.lastHbJson ?: return false
+
+        val claimJson = bridge.createSuccessionClaim(certJson, lastHbJson) ?: return false
+        val isValid = bridge.verifySuccessionClaim(certJson, claimJson, lastHbJson)
+        if (!isValid) return false
+
+        val frame = JSONObject().apply {
+            put("version", GroupWireProtocol.VERSION)
+            put("type", GroupWireProtocol.TYPE_SUCCESSION_CLAIM)
+            put("group_id", groupId)
+            put("claim_json", claimJson)
+        }
+        broadcastFrame(groupId, "claim-" + UUID.randomUUID().toString(), frame)
+
+        val local = localIdentity()
+        applySuccessionClaim(groupId, local.fingerprint)
+        return true
+    }
+
+    private fun broadcastFrame(groupId: String, eventId: String, json: JSONObject) {
+        val storage = database ?: return
+        val group = storage.getGroup(groupId) ?: return
+        val members = storage.listMembers(groupId).filter { it.isParticipating() && it.deviceId != group.localDeviceId }
+        members.forEach { member ->
+            enqueueFrame(groupId, eventId, member.deviceId, json)
+        }
+        scope.launch { flushDueOutbox() }
+    }
+
+    private suspend fun receiveOwnerHeartbeat(senderPeerName: String, json: JSONObject) {
+        val groupId = json.optString("group_id").take(128)
+        val hbJson = json.optString("heartbeat_json")
+        if (groupId.isBlank() || hbJson.isBlank()) return
+        val storage = database ?: return
+        val group = storage.getGroup(groupId) ?: return
+        val context = applicationContext ?: return
+        val bridge = P2PBridgeProvider.get(context)
+        if (!bridge.verifyOwnerHeartbeat(hbJson)) return
+
+        val hbObj = runCatching { JSONObject(hbJson) }.getOrNull() ?: return
+        val chatDb = ChatDatabaseHelper.getInstance(context)
+        val currentState = chatDb.getGroupSuccessionState(groupId)
+        chatDb.saveGroupSuccessionState(
+            groupId = groupId,
+            activeCertJson = currentState?.activeCertJson,
+            lastHbJson = hbJson,
+            lastHbHash = hbObj.optString("previous_event_hash"),
+            isRevoked = currentState?.isRevoked ?: false,
+        )
+        updateSuccessionState(groupId)
+    }
+
+    private suspend fun receiveSuccessionCertificate(senderPeerName: String, json: JSONObject) {
+        val groupId = json.optString("group_id").take(128)
+        val certJson = json.optString("certificate_json")
+        if (groupId.isBlank() || certJson.isBlank()) return
+        val storage = database ?: return
+        val group = storage.getGroup(groupId) ?: return
+        val context = applicationContext ?: return
+        val bridge = P2PBridgeProvider.get(context)
+        if (!bridge.verifySuccessionCertificate(certJson)) return
+        bridge.storeSuccessionCertificate(certJson)
+
+        val chatDb = ChatDatabaseHelper.getInstance(context)
+        val currentState = chatDb.getGroupSuccessionState(groupId)
+        chatDb.saveGroupSuccessionState(
+            groupId = groupId,
+            activeCertJson = certJson,
+            lastHbJson = currentState?.lastHbJson,
+            lastHbHash = currentState?.lastHbHash,
+            isRevoked = false,
+        )
+        updateSuccessionState(groupId)
+    }
+
+    private suspend fun receiveSuccessionRevocation(senderPeerName: String, json: JSONObject) {
+        val groupId = json.optString("group_id").take(128)
+        val revJson = json.optString("revocation_json")
+        if (groupId.isBlank() || revJson.isBlank()) return
+        val storage = database ?: return
+        val group = storage.getGroup(groupId) ?: return
+        val context = applicationContext ?: return
+        val bridge = P2PBridgeProvider.get(context)
+        if (!bridge.verifySuccessionRevocation(revJson)) return
+
+        val revObj = runCatching { JSONObject(revJson) }.getOrNull() ?: return
+        val certHash = revObj.optString("certificate_hash")
+        val chatDb = ChatDatabaseHelper.getInstance(context)
+        chatDb.recordRevokedCertificate(certHash, groupId)
+        val currentState = chatDb.getGroupSuccessionState(groupId)
+        if (currentState != null) {
+            chatDb.saveGroupSuccessionState(
+                groupId = groupId,
+                activeCertJson = currentState.activeCertJson,
+                lastHbJson = currentState.lastHbJson,
+                lastHbHash = currentState.lastHbHash,
+                isRevoked = true,
+            )
+        }
+        updateSuccessionState(groupId)
+    }
+
+    private suspend fun receiveSuccessionClaim(senderPeerName: String, json: JSONObject) {
+        val groupId = json.optString("group_id").take(128)
+        val claimJson = json.optString("claim_json")
+        if (groupId.isBlank() || claimJson.isBlank()) return
+        val storage = database ?: return
+        val group = storage.getGroup(groupId) ?: return
+        val context = applicationContext ?: return
+        val bridge = P2PBridgeProvider.get(context)
+        val chatDb = ChatDatabaseHelper.getInstance(context)
+
+        val certJson = bridge.getSuccessionCertificate(groupId)
+            ?: chatDb.getGroupSuccessionState(groupId)?.activeCertJson
+            ?: return
+        val lastHbJson = chatDb.getGroupSuccessionState(groupId)?.lastHbJson ?: return
+
+        val isValid = bridge.verifySuccessionClaim(certJson, claimJson, lastHbJson)
+        if (!isValid) {
+            return
+        }
+
+        val claimObj = runCatching { JSONObject(claimJson) }.getOrNull() ?: return
+        val claimantFP = claimObj.optString("claimant")
+        applySuccessionClaim(groupId, claimantFP)
+    }
+
+    private fun applySuccessionClaim(groupId: String, claimantFP: String) {
+        val storage = database ?: return
+        val group = storage.getGroup(groupId) ?: return
+        val members = storage.listMembers(groupId)
+        val claimantMember = members.firstOrNull { it.transportFingerprint.equals(claimantFP, ignoreCase = true) }
+            ?: return
+        val oldOwnerMember = members.firstOrNull { it.deviceId == group.ownerDeviceId }
+
+        storage.safeWritableDatabase.execSQL(
+            "UPDATE groups SET owner_device_id = ?, updated_at_ms = ? WHERE group_id = ?",
+            arrayOf<Any>(claimantMember.deviceId, System.currentTimeMillis(), groupId)
+        )
+        storage.safeWritableDatabase.execSQL(
+            "UPDATE group_members SET role = 'OWNER' WHERE group_id = ? AND device_id = ?",
+            arrayOf<Any>(groupId, claimantMember.deviceId)
+        )
+        if (oldOwnerMember != null && oldOwnerMember.deviceId != claimantMember.deviceId) {
+            storage.safeWritableDatabase.execSQL(
+                "UPDATE group_members SET role = 'MEMBER' WHERE group_id = ? AND device_id = ?",
+                arrayOf<Any>(groupId, oldOwnerMember.deviceId)
+            )
+        }
+        updateSuccessionState(groupId)
+        scope.launch { refreshGroup(groupId) }
     }
 
     private fun formatTime(timestampMs: Long): String =

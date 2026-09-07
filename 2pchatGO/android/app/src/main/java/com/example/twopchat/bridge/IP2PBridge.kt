@@ -71,4 +71,20 @@ interface IP2PBridge {
     fun getDiscoverySeqCounter(): Long = 0L
     fun setDiscoveryStrictSignatures(strict: Boolean) {}
     fun getDeterministicTorOnionKey(index: Int): com.example.twopchat.NativeBridge.DeterministicTorOnionKey? = null
+    fun createSuccessionCertificate(groupId: String, successorFP: String, successorPub: String, timeoutDays: Int): String? = null
+    fun verifySuccessionCertificate(certJson: String): Boolean = false
+    fun storeSuccessionCertificate(certJson: String): Boolean = false
+    fun getSuccessionCertificate(groupId: String): String? = null
+    fun createOwnerHeartbeat(groupId: String): String? = null
+    fun verifyOwnerHeartbeat(hbJson: String): Boolean = false
+    fun setHeartbeatSeqCounter(groupId: String, seq: Long) {}
+    fun createSuccessionRevocation(groupId: String, certHash: String): String? = null
+    fun verifySuccessionRevocation(revJson: String): Boolean = false
+    fun revokeCertificate(certHash: String) {}
+    fun isCertificateRevoked(certHash: String): Boolean = false
+    fun createSuccessionClaim(certJson: String, lastHeartbeatJson: String): String? = null
+    fun verifySuccessionClaim(certJson: String, claimJson: String, lastHeartbeatJson: String): Boolean = false
+    fun setLastHeartbeatHash(groupId: String, hash: String) {}
+    fun getLastHeartbeatHash(groupId: String): String? = null
+    fun getCertificateHash(certJson: String): String? = null
 }

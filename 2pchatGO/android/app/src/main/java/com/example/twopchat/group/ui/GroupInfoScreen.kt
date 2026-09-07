@@ -51,6 +51,9 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.runtime.collectAsState
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
@@ -150,6 +153,14 @@ fun GroupInfoScreen(
     var activeFullscreenVideo by remember { mutableStateOf<String?>(null) }
     var isSelectMode by remember { mutableStateOf(false) }
     val selectedItems = remember { mutableStateListOf<GroupTimelineMessage>() }
+
+    val successionState by remember(state.metadata.groupId) {
+        GroupChatCoordinator.successionState(state.metadata.groupId)
+    }.collectAsState(initial = null)
+
+    var showSuccessionSetupDialog by remember { mutableStateOf(false) }
+    var showRevokeSuccessionConfirmation by remember { mutableStateOf(false) }
+    var showClaimSuccessionConfirmation by remember { mutableStateOf(false) }
 
     val primaryColor = MaterialTheme.colorScheme.primary
     val surfaceColor = MaterialTheme.colorScheme.surface
@@ -578,9 +589,34 @@ fun GroupInfoScreen(
                 )
             }
 
+            // Succession Grace Period or Expiry Warning Banner
+            if (successionState?.showGracePeriodBanner == true || successionState?.canClaim == true || successionState?.showExpiryWarning == true) {
+                item(key = "succession_grace_period_banner") {
+                    GracePeriodBanner(
+                        state = successionState!!,
+                        appLanguage = appLanguage,
+                        onClaimClick = { showClaimSuccessionConfirmation = true }
+                    )
+                }
+            }
+
             // Group Info Card (Адрес группы, Описание, Статус верификации) - Matching Direct Chat Profile
             item(key = "info_details_card") {
                 GroupInfoDetailsCard(state.metadata, appLanguage)
+            }
+
+            // Ownership Succession Card
+            item(key = "succession_card") {
+                val isGroupOwner = state.members.firstOrNull { it.isCurrentUser }?.role == GroupRole.OWNER
+                SuccessionManagementCard(
+                    state = successionState,
+                    isGroupOwner = isGroupOwner,
+                    members = state.members,
+                    appLanguage = appLanguage,
+                    onSetupClick = { showSuccessionSetupDialog = true },
+                    onRevokeClick = { showRevokeSuccessionConfirmation = true },
+                    onClaimClick = { showClaimSuccessionConfirmation = true },
+                )
             }
 
             if (state.management.canEditMetadata) {
@@ -1321,6 +1357,102 @@ fun GroupInfoScreen(
             onConfirm = {
                 if (!ownerMustTransfer) controller.leaveGroup(state.metadata.groupId)
                 showLeaveConfirmation = false
+            }
+        )
+    }
+
+    if (showRevokeSuccessionConfirmation) {
+        ConfirmationDialog(
+            title = com.example.twopchat.data.Localizations.tr(
+                appLanguage,
+                ru = "Отозвать преемника?",
+                en = "Revoke Successor?",
+                de = "Nachfolger widerrufen?",
+                es = "¿Revocar sucesor?",
+                fr = "Révoquer le successeur ?",
+                pt = "Revogar sucessor?",
+                tr = "Ardılı geri çek?"
+            ),
+            body = com.example.twopchat.data.Localizations.tr(
+                appLanguage,
+                ru = "Сертификат преемственности будет немедленно отозван. Назначенный участник больше не сможет заявить права на владение группой.",
+                en = "The succession certificate will be revoked immediately. The designated member will no longer be able to claim group ownership.",
+                de = "Das Nachfolgezertifikat wird unverzüglich widerrufen. Das benannte Mitglied kann die Gruppeninhaberschaft nicht mehr beanspruchen.",
+                es = "El certificado de sucesión será revocado de inmediato. El miembro designado ya no podrá reclamar la propiedad del grupo.",
+                fr = "Le certificat de succession sera révoqué immédiatement. Le membre désigné ne pourra plus revendiquer la propriété du groupe.",
+                pt = "O certificado de sucessão será revogado imediatamente. O membro designado não poderá mais reivindicar a posse do grupo.",
+                tr = "Ardıllık sertifikası derhal iptal edilecek. Atanan üye artık grup sahipliğini talep edemeyecektir."
+            ),
+            confirmLabel = com.example.twopchat.data.Localizations.tr(
+                appLanguage,
+                ru = "Отозвать",
+                en = "Revoke",
+                de = "Widerrufen",
+                es = "Revocar",
+                fr = "Révoquer",
+                pt = "Revogar",
+                tr = "Geri Çek"
+            ),
+            confirmTag = "confirm_revoke_succession",
+            appLanguage = appLanguage,
+            onDismiss = { showRevokeSuccessionConfirmation = false },
+            onConfirm = {
+                controller.revokeSuccessor(state.metadata.groupId)
+                showRevokeSuccessionConfirmation = false
+            }
+        )
+    }
+
+    if (showClaimSuccessionConfirmation) {
+        ConfirmationDialog(
+            title = com.example.twopchat.data.Localizations.tr(
+                appLanguage,
+                ru = "Заявить права владения группой?",
+                en = "Claim Group Ownership?",
+                de = "Gruppeneigentum beanspruchen?",
+                es = "¿Reclamar propiedad del grupo?",
+                fr = "Revendiquer la propriété du groupe ?",
+                pt = "Reivindicar a posse do grupo?",
+                tr = "Grup sahipliğini talep et?"
+            ),
+            body = com.example.twopchat.data.Localizations.tr(
+                appLanguage,
+                ru = "Срок неактивности предыдущего владельца истёк. На основании подписанного сертификата преемственности вы станете новым владельцем группы.",
+                en = "The previous owner's inactivity timeout has expired. Based on the signed succession certificate, you will become the new group owner.",
+                de = "Das Inaktivitätszeitlimit des vorherigen Eigentümers ist abgelaufen. Basierend auf dem signierten Nachfolgezertifikat werden Sie der neue Gruppeninhaber.",
+                es = "El tiempo de inactividad del propietario anterior ha expirado. Basado en el certificado de sucesión firmado, usted se convertirá en el nuevo propietario del grupo.",
+                fr = "Le délai d'inactivité du propriétaire précédent a expiré. Sur la base du certificat de succession signé, vous deviendrez le nouveau propriétaire du groupe.",
+                pt = "O período de inatividade do proprietário anterior expirou. Com base no certificado de sucessão assinado, você se tornará o novo proprietário do grupo.",
+                tr = "Önceki sahibin hareketsizlik süresi doldu. İmzalı ardıllık sertifikasına dayanarak yeni grup sahibi siz olacaksınız."
+            ),
+            confirmLabel = com.example.twopchat.data.Localizations.tr(
+                appLanguage,
+                ru = "Стать владельцем",
+                en = "Become Owner",
+                de = "Eigentümer werden",
+                es = "Convertirse en propietario",
+                fr = "Devenir propriétaire",
+                pt = "Tornar-se proprietário",
+                tr = "Sahip Ol"
+            ),
+            confirmTag = "confirm_claim_succession",
+            appLanguage = appLanguage,
+            onDismiss = { showClaimSuccessionConfirmation = false },
+            onConfirm = {
+                controller.claimOwnership(state.metadata.groupId)
+                showClaimSuccessionConfirmation = false
+            }
+        )
+    }
+
+    if (showSuccessionSetupDialog) {
+        SuccessionSetupDialog(
+            members = state.members.filter { !it.isCurrentUser },
+            appLanguage = appLanguage,
+            onDismiss = { showSuccessionSetupDialog = false },
+            onConfirm = { successorFP, timeoutDays ->
+                controller.setupSuccessor(state.metadata.groupId, successorFP, timeoutDays)
+                showSuccessionSetupDialog = false
             }
         )
     }
@@ -3505,5 +3637,670 @@ private fun ModalActionButton(
                 modifier = Modifier.weight(1f)
             )
         }
+    }
+}
+
+@Composable
+private fun GracePeriodBanner(
+    state: SuccessionUiState,
+    appLanguage: String,
+    onClaimClick: () -> Unit
+) {
+    val isClaimReady = state.canClaim
+    val bannerBg = if (isClaimReady) Color(0xFF331414) else Color(0xFF2E2208)
+    val bannerBorder = if (isClaimReady) Color(0xFFE53935) else Color(0xFFFFA000)
+    val bannerTextColor = if (isClaimReady) Color(0xFFFF8A80) else Color(0xFFFFD54F)
+
+    Surface(
+        color = bannerBg,
+        shape = RoundedCornerShape(14.dp),
+        border = BorderStroke(1.dp, bannerBorder),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 6.dp)
+            .testTag("grace_period_banner")
+    ) {
+        Column(modifier = Modifier.padding(14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_shield_status),
+                    contentDescription = null,
+                    tint = bannerBorder,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = if (isClaimReady) {
+                        com.example.twopchat.data.Localizations.tr(
+                            appLanguage,
+                            ru = "Владение группой доступно к передаче",
+                            en = "Group Ownership Available to Claim",
+                            de = "Gruppeneigentum kann beansprucht werden",
+                            es = "Propiedad del grupo disponible para reclamar",
+                            fr = "Propriété du groupe disponible à revendiquer",
+                            pt = "Posse do grupo disponível para reivindicar",
+                            tr = "Grup Sahipliği Talep Edilebilir"
+                        )
+                    } else {
+                        com.example.twopchat.data.Localizations.tr(
+                            appLanguage,
+                            ru = "Период ожидания активности владельца",
+                            en = "Owner Inactivity Grace Period",
+                            de = "Schonfrist für Inaktivität des Eigentümers",
+                            es = "Período de gracia por inactividad del propietario",
+                            fr = "Période de grâce d'inactivité du propriétaire",
+                            pt = "Período de carência de inatividade do proprietário",
+                            tr = "Sahip Hareketsizliği Ek Süresi"
+                        )
+                    },
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp,
+                    color = bannerBorder
+                )
+            }
+            Spacer(Modifier.height(6.dp))
+            val messageText = if (isClaimReady) {
+                com.example.twopchat.data.Localizations.tr(
+                    appLanguage,
+                    ru = "Владелец группы не проявлял активности дольше установленного таймаута. Назначенный преемник может заявить права на группу.",
+                    en = "Group owner has been inactive beyond the configured timeout. Designated successor can now claim group ownership.",
+                    de = "Der Gruppeninhaber war über das konfigurierte Zeitlimit hinaus inaktiv. Der benannte Nachfolger kann nun das Eigentum beanspruchen.",
+                    es = "El propietario del grupo ha estado inactivo más allá del tiempo configurado. El sucesor designado ahora puede reclamar la propiedad.",
+                    fr = "Le propriétaire du groupe est resté inactif au-delà du délai configuré. Le successeur désigné peut maintenant revendiquer la propriété.",
+                    pt = "O proprietário do grupo ficou inativo além do tempo limite configurado. O sucessor designado agora pode reivindicar a posse.",
+                    tr = "Grup sahibi yapılandırılan sürenin ötesinde hareketsiz kaldı. Atanan ardıl artık grup sahipliğini talep edebilir."
+                )
+            } else {
+                val remainingStr = formatRemainingTime(state.timeUntilClaimMs, appLanguage)
+                com.example.twopchat.data.Localizations.tr(
+                    appLanguage,
+                    ru = "Владелец группы долго не проявлял активности. До права передачи владения осталось: $remainingStr",
+                    en = "Group owner has been inactive for a long time. Time until succession eligibility: $remainingStr",
+                    de = "Der Gruppeninhaber war längere Zeit inaktiv. Zeit bis zur Nachfolgeberechtigung: $remainingStr",
+                    es = "El propietario del grupo ha estado inactivo durante mucho tiempo. Tiempo hasta la elegibilidad: $remainingStr",
+                    fr = "Le propriétaire du groupe a été inactif pendant longtemps. Temps avant éligibilité: $remainingStr",
+                    pt = "O proprietário do grupo está inativo há muito tempo. Tempo até a elegibilidade: $remainingStr",
+                    tr = "Grup sahibi uzun süredir etkin değil. Ardıllık hakkına kalan süre: $remainingStr"
+                )
+            }
+            Text(
+                text = messageText,
+                fontSize = 12.sp,
+                color = bannerTextColor
+            )
+
+            if (state.isSuccessor && isClaimReady) {
+                Spacer(Modifier.height(10.dp))
+                Button(
+                    onClick = onClaimClick,
+                    colors = ButtonDefaults.buttonColors(containerColor = bannerBorder),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.fillMaxWidth().testTag("claim_ownership_banner_button")
+                ) {
+                    Text(
+                        com.example.twopchat.data.Localizations.tr(
+                            appLanguage,
+                            ru = "Заявить права владения",
+                            en = "Claim Ownership",
+                            de = "Eigentum beanspruchen",
+                            es = "Reclamar propiedad",
+                            fr = "Revendiquer la propriété",
+                            pt = "Reivindicar posse",
+                            tr = "Sahipliği Talep Et"
+                        ),
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SuccessionManagementCard(
+    state: SuccessionUiState?,
+    isGroupOwner: Boolean,
+    members: List<GroupMember>,
+    appLanguage: String,
+    onSetupClick: () -> Unit,
+    onRevokeClick: () -> Unit,
+    onClaimClick: () -> Unit,
+) {
+    val surfaceColor = MaterialTheme.colorScheme.surface
+    val onSurfaceColor = MaterialTheme.colorScheme.onSurface
+    val onSurfaceVariant = MaterialTheme.colorScheme.onSurfaceVariant
+    val primaryColor = MaterialTheme.colorScheme.primary
+
+    Surface(
+        color = surfaceColor,
+        shape = RoundedCornerShape(14.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp)
+            .testTag("group_succession_card")
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_shield_status),
+                    contentDescription = null,
+                    tint = primaryColor,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(Modifier.width(10.dp))
+                Text(
+                    text = com.example.twopchat.data.Localizations.tr(
+                        appLanguage,
+                        ru = "Передача прав (Преемник)",
+                        en = "Ownership Succession",
+                        de = "Eigentumsnachfolge",
+                        es = "Sucesión de propiedad",
+                        fr = "Succession de propriété",
+                        pt = "Sucessão de posse",
+                        tr = "Sahiplik Devri"
+                    ),
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = onSurfaceColor
+                )
+            }
+
+            Spacer(Modifier.height(8.dp))
+
+            if (state == null) {
+                Text(
+                    text = if (isGroupOwner) {
+                        com.example.twopchat.data.Localizations.tr(
+                            appLanguage,
+                            ru = "Назначьте преемника владения группой. Если ваше устройство будет утеряно или неактивно, преемник сможет заявить права на группу.",
+                            en = "Designate a successor for group ownership. If your device is lost or inactive, the successor can claim group ownership.",
+                            de = "Benennen Sie einen Nachfolger für das Gruppeneigentum. Wenn Ihr Gerät verloren geht oder inaktiv ist, kann der Nachfolger das Eigentum beanspruchen.",
+                            es = "Designe un sucesor para la propiedad del grupo. Si su dispositivo se pierde o queda inactivo, el sucesor podrá reclamar el grupo.",
+                            fr = "Désignez un successeur pour la propriété du groupe. Si votre appareil est perdu ou inactif, le successeur pourra revendiquer le groupe.",
+                            pt = "Designe um sucessor para a posse do grupo. Se seu dispositivo for perdido ou ficar inativo, o sucessor poderá reivindicar o grupo.",
+                            tr = "Grup sahipliği için bir ardıl belirleyin. Cihazınız kaybolursa veya hareketsiz kalırsa ardıl sahipliği talep edebilir."
+                        )
+                    } else {
+                        com.example.twopchat.data.Localizations.tr(
+                            appLanguage,
+                            ru = "Преемник владения для данной группы не назначен владельцем.",
+                            en = "No ownership successor has been designated by the group owner.",
+                            de = "Vom Gruppeninhaber wurde kein Eigentumsnachfolger benannt.",
+                            es = "El propietario del grupo no ha designado un sucesor de propiedad.",
+                            fr = "Aucun successeur de propriété n'a été désigné par le propriétaire du groupe.",
+                            pt = "Nenhum sucessor de posse foi designado pelo proprietário do grupo.",
+                            tr = "Grup sahibi tarafından herhangi bir sahiplik ardılı atanmadı."
+                        )
+                    },
+                    fontSize = 12.sp,
+                    color = onSurfaceVariant
+                )
+
+                if (isGroupOwner) {
+                    Spacer(Modifier.height(12.dp))
+                    Button(
+                        onClick = onSetupClick,
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.fillMaxWidth().testTag("setup_succession_button")
+                    ) {
+                        Text(
+                            com.example.twopchat.data.Localizations.tr(
+                                appLanguage,
+                                ru = "Назначить преемника",
+                                en = "Designate Successor",
+                                de = "Nachfolger benennen",
+                                es = "Designar sucesor",
+                                fr = "Désigner un successeur",
+                                pt = "Designar sucessor",
+                                tr = "Ardıl Belirle"
+                            ),
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+            } else {
+                val successorMember = members.firstOrNull {
+                    it.transportFingerprint.equals(state.successorFingerprint, ignoreCase = true) ||
+                    it.memberId.equals(state.successorFingerprint, ignoreCase = true)
+                }
+                val successorName = successorMember?.displayName
+                    ?: (state.successorFingerprint.take(12) + "...")
+
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text(
+                        com.example.twopchat.data.Localizations.tr(
+                            appLanguage,
+                            ru = "Преемник:",
+                            en = "Successor:",
+                            de = "Nachfolger:",
+                            es = "Sucesor:",
+                            fr = "Successeur :",
+                            pt = "Sucessor:",
+                            tr = "Ardıl:"
+                        ),
+                        fontSize = 13.sp,
+                        color = onSurfaceVariant
+                    )
+                    Text(
+                        text = successorName,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = onSurfaceColor
+                    )
+                }
+
+                Spacer(Modifier.height(4.dp))
+
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text(
+                        com.example.twopchat.data.Localizations.tr(
+                            appLanguage,
+                            ru = "Срок неактивности:",
+                            en = "Inactivity Timeout:",
+                            de = "Inaktivitätslimit:",
+                            es = "Tiempo de inactividad:",
+                            fr = "Délai d'inactivité :",
+                            pt = "Tempo limite de inatividade:",
+                            tr = "Hareketsizlik Süresi:"
+                        ),
+                        fontSize = 13.sp,
+                        color = onSurfaceVariant
+                    )
+                    Text(
+                        text = "${state.timeoutDays} " + com.example.twopchat.data.Localizations.tr(
+                            appLanguage,
+                            ru = "дн.",
+                            en = "days",
+                            de = "T.",
+                            es = "días",
+                            fr = "j.",
+                            pt = "dias",
+                            tr = "gün"
+                        ),
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = onSurfaceColor
+                    )
+                }
+
+                Spacer(Modifier.height(4.dp))
+
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text(
+                        com.example.twopchat.data.Localizations.tr(
+                            appLanguage,
+                            ru = "Последняя активность:",
+                            en = "Last Activity:",
+                            de = "Letzte Aktivität:",
+                            es = "Última actividad:",
+                            fr = "Dernière activité :",
+                            pt = "Última atividade:",
+                            tr = "Son Etkinlik:"
+                        ),
+                        fontSize = 13.sp,
+                        color = onSurfaceVariant
+                    )
+                    Text(
+                        text = formatLastActivity(state.lastHeartbeatTimestamp, appLanguage),
+                        fontSize = 13.sp,
+                        color = onSurfaceColor
+                    )
+                }
+
+                if (isGroupOwner) {
+                    Spacer(Modifier.height(12.dp))
+                    OutlinedButton(
+                        onClick = onRevokeClick,
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.5f)),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.fillMaxWidth().testTag("revoke_succession_button")
+                    ) {
+                        Text(
+                            com.example.twopchat.data.Localizations.tr(
+                                appLanguage,
+                                ru = "Отозвать сертификат преемника",
+                                en = "Revoke Successor Certificate",
+                                de = "Nachfolgezertifikat widerrufen",
+                                es = "Revocar certificado de sucesor",
+                                fr = "Révoquer le certificat de successeur",
+                                pt = "Revogar certificado de sucessor",
+                                tr = "Ardıllık Sertifikasını İptal Et"
+                            ),
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                } else if (state.isSuccessor) {
+                    Spacer(Modifier.height(10.dp))
+                    if (state.canClaim) {
+                        Button(
+                            onClick = onClaimClick,
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE53935)),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth().testTag("claim_ownership_card_button")
+                        ) {
+                            Text(
+                                com.example.twopchat.data.Localizations.tr(
+                                    appLanguage,
+                                    ru = "Заявить права владения группой",
+                                    en = "Claim Group Ownership",
+                                    de = "Gruppeneigentum beanspruchen",
+                                    es = "Reclamar propiedad del grupo",
+                                    fr = "Revendiquer la propriété du groupe",
+                                    pt = "Reivindicar a posse do grupo",
+                                    tr = "Grup Sahipliğini Talep Et"
+                                ),
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+                        }
+                    } else {
+                        val remainingStr = formatRemainingTime(state.timeUntilClaimMs, appLanguage)
+                        Text(
+                            text = com.example.twopchat.data.Localizations.tr(
+                                appLanguage,
+                                ru = "Вы являетесь назначенным преемником. До возможности заявить права осталось: $remainingStr",
+                                en = "You are the designated successor. Time until claim eligibility: $remainingStr",
+                                de = "Sie sind der benannte Nachfolger. Zeit bis zur Berechtigung: $remainingStr",
+                                es = "Usted es el sucesor designado. Tiempo hasta la elegibilidad: $remainingStr",
+                                fr = "Vous êtes le successeur désigné. Temps avant éligibilité : $remainingStr",
+                                pt = "Você é o sucessor designado. Tempo até a elegibilidade: $remainingStr",
+                                tr = "Atanan ardıl sizsiniz. Talep hakkına kalan süre: $remainingStr"
+                            ),
+                            fontSize = 12.sp,
+                            color = primaryColor
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SuccessionSetupDialog(
+    members: List<GroupMember>,
+    appLanguage: String,
+    onDismiss: () -> Unit,
+    onConfirm: (successorFP: String, timeoutDays: Int) -> Unit
+) {
+    var selectedMember by remember { mutableStateOf(members.firstOrNull()) }
+    var selectedTimeoutDays by remember { mutableIntStateOf(30) }
+    val timeoutOptions = listOf(7, 14, 30, 60, 90, 180)
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                com.example.twopchat.data.Localizations.tr(
+                    appLanguage,
+                    ru = "Назначить преемника владения",
+                    en = "Designate Ownership Successor",
+                    de = "Eigentumsnachfolger benennen",
+                    es = "Designar sucesor de propiedad",
+                    fr = "Désigner un successeur de propriété",
+                    pt = "Designar sucessor de posse",
+                    tr = "Sahiplik Ardılı Belirle"
+                ),
+                fontWeight = FontWeight.Bold
+            )
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                if (members.isEmpty()) {
+                    Text(
+                        com.example.twopchat.data.Localizations.tr(
+                            appLanguage,
+                            ru = "В группе нет других участников для назначения преемником. Сначала пригласите участников.",
+                            en = "There are no other members in the group to designate as successor. Invite members first.",
+                            de = "Es gibt keine anderen Mitglieder in der Gruppe, die als Nachfolger benannt werden können. Laden Sie zuerst Mitglieder ein.",
+                            es = "No hay otros miembros en el grupo para designar como sucesor. Invite a miembros primero.",
+                            fr = "Il n'y a pas d'autres membres dans le groupe à désigner comme successeur. Invitez d'abord des membres.",
+                            pt = "Não há outros membros no grupo para designar como sucessor. Convide membros primeiro.",
+                            tr = "Grupta ardıl olarak belirlenecek başka üye yok. Önce üyeleri davet edin."
+                        ),
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                } else {
+                    Text(
+                        com.example.twopchat.data.Localizations.tr(
+                            appLanguage,
+                            ru = "Выберите участника:",
+                            en = "Select a member:",
+                            de = "Mitglied auswählen:",
+                            es = "Seleccione un miembro:",
+                            fr = "Sélectionnez un membre :",
+                            pt = "Selecione um membro:",
+                            tr = "Bir üye seçin:"
+                        ),
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        members.forEach { m ->
+                            val isSelected = (selectedMember?.memberId == m.memberId)
+                            Surface(
+                                color = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f) else Color.Transparent,
+                                shape = RoundedCornerShape(8.dp),
+                                border = if (isSelected) BorderStroke(1.dp, MaterialTheme.colorScheme.primary) else null,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { selectedMember = m }
+                                    .padding(horizontal = 8.dp, vertical = 6.dp)
+                                    .testTag("successor_candidate_${m.memberId}")
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        painter = painterResource(if (isSelected) R.drawable.ic_check_bold else R.drawable.ic_msg_check),
+                                        contentDescription = null,
+                                        tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                    Column {
+                                        Text(m.displayName, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                        val fpText = m.transportFingerprint.ifBlank { m.memberId }
+                                        Text(fpText.take(16) + if (fpText.length > 16) "..." else "", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+                    Text(
+                        com.example.twopchat.data.Localizations.tr(
+                            appLanguage,
+                            ru = "Срок неактивности до передачи:",
+                            en = "Inactivity timeout before transfer:",
+                            de = "Inaktivitätslimit vor Übertragung:",
+                            es = "Tiempo de inactividad antes de transferir:",
+                            fr = "Délai d'inactivité avant transfert :",
+                            pt = "Tempo de inatividade antes da transferência:",
+                            tr = "Devir öncesi hareketsizlik süresi:"
+                        ),
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        timeoutOptions.forEach { days ->
+                            val isSelected = (selectedTimeoutDays == days)
+                            val label = when (days) {
+                                7 -> com.example.twopchat.data.Localizations.tr(appLanguage, ru = "7 дн.", en = "7 d.", de = "7 T.", es = "7 d.", fr = "7 j.", pt = "7 d.", tr = "7 g.")
+                                14 -> com.example.twopchat.data.Localizations.tr(appLanguage, ru = "14 дн.", en = "14 d.", de = "14 T.", es = "14 d.", fr = "14 j.", pt = "14 d.", tr = "14 g.")
+                                30 -> com.example.twopchat.data.Localizations.tr(appLanguage, ru = "30 дн. (1 мес)", en = "30 d. (1 mo)", de = "30 T. (1 M)", es = "30 d. (1 m)", fr = "30 j. (1 m)", pt = "30 d. (1 m)", tr = "30 g. (1 ay)")
+                                60 -> com.example.twopchat.data.Localizations.tr(appLanguage, ru = "60 дн. (2 мес)", en = "60 d. (2 mo)", de = "60 T. (2 M)", es = "60 d. (2 m)", fr = "60 j. (2 m)", pt = "60 d. (2 m)", tr = "60 g. (2 ay)")
+                                90 -> com.example.twopchat.data.Localizations.tr(appLanguage, ru = "90 дн. (3 мес)", en = "90 d. (3 mo)", de = "90 T. (3 M)", es = "90 d. (3 m)", fr = "90 j. (3 m)", pt = "90 d. (3 m)", tr = "90 g. (3 ay)")
+                                180 -> com.example.twopchat.data.Localizations.tr(appLanguage, ru = "180 дн. (6 мес)", en = "180 d. (6 mo)", de = "180 T. (6 M)", es = "180 d. (6 m)", fr = "180 j. (6 m)", pt = "180 d. (6 m)", tr = "180 g. (6 ay)")
+                                else -> "$days"
+                            }
+                            FilterChip(
+                                selected = isSelected,
+                                onClick = { selectedTimeoutDays = days },
+                                label = { Text(label, fontSize = 12.sp) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = MaterialTheme.colorScheme.primary,
+                                    selectedLabelColor = Color.White
+                                ),
+                                modifier = Modifier.testTag("timeout_chip_$days")
+                            )
+                        }
+                    }
+
+                    Text(
+                        text = com.example.twopchat.data.Localizations.tr(
+                            appLanguage,
+                            ru = "Каждое ваше сообщение в группе отправляет защищённый сигнал активности (heartbeat). Преемник сможет заявить права владения только если сигналы отсутствуют указанный срок.",
+                            en = "Each message you send emits a cryptographically signed heartbeat. The successor can only claim ownership if no heartbeats occur for the specified duration.",
+                            de = "Jede Nachricht, die Sie senden, sendet ein kryptografisch signiertes Lebenszeichen. Der Nachfolger kann das Eigentum nur beanspruchen, wenn für die angegebene Dauer keine Signale vorliegen.",
+                            es = "Cada mensaje que envía emite una señal de actividad firmada criptográficamente. El sucesor solo puede reclamar la propiedad si no hay señales durante el período.",
+                            fr = "Chaque message envoyé émet un signal d'activité signé cryptographiquement. Le successeur ne pourra revendiquer la propriété que si aucun signal n'apparaît pendant le délai.",
+                            pt = "Cada mensagem enviada emite um sinal de atividade assinado criptograficamente. O sucessor só poderá reivindicar a posse se não houver sinais durante o período.",
+                            tr = "Gönderdiğiniz her mesaj kriptografik olarak imzalanmış bir etkinlik sinyali gönderir. Ardıl, yalnızca belirtilen süre boyunca sinyal alınmazsa hak talep edebilir."
+                        ),
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            if (members.isNotEmpty()) {
+                TextButton(
+                    enabled = (selectedMember != null),
+                    onClick = {
+                        val m = selectedMember ?: return@TextButton
+                        val fp = m.transportFingerprint.ifBlank { m.memberId }
+                        onConfirm(fp, selectedTimeoutDays)
+                    },
+                    modifier = Modifier.testTag("confirm_setup_succession")
+                ) {
+                    Text(
+                        com.example.twopchat.data.Localizations.tr(
+                            appLanguage,
+                            ru = "Назначить",
+                            en = "Designate",
+                            de = "Benennen",
+                            es = "Designar",
+                            fr = "Désigner",
+                            pt = "Designar",
+                            tr = "Belirle"
+                        ),
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(
+                    com.example.twopchat.data.Localizations.tr(
+                        appLanguage,
+                        ru = "Отмена",
+                        en = "Cancel",
+                        de = "Abbrechen",
+                        es = "Cancelar",
+                        fr = "Annuler",
+                        pt = "Cancelar",
+                        tr = "İptal"
+                    )
+                )
+            }
+        },
+        containerColor = MaterialTheme.colorScheme.surface,
+        shape = RoundedCornerShape(16.dp)
+    )
+}
+
+private fun formatRemainingTime(remainingMs: Long, appLanguage: String): String {
+    val totalHours = (remainingMs / 3600_000L).coerceAtLeast(0L)
+    val days = totalHours / 24L
+    val hours = totalHours % 24L
+    return when {
+        days > 0 -> com.example.twopchat.data.Localizations.tr(
+            appLanguage,
+            ru = "$days дн. $hours ч.",
+            en = "$days d. $hours h.",
+            de = "$days T. $hours Std.",
+            es = "$days d. $hours h.",
+            fr = "$days j. $hours h.",
+            pt = "$days d. $hours h.",
+            tr = "$days g. $hours sa."
+        )
+        else -> com.example.twopchat.data.Localizations.tr(
+            appLanguage,
+            ru = "$hours ч.",
+            en = "$hours h.",
+            de = "$hours Std.",
+            es = "$hours h.",
+            fr = "$hours h.",
+            pt = "$hours h.",
+            tr = "$hours sa."
+        )
+    }
+}
+
+private fun formatLastActivity(timestamp: Long?, appLanguage: String): String {
+    if (timestamp == null || timestamp <= 0) {
+        return com.example.twopchat.data.Localizations.tr(
+            appLanguage,
+            ru = "Нет данных",
+            en = "No data",
+            de = "Keine Daten",
+            es = "Sin datos",
+            fr = "Aucune donnée",
+            pt = "Sem dados",
+            tr = "Veri yok"
+        )
+    }
+    val diffMs = System.currentTimeMillis() - timestamp
+    val hours = diffMs / 3600_000L
+    val days = hours / 24L
+    return when {
+        hours < 1 -> com.example.twopchat.data.Localizations.tr(
+            appLanguage,
+            ru = "Менее часа назад",
+            en = "Less than an hour ago",
+            de = "Vor weniger als einer Stunde",
+            es = "Hace menos de una hora",
+            fr = "Il y a moins d'une heure",
+            pt = "Menos de uma hora atrás",
+            tr = "Bir saatten az önce"
+        )
+        days < 1 -> com.example.twopchat.data.Localizations.tr(
+            appLanguage,
+            ru = "$hours ч. назад",
+            en = "$hours h. ago",
+            de = "Vor $hours Std.",
+            es = "Hace $hours h.",
+            fr = "Il y a $hours h.",
+            pt = "Há $hours h.",
+            tr = "$hours sa. önce"
+        )
+        else -> com.example.twopchat.data.Localizations.tr(
+            appLanguage,
+            ru = "$days дн. назад",
+            en = "$days d. ago",
+            de = "Vor $days T.",
+            es = "Hace $days d.",
+            fr = "Il y a $days j.",
+            pt = "Há $days d.",
+            tr = "$days g. önce"
+        )
     }
 }

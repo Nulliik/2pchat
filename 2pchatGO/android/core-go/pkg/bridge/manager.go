@@ -51,6 +51,11 @@ type SessionManager struct {
 	lastSeenDiscoverySeq sync.Map // map[string]uint64
 	seqLookupHook        func(fp string) uint64
 	seqUpsertHook        func(fp string, seq uint64)
+	heartbeatSeqCounters sync.Map // map[string]*uint64 (groupID -> counter)
+	activeCertificates   sync.Map // map[string]*crypto.SuccessionCertificate (groupID -> cert)
+	revokedCertificates  sync.Map // map[string]bool (certHash -> revoked)
+	lastHeartbeatHashes  sync.Map // map[string]string (groupID -> last eventHash)
+	heartbeatPersistHook func(groupID string, seq uint64)
 }
 
 func (m *SessionManager) SetTrackerStatusCallback(callback discovery.TrackerStatusCallback) {
@@ -1503,5 +1508,314 @@ func (m *SessionManager) GetDeterministicTorOnionKey(index uint32) (string, []by
 
 	return crypto.DeriveTorOnionKey(seed, index)
 }
+
+// SetHeartbeatPersistHook registers a callback invoked when a group heartbeat sequence advances.
+func (m *SessionManager) SetHeartbeatPersistHook(hook func(groupID string, seq uint64)) {
+	m.mu.Lock()
+	m.heartbeatPersistHook = hook
+	m.mu.Unlock()
+}
+
+// SetHeartbeatSeqCounter initializes or restores the heartbeat sequence counter for a group.
+func (m *SessionManager) SetHeartbeatSeqCounter(groupID string, seq uint64) {
+	val, _ := m.heartbeatSeqCounters.LoadOrStore(groupID, new(uint64))
+	counter := val.(*uint64)
+	atomic.StoreUint64(counter, seq)
+}
+
+func (m *SessionManager) getNextHeartbeatSeq(groupID string) uint64 {
+	val, _ := m.heartbeatSeqCounters.LoadOrStore(groupID, new(uint64))
+	counter := val.(*uint64)
+	newSeq := atomic.AddUint64(counter, 1)
+
+	m.mu.RLock()
+	hook := m.heartbeatPersistHook
+	m.mu.RUnlock()
+	if hook != nil {
+		hook(groupID, newSeq)
+	}
+	return newSeq
+}
+
+// StoreSuccessionCertificate stores an active certificate, resolving multiple certificates by IssuedAt.
+func (m *SessionManager) StoreSuccessionCertificate(cert *crypto.SuccessionCertificate) {
+	if cert == nil || cert.GroupID == "" {
+		return
+	}
+	if existingVal, ok := m.activeCertificates.Load(cert.GroupID); ok {
+		if existing, ok := existingVal.(*crypto.SuccessionCertificate); ok && existing != nil {
+			if cert.IssuedAt >= existing.IssuedAt {
+				m.revokedCertificates.Store(existing.CertificateHash(), true)
+			} else {
+				return
+			}
+		}
+	}
+	m.activeCertificates.Store(cert.GroupID, cert)
+}
+
+// GetSuccessionCertificate retrieves the active succession certificate for a group.
+func (m *SessionManager) GetSuccessionCertificate(groupID string) *crypto.SuccessionCertificate {
+	if val, ok := m.activeCertificates.Load(groupID); ok {
+		if cert, ok := val.(*crypto.SuccessionCertificate); ok {
+			return cert
+		}
+	}
+	return nil
+}
+
+// RevokeCertificate marks a certificate hash as permanently revoked.
+func (m *SessionManager) RevokeCertificate(certHash string) {
+	if certHash != "" {
+		m.revokedCertificates.Store(certHash, true)
+	}
+}
+
+// IsCertificateRevoked checks whether a certificate hash is revoked.
+func (m *SessionManager) IsCertificateRevoked(certHash string) bool {
+	if val, ok := m.revokedCertificates.Load(certHash); ok {
+		if revoked, ok := val.(bool); ok {
+			return revoked
+		}
+	}
+	return false
+}
+
+// GetLastHeartbeatHash returns the last seen heartbeat event hash for a group, or GenesisPreviousEventHash ("").
+func (m *SessionManager) GetLastHeartbeatHash(groupID string) string {
+	if val, ok := m.lastHeartbeatHashes.Load(groupID); ok {
+		if h, ok := val.(string); ok {
+			return h
+		}
+	}
+	return crypto.GenesisPreviousEventHash
+}
+
+// StoreHeartbeatHash stores the latest confirmed heartbeat event hash for a group.
+func (m *SessionManager) StoreHeartbeatHash(groupID string, hash string) {
+	if groupID != "" {
+		m.lastHeartbeatHashes.Store(groupID, hash)
+	}
+}
+
+// CreateSuccessionCertificate generates and signs a succession certificate using local owner identity.
+func (m *SessionManager) CreateSuccessionCertificate(groupID, successorFP, successorPub string, timeoutDays uint32) (string, error) {
+	m.mu.RLock()
+	id := m.identity
+	m.mu.RUnlock()
+
+	if id == nil || id.Signing == nil {
+		return "", errors.New("identity not initialized")
+	}
+
+	ownerFP := crypto.Fingerprint(id.Public.Bytes())
+	ownerPub := base64.StdEncoding.EncodeToString(id.Verify)
+	now := time.Now().UnixMilli()
+
+	cert := &crypto.SuccessionCertificate{
+		Type:                   "succession_certificate_v1",
+		GroupID:                groupID,
+		CurrentOwner:           ownerFP,
+		CurrentOwnerSigningKey: ownerPub,
+		Successor:              successorFP,
+		SuccessorSigningKey:    successorPub,
+		HeartbeatTimeoutDays:   timeoutDays,
+		IssuedAt:               now,
+		ExpiresAt:              now + int64(crypto.SuccessionCertValidityDuration/time.Millisecond),
+	}
+
+	if err := cert.Sign(id.Signing); err != nil {
+		return "", err
+	}
+	if err := cert.Verify(); err != nil {
+		return "", err
+	}
+
+	m.StoreSuccessionCertificate(cert)
+	return cert.ToJSON()
+}
+
+// VerifySuccessionCertificate verifies a succession certificate against revocation and expiry.
+func (m *SessionManager) VerifySuccessionCertificate(certJSON string) error {
+	cert, err := crypto.ParseSuccessionCertificate(certJSON)
+	if err != nil {
+		return err
+	}
+	if err := cert.Verify(); err != nil {
+		return err
+	}
+	if m.IsCertificateRevoked(cert.CertificateHash()) {
+		return crypto.ErrSuccessionCertRevoked
+	}
+	if time.Now().UnixMilli() > cert.ExpiresAt {
+		return crypto.ErrSuccessionCertExpired
+	}
+	return nil
+}
+
+// CreateOwnerHeartbeat creates and signs a new heartbeat event for the specified group.
+func (m *SessionManager) CreateOwnerHeartbeat(groupID string) (string, error) {
+	m.mu.RLock()
+	id := m.identity
+	m.mu.RUnlock()
+
+	if id == nil || id.Signing == nil {
+		return "", errors.New("identity not initialized")
+	}
+
+	ownerFP := crypto.Fingerprint(id.Public.Bytes())
+	ownerPub := base64.StdEncoding.EncodeToString(id.Verify)
+	seq := m.getNextHeartbeatSeq(groupID)
+	prevHash := m.GetLastHeartbeatHash(groupID)
+
+	hb := &crypto.OwnerHeartbeat{
+		Type:              "owner_heartbeat",
+		GroupID:           groupID,
+		Owner:             ownerFP,
+		OwnerSigningKey:   ownerPub,
+		Sequence:          seq,
+		Timestamp:         time.Now().UnixMilli(),
+		PreviousEventHash: prevHash,
+	}
+
+	if err := hb.Sign(id.Signing); err != nil {
+		return "", err
+	}
+	if err := hb.Verify(); err != nil {
+		return "", err
+	}
+
+	m.StoreHeartbeatHash(groupID, hb.EventHash())
+	return hb.ToJSON()
+}
+
+// VerifyOwnerHeartbeat verifies the cryptographic validity and sequence of an owner heartbeat.
+func (m *SessionManager) VerifyOwnerHeartbeat(hbJSON string) error {
+	hb, err := crypto.ParseOwnerHeartbeat(hbJSON)
+	if err != nil {
+		return err
+	}
+	return hb.Verify()
+}
+
+// CreateSuccessionRevocation creates and signs an invalidation for a previously issued succession certificate.
+func (m *SessionManager) CreateSuccessionRevocation(groupID, certHash string) (string, error) {
+	m.mu.RLock()
+	id := m.identity
+	m.mu.RUnlock()
+
+	if id == nil || id.Signing == nil {
+		return "", errors.New("identity not initialized")
+	}
+
+	if certHash == "" {
+		if activeCert := m.GetSuccessionCertificate(groupID); activeCert != nil {
+			certHash = activeCert.CertificateHash()
+		}
+	}
+	if certHash == "" {
+		return "", errors.New("certificate hash required or no active certificate found")
+	}
+
+	ownerFP := crypto.Fingerprint(id.Public.Bytes())
+	ownerPub := base64.StdEncoding.EncodeToString(id.Verify)
+
+	rev := &crypto.SuccessionRevocation{
+		Type:            "succession_revocation",
+		GroupID:         groupID,
+		Owner:           ownerFP,
+		OwnerSigningKey: ownerPub,
+		CertificateHash: certHash,
+		RevokedAt:       time.Now().UnixMilli(),
+	}
+
+	if err := rev.Sign(id.Signing); err != nil {
+		return "", err
+	}
+	if err := rev.Verify(); err != nil {
+		return "", err
+	}
+
+	m.RevokeCertificate(certHash)
+	return rev.ToJSON()
+}
+
+// VerifySuccessionRevocation verifies the signature on a succession revocation event.
+func (m *SessionManager) VerifySuccessionRevocation(revJSON string) error {
+	rev, err := crypto.ParseSuccessionRevocation(revJSON)
+	if err != nil {
+		return err
+	}
+	if err := rev.Verify(); err != nil {
+		return err
+	}
+	m.RevokeCertificate(rev.CertificateHash)
+	return nil
+}
+
+// CreateSuccessionClaim creates and signs a succession claim asserting rights over a group.
+func (m *SessionManager) CreateSuccessionClaim(certJSON, lastHeartbeatJSON string) (string, error) {
+	m.mu.RLock()
+	id := m.identity
+	m.mu.RUnlock()
+
+	if id == nil || id.Signing == nil {
+		return "", errors.New("identity not initialized")
+	}
+
+	cert, err := crypto.ParseSuccessionCertificate(certJSON)
+	if err != nil {
+		return "", err
+	}
+
+	lastHb, err := crypto.ParseOwnerHeartbeat(lastHeartbeatJSON)
+	if err != nil {
+		return "", err
+	}
+
+	claimantFP := crypto.Fingerprint(id.Public.Bytes())
+	claimantPub := base64.StdEncoding.EncodeToString(id.Verify)
+
+	claim := &crypto.SuccessionClaim{
+		Type:                   "succession_claim_v1",
+		GroupID:                cert.GroupID,
+		Claimant:               claimantFP,
+		ClaimantSigningKey:     claimantPub,
+		CertificateHash:        cert.CertificateHash(),
+		LastHeartbeatEventHash: lastHb.EventHash(),
+		ClaimedAt:              time.Now().UnixMilli(),
+	}
+
+	if err := claim.Sign(id.Signing); err != nil {
+		return "", err
+	}
+	if err := claim.Verify(); err != nil {
+		return "", err
+	}
+
+	return claim.ToJSON()
+}
+
+// VerifySuccessionClaim verifies a succession claim against the certificate, heartbeat, and local revocation status.
+func (m *SessionManager) VerifySuccessionClaim(certJSON, claimJSON, lastHeartbeatJSON string) error {
+	cert, err := crypto.ParseSuccessionCertificate(certJSON)
+	if err != nil {
+		return err
+	}
+	claim, err := crypto.ParseSuccessionClaim(claimJSON)
+	if err != nil {
+		return err
+	}
+	lastHb, err := crypto.ParseOwnerHeartbeat(lastHeartbeatJSON)
+	if err != nil {
+		return err
+	}
+
+	isRevoked := m.IsCertificateRevoked(cert.CertificateHash())
+	now := time.Now().UnixMilli()
+
+	return crypto.VerifySuccessionClaim(cert, claim, lastHb, isRevoked, now)
+}
+
 
 
