@@ -1,6 +1,7 @@
 package bridge_test
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"sync"
@@ -43,6 +44,13 @@ func TestP2PConnectionAndMessaging(t *testing.T) {
 			t.Logf("[Alice] Disconnected from %s: %s", peerFP, reason)
 		},
 		OnMessageReceived: func(peerFP string, payload []byte, msgID string) {
+			// Compatibility announcements are control traffic, not delivered chat.
+			var envelope struct {
+				Type string `json:"type"`
+			}
+			if json.Unmarshal(payload, &envelope) == nil && envelope.Type == "identity_info" {
+				return
+			}
 			t.Logf("[Alice] Received message from %s (ID: %s): %s", peerFP, msgID, string(payload))
 			aliceReceived <- string(payload)
 		},
@@ -71,6 +79,13 @@ func TestP2PConnectionAndMessaging(t *testing.T) {
 			t.Logf("[Bob] Disconnected from %s: %s", peerFP, reason)
 		},
 		OnMessageReceived: func(peerFP string, payload []byte, msgID string) {
+			// Compatibility announcements are control traffic, not delivered chat.
+			var envelope struct {
+				Type string `json:"type"`
+			}
+			if json.Unmarshal(payload, &envelope) == nil && envelope.Type == "identity_info" {
+				return
+			}
 			t.Logf("[Bob] Received message from %s (ID: %s): %s", peerFP, msgID, string(payload))
 			bobReceived <- string(payload)
 		},
@@ -201,6 +216,13 @@ func TestP2PBidirectionalMessagingByNickname(t *testing.T) {
 			}
 		},
 		OnMessageReceived: func(peerFP string, payload []byte, msgID string) {
+			// Compatibility announcements are control traffic, not delivered chat.
+			var envelope struct {
+				Type string `json:"type"`
+			}
+			if json.Unmarshal(payload, &envelope) == nil && envelope.Type == "identity_info" {
+				return
+			}
 			if strings.Contains(string(payload), `"type":"chat"`) {
 				aliceReceived <- string(payload)
 			}
@@ -222,6 +244,13 @@ func TestP2PBidirectionalMessagingByNickname(t *testing.T) {
 			}
 		},
 		OnMessageReceived: func(peerFP string, payload []byte, msgID string) {
+			// Compatibility announcements are control traffic, not delivered chat.
+			var envelope struct {
+				Type string `json:"type"`
+			}
+			if json.Unmarshal(payload, &envelope) == nil && envelope.Type == "identity_info" {
+				return
+			}
 			if strings.Contains(string(payload), `"type":"chat"`) {
 				bobReceived <- string(payload)
 			}

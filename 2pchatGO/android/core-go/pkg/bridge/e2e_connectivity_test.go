@@ -47,6 +47,13 @@ func TestGoCoreE2EConnectivityAndDiscovery(t *testing.T) {
 			aliceConnected <- peerFP
 		},
 		OnMessageReceived: func(peerFP string, payload []byte, msgID string) {
+			// Compatibility announcements are control traffic, not delivered chat.
+			var envelope struct {
+				Type string `json:"type"`
+			}
+			if json.Unmarshal(payload, &envelope) == nil && envelope.Type == "identity_info" {
+				return
+			}
 			logf("[ALICE] OnMessageReceived: peer=%s msgID=%s payload=%s", peerFP, msgID, string(payload))
 			aliceReceived <- string(payload)
 		},
@@ -68,6 +75,13 @@ func TestGoCoreE2EConnectivityAndDiscovery(t *testing.T) {
 			bobConnected <- peerFP
 		},
 		OnMessageReceived: func(peerFP string, payload []byte, msgID string) {
+			// Compatibility announcements are control traffic, not delivered chat.
+			var envelope struct {
+				Type string `json:"type"`
+			}
+			if json.Unmarshal(payload, &envelope) == nil && envelope.Type == "identity_info" {
+				return
+			}
 			logf("[BOB] OnMessageReceived: peer=%s msgID=%s payload=%s", peerFP, msgID, string(payload))
 			bobReceived <- string(payload)
 		},

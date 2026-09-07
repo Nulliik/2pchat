@@ -18,34 +18,35 @@ import (
 	"time"
 	"twopchat/core/pkg/crypto"
 	"twopchat/core/pkg/discovery"
+	"twopchat/core/pkg/protocol"
 	"twopchat/core/pkg/session"
 	"twopchat/core/pkg/transport"
 )
 
 // SessionManager manages active Double Ratchet sessions, local identity, networking, and discovery.
 type SessionManager struct {
-	mu              sync.RWMutex
-	policy          transport.NetworkPolicy
-	storageDir      string
-	storageKey      [32]byte
-	hasKey          bool
-	identity        *crypto.IdentityKeyPair
-	prekeyPriv      *crypto.X25519PrivateKey
-	prekeyPub       *crypto.X25519PublicKey
-	sessions        map[string]*crypto.SessionState
-	netManager      *session.Manager
-	discoverySvc    *discovery.DiscoveryService
-	callbacks       session.EventCallbacks
-	onPeerDisc      discovery.DiscoveryCallback
-	onTrackerStatus discovery.TrackerStatusCallback
-	torEnabled      bool
-	torProxy        string
-	onionAddress    string
-	dialer          *transport.AdaptiveDialer
-	yggUDPRelay     string
-	upnpMapper      *transport.UPnPMapper
-	natDiag         *transport.NATDiagnostics
-	holePuncher     *transport.HolePuncher
+	mu                   sync.RWMutex
+	policy               transport.NetworkPolicy
+	storageDir           string
+	storageKey           [32]byte
+	hasKey               bool
+	identity             *crypto.IdentityKeyPair
+	prekeyPriv           *crypto.X25519PrivateKey
+	prekeyPub            *crypto.X25519PublicKey
+	sessions             map[string]*crypto.SessionState
+	netManager           *session.Manager
+	discoverySvc         *discovery.DiscoveryService
+	callbacks            session.EventCallbacks
+	onPeerDisc           discovery.DiscoveryCallback
+	onTrackerStatus      discovery.TrackerStatusCallback
+	torEnabled           bool
+	torProxy             string
+	onionAddress         string
+	dialer               *transport.AdaptiveDialer
+	yggUDPRelay          string
+	upnpMapper           *transport.UPnPMapper
+	natDiag              *transport.NATDiagnostics
+	holePuncher          *transport.HolePuncher
 	discoverySeqCounter  uint64
 	seqPersistHook       func(seq uint64)
 	lastSeenDiscoverySeq sync.Map // map[string]uint64
@@ -276,6 +277,7 @@ func (m *SessionManager) Init() error {
 			m.torProxy,
 			m.torEnabled,
 			m.callbacks,
+			protocol.AndroidCapabilities(),
 		)
 		if effectiveDir != "" {
 			m.netManager.SetStorageDir(effectiveDir)
@@ -923,6 +925,25 @@ func (m *SessionManager) SendMessageBinary(peerFP string, payload []byte) (strin
 	}
 
 	return nm.SendMessageBinary(peerFP, payload)
+}
+
+// PeerProtocolJSON exposes only the currently authenticated session snapshot.
+func (m *SessionManager) PeerProtocolJSON(peerFP string) string {
+	m.mu.RLock()
+	manager := m.netManager
+	m.mu.RUnlock()
+	if manager == nil {
+		return "null"
+	}
+	s := manager.GetSession(peerFP)
+	if s == nil {
+		return "null"
+	}
+	raw, err := json.Marshal(s.NegotiatedProtocol())
+	if err != nil {
+		return "null"
+	}
+	return string(raw)
 }
 
 // IsPeerOnline checks if there is an active connection to peerFP.
@@ -1816,6 +1837,3 @@ func (m *SessionManager) VerifySuccessionClaim(certJSON, claimJSON, lastHeartbea
 
 	return crypto.VerifySuccessionClaim(cert, claim, lastHb, isRevoked, now)
 }
-
-
-

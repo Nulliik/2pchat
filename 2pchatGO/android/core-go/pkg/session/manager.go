@@ -18,6 +18,7 @@ import (
 	"time"
 	"twopchat/core/pkg/crypto"
 	"twopchat/core/pkg/discovery"
+	"twopchat/core/pkg/protocol"
 	"twopchat/core/pkg/transport"
 )
 
@@ -83,26 +84,28 @@ func (l *ipRateLimiter) allow(ip string) bool {
 
 // Manager manages P2P listening, outbound dialing, active sessions, and connection arbitration.
 type Manager struct {
-	mu              sync.RWMutex
-	policy          transport.NetworkPolicy
-	identity        *crypto.IdentityKeyPair
-	prekeyPriv      *crypto.X25519PrivateKey
-	prekeyPub       *crypto.X25519PublicKey
-	dialer          *transport.AdaptiveDialer
-	listener        *transport.AsyncListener
-	sessions        map[string]*Session
-	peerEndp        map[string]string
-	peerNames       map[string]string
-	peerPolicies    map[string]transport.NetworkPolicy
-	callbacksMu     sync.RWMutex
-	callbacks       EventCallbacks
-	fileTransferMgr *transport.FileTransferManager
-	storageDir      string
-	nickname        string
-	fingerprint     string
-	onionAddress    string
-	handshakeSem    chan struct{}
-	rateLimiter     *ipRateLimiter
+	mu               sync.RWMutex
+	policy           transport.NetworkPolicy
+	identity         *crypto.IdentityKeyPair
+	prekeyPriv       *crypto.X25519PrivateKey
+	prekeyPub        *crypto.X25519PublicKey
+	dialer           *transport.AdaptiveDialer
+	listener         *transport.AsyncListener
+	sessions         map[string]*Session
+	peerEndp         map[string]string
+	peerNames        map[string]string
+	peerPolicies     map[string]transport.NetworkPolicy
+	callbacksMu      sync.RWMutex
+	callbacks        EventCallbacks
+	fileTransferMgr  *transport.FileTransferManager
+	storageDir       string
+	nickname         string
+	fingerprint      string
+	onionAddress     string
+	handshakeSem     chan struct{}
+	rateLimiter      *ipRateLimiter
+	capabilities     protocol.Declaration
+	announceProtocol bool
 }
 
 // NewManager creates a new network session Manager.
@@ -113,6 +116,7 @@ func NewManager(
 	torProxy string,
 	proxyEnabled bool,
 	callbacks EventCallbacks,
+	profiles ...protocol.Declaration,
 ) *Manager {
 	dialer := transport.NewAdaptiveDialer(torProxy, proxyEnabled, 10*time.Second)
 	m := &Manager{
@@ -130,6 +134,11 @@ func NewManager(
 		fingerprint:  crypto.Fingerprint(id.Public.Bytes()),
 		handshakeSem: make(chan struct{}, maxConcurrentHandshakes),
 		rateLimiter:  newIPRateLimiter(),
+		capabilities: protocol.LocalCapabilities(),
+	}
+	if len(profiles) > 0 {
+		m.capabilities = profiles[0].Clone()
+		m.announceProtocol = true
 	}
 	m.fileTransferMgr = transport.NewFileTransferManager(func(peerFP, msgID string, transferred, total int64, speed float64) {
 		callbacks := m.callbacksSnapshot()
@@ -412,6 +421,7 @@ func (m *Manager) handleIncomingConnection(conn net.Conn) {
 		30*time.Second,
 		WithPeerValidator(peerValidator),
 		WithTorTransport(isTor),
+		WithCapabilities(m.capabilities),
 	)
 	if err != nil {
 		callbacks := m.callbacksSnapshot()
@@ -556,6 +566,7 @@ func (m *Manager) connectPeerInternal(endpoint, expectedFingerprint string, cont
 		m.prekeyPub,
 		expectedFingerprint,
 		30*time.Second,
+		WithCapabilities(m.capabilities),
 	)
 	if err != nil {
 		_ = conn.Close()
@@ -606,7 +617,7 @@ func (m *Manager) RegisterSession(newSess *Session, peerFP, endpoint string, ini
 	}
 
 	// Automatic identity_info exchange upon session establishment (full parity with Python discovery_bridge.py)
-	if nick != "" {
+	if nick != "" || m.announceProtocol {
 		go func() {
 			identityMsg := map[string]any{
 				"type":        string(TypeIdentityInfo),

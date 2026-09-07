@@ -10,6 +10,31 @@ import java.security.MessageDigest
 import java.util.UUID
 
 object GroupWireProtocol {
+    /** Requirements describe the existing signed frame; never rewrite it for a peer. */
+    fun requiredCapabilities(json: JSONObject): Set<com.example.twopchat.protocol.Capability> {
+        val caps = mutableSetOf(com.example.twopchat.protocol.Capability.GROUP_SUITE_V1)
+        val type = json.optString("type")
+        if (type.startsWith("group_succession_") || type == TYPE_OWNER_HEARTBEAT) {
+            caps += com.example.twopchat.protocol.Capability.GROUP_SUCCESSION_V1
+        }
+        if (json.optString("crypto_suite") == SUITE_V2 || json.optString("suite") == SUITE_V2) {
+            caps += com.example.twopchat.protocol.Capability.GROUP_SUITE_V2
+        }
+        if (json.optBoolean("is_tombstoned")) {
+            caps += com.example.twopchat.protocol.Capability.GROUP_TOMBSTONES_V1
+        }
+        if (type == TYPE_SYNC_BATCH) {
+            val events = json.optJSONArray("events") ?: return caps
+            require(events.length() <= MAX_SYNC_EVENTS)
+            for (i in 0 until events.length()) {
+                val event = events.getJSONObject(i)
+                require(event.optString("type") == TYPE_EVENT)
+                caps += requiredCapabilities(event)
+            }
+        }
+        return caps
+    }
+
     const val VERSION = 1
     const val TYPE_EVENT = "group_event_v1"
     const val TYPE_INVITE = "group_invite_v1"

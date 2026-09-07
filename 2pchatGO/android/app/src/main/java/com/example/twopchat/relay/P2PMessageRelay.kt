@@ -3556,6 +3556,15 @@ object P2PMessageRelay {
             onResult(false)
             return
         }
+        val fingerprint = P2PPreferences.getPeerFingerprint(context, peerName).orEmpty()
+        val session = com.example.twopchat.protocol.ProtocolVersionManager.refresh(fingerprint)
+        val supported = runCatching {
+            GroupWireProtocol.requiredCapabilities(payload).all { session?.supports(it) == true }
+        }.getOrDefault(false)
+        if (session != null && !supported) {
+            onResult(false)
+            return
+        }
         outboundMessenger.sendControlMessage(context, peerName, payload, onResult)
     }
 

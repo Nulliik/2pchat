@@ -13,6 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 	"twopchat/core/pkg/crypto"
+	"twopchat/core/pkg/protocol"
 	"twopchat/core/pkg/transport"
 )
 
@@ -63,7 +64,11 @@ type Session struct {
 	ackTimeout time.Duration
 	maxRetries int
 
-	peerValidator func(peerFingerprint string) error
+	peerValidator     func(peerFingerprint string) error
+	localCapabilities protocol.Declaration
+	protocolMu        sync.RWMutex
+	negotiated        *protocol.NegotiatedSession
+	remoteDeclaration string
 }
 
 // SessionOption configures a Session during construction.
@@ -126,23 +131,28 @@ func NewSession(
 	}
 
 	s := &Session{
-		conn:            conn,
-		initiator:       initiator,
-		localIdentity:   localId,
-		localPrekeyPriv: prekeyPriv,
-		localPrekeyPub:  prekeyPub,
-		closeChan:       make(chan struct{}),
-		messageQueue:    make(chan map[string]any, MessageQueueCapacity),
-		pendingAcks:     make(map[string]chan bool),
-		receivedIDs:     make(map[string]bool),
-		receivedOrder:   make([]string, 0, MaxReceivedIDsHistory),
-		ackTimeout:      initAckTimeout,
-		maxRetries:      DefaultMaxRetries,
+		conn:              conn,
+		initiator:         initiator,
+		localIdentity:     localId,
+		localPrekeyPriv:   prekeyPriv,
+		localPrekeyPub:    prekeyPub,
+		closeChan:         make(chan struct{}),
+		messageQueue:      make(chan map[string]any, MessageQueueCapacity),
+		pendingAcks:       make(map[string]chan bool),
+		receivedIDs:       make(map[string]bool),
+		receivedOrder:     make([]string, 0, MaxReceivedIDsHistory),
+		ackTimeout:        initAckTimeout,
+		maxRetries:        DefaultMaxRetries,
+		localCapabilities: protocol.LocalCapabilities(),
 	}
 	for _, opt := range opts {
 		if opt != nil {
 			opt(s)
 		}
+	}
+	if err := s.localCapabilities.Validate(); err != nil {
+		_ = conn.Close()
+		return nil, err
 	}
 	atomic.StoreInt32(&s.online, 1)
 
@@ -429,6 +439,13 @@ func (s *Session) readerLoop() {
 		if err != nil {
 			continue
 		}
+		if s.localCapabilities.MinSupportedVersion > 1 && s.NegotiatedProtocol() == nil {
+			pending, err := DecodeMessage(plaintext)
+			if err != nil || (pending["type"] != string(TypeIdentityInfo) && pending["type"] != string(TypeAck)) {
+				closeReason = protocol.ErrIncompatible.Error()
+				return
+			}
+		}
 
 		// File chunks have their own stable ID derived from file_id/index. Parse
 		// them before the legacy Go 0x02 reliable-binary wrapper.
@@ -520,6 +537,17 @@ func (s *Session) readerLoop() {
 		}
 
 		msgType, _ := msgMap["type"].(string)
+		if strings.HasPrefix(msgType, "group_") {
+			if err := protocol.CheckMessage(plaintext, s.NegotiatedProtocol()); err != nil {
+				continue
+			}
+		}
+		if msgType == string(TypeIdentityInfo) {
+			if err := s.acceptCapabilities(plaintext); err != nil {
+				closeReason = err.Error()
+				return
+			}
+		}
 
 		if msgType == string(TypeAck) {
 			ackID, _ := msgMap["ack_id"].(string)
@@ -596,6 +624,17 @@ func (s *Session) sendEncryptedFrame(plaintext []byte) error {
 
 // SendReliable sends a wire message payload and waits for the peer's ACK with retry backoff.
 func (s *Session) SendReliable(msg map[string]any) (string, error) {
+	if s.localCapabilities.MinSupportedVersion > 1 && s.NegotiatedProtocol() == nil && msg["type"] != string(TypeIdentityInfo) {
+		return "", protocol.ErrIncompatible
+	}
+	if msg["type"] == string(TypeIdentityInfo) {
+		copyMsg := make(map[string]any, len(msg)+1)
+		for k, v := range msg {
+			copyMsg[k] = v
+		}
+		copyMsg["protocol"] = s.localCapabilities.Clone()
+		msg = copyMsg
+	}
 	msgID, _ := msg["id"].(string)
 	if msgID == "" {
 		c := atomic.AddUint64(&s.counter, 1)
@@ -605,6 +644,9 @@ func (s *Session) SendReliable(msg map[string]any) (string, error) {
 
 	raw, err := EncodeMessage(msg)
 	if err != nil {
+		return "", err
+	}
+	if err := protocol.CheckMessage(raw, s.NegotiatedProtocol()); err != nil {
 		return "", err
 	}
 	return s.sendReliablePlaintext(msgID, raw)
@@ -657,6 +699,9 @@ func (s *Session) sendReliablePlaintext(msgID string, raw []byte) (string, error
 // SendReliableFileChunk sends the shared binary-v2 file envelope and waits for
 // the ACK ID derived from its file ID and chunk index.
 func (s *Session) SendReliableFileChunk(fileID []byte, chunkIndex uint32, payload []byte) (string, error) {
+	if s.localCapabilities.MinSupportedVersion > 1 && s.NegotiatedProtocol() == nil {
+		return "", protocol.ErrIncompatible
+	}
 	msgID, err := transport.FileChunkAckID(fileID, chunkIndex)
 	if err != nil {
 		return "", err
@@ -670,6 +715,9 @@ func (s *Session) SendReliableFileChunk(fileID []byte, chunkIndex uint32, payloa
 
 // SendReliableBinary sends an arbitrary binary wire message payload and waits for the peer's ACK.
 func (s *Session) SendReliableBinary(payload []byte) (string, error) {
+	if s.localCapabilities.MinSupportedVersion > 1 && s.NegotiatedProtocol() == nil {
+		return "", protocol.ErrIncompatible
+	}
 	msgID := fmt.Sprintf("%d-%d", time.Now().UnixNano(), atomic.AddUint64(&s.counter, 1))
 
 	// Construct binary packet: [0x02 Magic] [2 bytes ID Len] [ID Bytes] [Payload Bytes]

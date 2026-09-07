@@ -260,6 +260,7 @@ class NativeBridgeImpl(
             SafeLog.i(TAG, "[GoCore] Active route for ${SafeLog.fp(peerFP)}: $transportHint")
             SafeLog.d(TAG, "[GoCore] Active route for ${SafeLog.fp(peerFP)}: $transportHint @ $endpoint")
             sessionListener?.onSessionEstablished(resolvedName, peerFP, endpoint, transportHint, "")
+            com.example.twopchat.protocol.ProtocolVersionManager.refresh(peerFP)
             sendAuthenticatedRouteUpdate(peerFP)
             flushPendingMessages(peerFP)
             if (resolvedName != peerFP) {
@@ -272,6 +273,7 @@ class NativeBridgeImpl(
         }
 
         NativeBridge.onPeerDisconnectedListener = { peerFP, reason ->
+            com.example.twopchat.protocol.ProtocolVersionManager.refresh(peerFP)
             SafeLog.i(TAG, "[GoCore] Peer disconnected: ${SafeLog.fp(peerFP)}, reason: $reason")
             val resolvedName = resolvePeerName(peerFP) ?: peerNameMap[peerFP] ?: peerFP
             onlinePeers[peerFP] = false
@@ -290,6 +292,9 @@ class NativeBridgeImpl(
                 try {
                     val json = JSONObject(payloadStr)
                     val mtype = json.optString("type")
+                    if (mtype == "identity_info") {
+                        com.example.twopchat.protocol.ProtocolVersionManager.refresh(peerFP)
+                    }
                     if (mtype == "endpoint_update") {
                         storeAuthenticatedRouteUpdate(peerFP, json)
                         return@message

@@ -14,7 +14,7 @@ from nacl.signing import SigningKey, VerifyKey
 
 from messenger.utils.logger import setup_logger
 
-from . import protocol
+from . import protocol, capabilities
 from .crypto import generate_identity_keypair
 from .double_ratchet import (
     IdentityKeyPair as DRIdentityKeyPair,
@@ -105,6 +105,9 @@ class Session:
         self.peer_label = peer_label
 
         self._dr_state = None
+        self.negotiated_protocol = None
+        self._remote_declaration = None
+        self._local_declaration = capabilities.local_declaration()
 
         self._pending_acks: Dict[str, asyncio.Future] = {}
         if message_queue_size <= 0:
@@ -228,7 +231,8 @@ class Session:
             fingerprint(their_pub),
         ):
             raise ValueError(
-                f"Peer fingerprint mismatch. Expected {expected_fingerprint} but saw {self._peer_fp}."
+                f"Peer fingerprint mismatch. Expected {expected_fingerprint} "
+                f"but saw {self._peer_fp}."
             )
         # Explicit pinning is independent of TOFU persistence. Discovery probes
         # deliberately run without a TrustStore, but must still reject a key
@@ -379,6 +383,37 @@ class Session:
                     )
                     plaintext = decrypt_message_v3(self._dr_state, ciphertext)
                     message = protocol.decode_message(plaintext)
+                    if (self._local_declaration["min_supported_version"] > 1
+                            and self.negotiated_protocol is None
+                            and message.get("type") not in ("identity_info", "ack")):
+                        raise ValueError("incompatible application protocol")
+
+                    if message.get("type") == "identity_info":
+                        # Preserve duplicate-field rejection before accepting
+                        # any declaration from the default JSON wire format.
+                        message = json.loads(
+                            plaintext, object_pairs_hook=capabilities.unique_fields,
+                        )
+                        claimed = message.get("fingerprint")
+                        if claimed not in (None, "", self._peer_fp):
+                            raise ValueError("identity_info fingerprint mismatch")
+                        if "protocol" in message:
+                            remote = message["protocol"]
+                            negotiated = capabilities.negotiate(self._local_declaration, remote)
+                            canonical = capabilities.canonical(remote)
+                        else:
+                            if self._local_declaration["min_supported_version"] > 1:
+                                raise ValueError("incompatible application protocol")
+                            negotiated, canonical = capabilities.legacy(), "legacy"
+                        if self._remote_declaration not in (None, canonical):
+                            raise ValueError("capability declaration changed within session")
+                        self.negotiated_protocol = negotiated
+                        self._remote_declaration = canonical
+
+                    # Desktop has no group runtime; unknown optional group
+                    # frames must not become visible chat messages.
+                    if str(message.get("type", "")).startswith("group_"):
+                        continue
 
                     if message.get("type") == "ack":
                         ack_id = message.get("ack_id")
@@ -410,10 +445,12 @@ class Session:
                 return
             except Exception as exc:  # noqa: BLE001
                 reason = repr(exc)
+                self.writer.close()
                 for fut in self._pending_acks.values():
                     if not fut.done():
                         fut.cancel()
             finally:
+                self.negotiated_protocol = None
                 await self._emit_offline(reason)
                 self._pending_acks.clear()
 
@@ -442,6 +479,10 @@ class Session:
         return "id=None"
 
     async def _send_payload(self, message: Dict[str, Any]) -> None:
+        if message.get("type") == "identity_info":
+            message = dict(message, protocol=self._local_declaration)
+        if str(message.get("type", "")).startswith("group_"):
+            raise ValueError("desktop group protocol is not supported")
         plaintext = protocol.encode_message(message)
         await self._send_plaintext(
             plaintext,
@@ -458,6 +499,10 @@ class Session:
     ) -> None:
         if not self.their_pub:
             raise RuntimeError("Session not established")
+        if (self._local_declaration["min_supported_version"] > 1
+                and self.negotiated_protocol is None
+                and message_type not in ("identity_info", "ack")):
+            raise ValueError("incompatible application protocol")
         if not self._online:
             raise ConnectionError("Session is no longer online")
         async with self._send_lock:

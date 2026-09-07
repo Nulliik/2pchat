@@ -14,6 +14,14 @@ import (
 )
 
 func TestPythonGoSessionChatAndFileEnvelopeInterop(t *testing.T) {
+	testPythonGoSessionInterop(t, false)
+}
+
+func TestPythonGoNegotiatedSessionInterop(t *testing.T) {
+	testPythonGoSessionInterop(t, true)
+}
+
+func testPythonGoSessionInterop(t *testing.T, negotiate bool) {
 	pythonRoot := os.Getenv("P2PCHAT_PYTHON_ROOT")
 	if pythonRoot == "" {
 		t.Skip("set P2PCHAT_PYTHON_ROOT to the Python core checkout to run cross-core interop")
@@ -45,6 +53,18 @@ func TestPythonGoSessionChatAndFileEnvelopeInterop(t *testing.T) {
 			return
 		}
 		defer sess.Close()
+		if negotiate {
+			if _, err := sess.SendReliable(map[string]any{"type": "identity_info"}); err != nil {
+				serverErr <- err
+				return
+			}
+			hello := <-sess.Messages()
+			state := sess.NegotiatedProtocol()
+			if hello["type"] != "identity_info" || state == nil || state.ProtocolVersion != 1 || state.PeerIsLegacy {
+				serverErr <- fmt.Errorf("unexpected Python capability state: %+v", state)
+				return
+			}
+		}
 
 		chat := <-sess.Messages()
 		if chat["type"] != "chat" || chat["body"] != "hello from Python" {
@@ -95,6 +115,12 @@ async def main():
     host, port = sys.argv[1], int(sys.argv[2])
     reader, writer = await asyncio.open_connection(host, port)
     session = await Session.create(reader, writer, initiator=True)
+    if sys.argv[3] == "true":
+        hello = await session.receive_message()
+        assert hello["type"] == "identity_info"
+        assert session.negotiated_protocol.protocol_version == 1
+        assert not session.negotiated_protocol.peer_is_legacy
+        await session.send_reliable({"type": "identity_info"})
     await session.send_chat("hello from Python")
     reply = await session.receive_message()
     assert reply["type"] == "chat" and reply["body"] == "hello from Go", reply
@@ -121,7 +147,7 @@ asyncio.run(main())
 	if err != nil {
 		t.Fatal(err)
 	}
-	cmd := exec.Command("python", "-c", python, host, port)
+	cmd := exec.Command("python", "-c", python, host, port, fmt.Sprint(negotiate))
 	cmd.Env = append(os.Environ(), "PYTHONPATH="+pythonRoot)
 	output, err := cmd.CombinedOutput()
 	if err != nil {

@@ -838,6 +838,11 @@ fun GroupInfoScreen(
             when (selectedTab) {
                 0 -> {
                     items(state.members, key = GroupMember::memberId) { member ->
+                        if (!member.isCurrentUser) {
+                            com.example.twopchat.protocol.ProtocolCompatibilityNotice(
+                                member.transportFingerprint, appLanguage, group = true,
+                            )
+                        }
                         GroupMemberCard(
                             groupId = state.metadata.groupId,
                             member = member,

@@ -1369,10 +1369,15 @@ object GroupChatCoordinator {
      * and be rendered as direct-chat text.
      */
     fun handleIncoming(context: Context, senderPeerName: String, json: JSONObject): Boolean {
-        if (!GroupWireProtocol.isGroupFrame(json)) return false
+        if (!GroupWireProtocol.isGroupFrame(json)) return json.optString("type").startsWith("group_")
         initialize(context)
         val wire = json.toString()
         if (wire.toByteArray(Charsets.UTF_8).size > GroupWireProtocol.MAX_WIRE_BYTES) return true
+        val fingerprint = P2PPreferences.getPeerFingerprint(context, senderPeerName).orEmpty()
+        val session = com.example.twopchat.protocol.ProtocolVersionManager.refresh(fingerprint)
+        if (!runCatching {
+                GroupWireProtocol.requiredCapabilities(json).all { session?.supports(it) == true }
+            }.getOrDefault(false)) return true
         scope.launch {
             runCatching { processIncoming(senderPeerName, json) }
                 .onFailure { error ->
@@ -8084,6 +8089,14 @@ object GroupChatCoordinator {
         if (group.localDeviceId != group.ownerDeviceId) return false
 
         val members = storage.listMembers(groupId)
+        // Succession changes group authority. Every participating remote member
+        // must currently support it before we create any persistent certificate.
+        if (members.filter { it.isParticipating() && it.deviceId != group.localDeviceId }.any {
+                !com.example.twopchat.protocol.ProtocolVersionManager.supports(
+                    it.transportFingerprint,
+                    com.example.twopchat.protocol.Capability.GROUP_SUCCESSION_V1,
+                )
+            }) return false
         val successorMember = members.firstOrNull { 
             (it.transportFingerprint.isNotBlank() && it.transportFingerprint.equals(successorFP, ignoreCase = true)) || 
             it.deviceId.equals(successorFP, ignoreCase = true) 

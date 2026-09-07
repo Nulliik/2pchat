@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -120,6 +121,13 @@ func TestAbruptDisconnectAndReconnection(t *testing.T) {
 			aliceDisconnected <- peerFP
 		},
 		OnMessageReceived: func(peerFP string, payload []byte, msgID string) {
+			// Compatibility announcements are control traffic, not delivered chat.
+			var envelope struct {
+				Type string `json:"type"`
+			}
+			if json.Unmarshal(payload, &envelope) == nil && envelope.Type == "identity_info" {
+				return
+			}
 			aliceReceived <- string(payload)
 		},
 	}, nil)
@@ -127,6 +135,13 @@ func TestAbruptDisconnectAndReconnection(t *testing.T) {
 	bob := &bridge.SessionManager{}
 	bob.SetCallbacks(session.EventCallbacks{
 		OnMessageReceived: func(peerFP string, payload []byte, msgID string) {
+			// Compatibility announcements are control traffic, not delivered chat.
+			var envelope struct {
+				Type string `json:"type"`
+			}
+			if json.Unmarshal(payload, &envelope) == nil && envelope.Type == "identity_info" {
+				return
+			}
 			bobReceived <- string(payload)
 		},
 	}, nil)
@@ -179,6 +194,13 @@ func TestAbruptDisconnectAndReconnection(t *testing.T) {
 	bobFresh := &bridge.SessionManager{}
 	bobFresh.SetCallbacks(session.EventCallbacks{
 		OnMessageReceived: func(peerFP string, payload []byte, msgID string) {
+			// Compatibility announcements are control traffic, not delivered chat.
+			var envelope struct {
+				Type string `json:"type"`
+			}
+			if json.Unmarshal(payload, &envelope) == nil && envelope.Type == "identity_info" {
+				return
+			}
 			bobReceived <- string(payload)
 		},
 	}, nil)
@@ -391,6 +413,13 @@ func TestHighVolumeBurstMessagingAndDeduplication(t *testing.T) {
 			aliceConnected <- peerFP
 		},
 		OnMessageReceived: func(peerFP string, payload []byte, msgID string) {
+			// Compatibility announcements are control traffic, not delivered chat.
+			var envelope struct {
+				Type string `json:"type"`
+			}
+			if json.Unmarshal(payload, &envelope) == nil && envelope.Type == "identity_info" {
+				return
+			}
 			aliceReceived <- string(payload)
 		},
 	}, nil)
@@ -398,6 +427,13 @@ func TestHighVolumeBurstMessagingAndDeduplication(t *testing.T) {
 	bob := &bridge.SessionManager{}
 	bob.SetCallbacks(session.EventCallbacks{
 		OnMessageReceived: func(peerFP string, payload []byte, msgID string) {
+			// Compatibility announcements are control traffic, not delivered chat.
+			var envelope struct {
+				Type string `json:"type"`
+			}
+			if json.Unmarshal(payload, &envelope) == nil && envelope.Type == "identity_info" {
+				return
+			}
 			bobReceived <- string(payload)
 		},
 	}, nil)

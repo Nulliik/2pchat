@@ -24,6 +24,10 @@ nickname-only hash while peers migrate.
 
 ## Wire Versions
 
+Application capability negotiation is an additive field in encrypted `identity_info`,
+independent of the versions below. See [Protocol compatibility](../PROTOCOL_COMPATIBILITY.md)
+for the registry, session lifecycle, version ranges and legacy behavior.
+
 - Frame header versioning: none; the frame length is always 4-byte big-endian.
 - Current handshake version: `3`.
 - Legacy handshake version: `2`.

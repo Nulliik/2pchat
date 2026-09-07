@@ -507,6 +507,26 @@ func Java_com_example_twopchat_NativeBridge_nativeSendRawBytes(
 	return C.createJString(env, cID)
 }
 
+//export Java_com_example_twopchat_NativeBridge_nativeGetPeerProtocol
+func Java_com_example_twopchat_NativeBridge_nativeGetPeerProtocol(env *C.JNIEnv, clazz C.jclass, jPeerFP C.jstring) C.jstring {
+	if env == nil {
+		return C.nullJString()
+	}
+	cFP := C.getJStringUTFChars(env, jPeerFP)
+	if cFP == nil {
+		return C.nullJString()
+	}
+	peerFP := C.GoString(cFP)
+	C.releaseJStringUTFChars(env, jPeerFP, cFP)
+	mgr := bridge.GetManager()
+	if mgr == nil || peerFP == "" {
+		return C.nullJString()
+	}
+	result := C.CString(mgr.PeerProtocolJSON(peerFP))
+	defer C.free(unsafe.Pointer(result))
+	return C.createJString(env, result)
+}
+
 //export Java_com_example_twopchat_NativeBridge_nativeIsPeerOnline
 func Java_com_example_twopchat_NativeBridge_nativeIsPeerOnline(
 	env *C.JNIEnv,
@@ -1664,5 +1684,3 @@ func Java_com_example_twopchat_NativeBridge_nativeGetCertificateHash(
 	defer C.free(unsafe.Pointer(cHash))
 	return C.createJString(env, cHash)
 }
-
-

@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"io"
 	"strings"
@@ -29,6 +30,13 @@ func TestSimultaneousConnectionTieBreaking(t *testing.T) {
 	alice := &bridge.SessionManager{}
 	alice.SetCallbacks(session.EventCallbacks{
 		OnMessageReceived: func(peerFP string, payload []byte, msgID string) {
+			// Exclude authenticated compatibility control frames from chat assertions.
+			var envelope struct {
+				Type string `json:"type"`
+			}
+			if json.Unmarshal(payload, &envelope) == nil && envelope.Type == "identity_info" {
+				return
+			}
 			aliceReceived <- string(payload)
 		},
 	}, nil)
@@ -36,6 +44,13 @@ func TestSimultaneousConnectionTieBreaking(t *testing.T) {
 	bob := &bridge.SessionManager{}
 	bob.SetCallbacks(session.EventCallbacks{
 		OnMessageReceived: func(peerFP string, payload []byte, msgID string) {
+			// Exclude authenticated compatibility control frames from chat assertions.
+			var envelope struct {
+				Type string `json:"type"`
+			}
+			if json.Unmarshal(payload, &envelope) == nil && envelope.Type == "identity_info" {
+				return
+			}
 			bobReceived <- string(payload)
 		},
 	}, nil)

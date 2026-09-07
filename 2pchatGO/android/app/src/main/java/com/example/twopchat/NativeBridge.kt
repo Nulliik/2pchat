@@ -256,6 +256,13 @@ object NativeBridge {
         }
     }
 
+    fun getPeerProtocol(peerFingerprint: String): String? {
+        if (!isLoaded || peerFingerprint.isBlank()) return null
+        return nativeGetPeerProtocol(peerFingerprint)
+    }
+
+    private external fun nativeGetPeerProtocol(peerFingerprint: String): String?
+
     fun isPeerOnline(peerFingerprint: String): Boolean {
         if (!isLoaded || peerFingerprint.isBlank()) return false
         return try {

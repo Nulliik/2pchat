@@ -2292,6 +2292,9 @@ fun ChatScreen(
                 },
             )
 
+            if (peerName != "Saved Messages") {
+                com.example.twopchat.protocol.ProtocolCompatibilityNotice(activeFingerprint.orEmpty(), appLanguage)
+            }
             if (isIdentityPaused && peerName != "Saved Messages") {
                 Row(
                     modifier = Modifier
