@@ -85,8 +85,10 @@ import com.example.twopchat.group.ui.GroupReaction
 import com.example.twopchat.group.ui.GroupReplyPreview
 import com.example.twopchat.group.ui.GroupSummary
 import com.example.twopchat.group.ui.GroupSyncStatus
+import com.example.twopchat.group.ui.GroupSystemEventType
 import com.example.twopchat.group.ui.GroupTimelineMessage
 import com.example.twopchat.group.ui.PendingGroupInvite
+import com.example.twopchat.group.ui.SYSTEM_MESSAGE_PLACEHOLDER
 import com.example.twopchat.ui.chat.Message
 import com.example.twopchat.data.ChatDatabaseHelper
 import com.example.twopchat.group.ui.PendingGroupInvitesUiState
@@ -5849,6 +5851,22 @@ object GroupChatCoordinator {
                 isDeleted = message.deleted,
             )
         }
+        val oldestMessageTimestamp = if (hasMoreBefore && messagesNewest.isNotEmpty()) {
+            messagesNewest.last().createdAtMs
+        } else {
+            0L
+        }
+        val systemMessages = events
+            .filter { !it.isTombstoned && it.createdAtMs >= oldestMessageTimestamp }
+            .mapNotNull { event ->
+                mapEventToSystemTimelineMessage(group, event, memberByDevice)
+            }
+        val combinedTimeline = (timeline + systemMessages)
+            .sortedWith(
+                compareBy<GroupTimelineMessage> { it.timestampEpochMs }
+                    .thenBy { if (it.isSystem) 0 else 1 }
+                    .thenBy { it.messageId }
+            )
         val activeMembers = members.count { it.isParticipating() }
         val online = members.count {
             it.isParticipating() &&
@@ -6030,7 +6048,7 @@ object GroupChatCoordinator {
                 online < minOf(activeMembers, LARGE_GROUP_REPLICAS + 1) -> GroupSyncStatus.DEGRADED
                 else -> GroupSyncStatus.SYNCING
             },
-            messages = timeline,
+            messages = combinedTimeline,
             hasMoreBefore = hasMoreBefore,
             currentReply = existingReply,
             pinnedMessage = group.pinnedEventId?.let { pinnedId ->
@@ -6099,7 +6117,7 @@ object GroupChatCoordinator {
         )
         infoFlows.computeIfAbsent(groupId) {
             MutableStateFlow(emptyInfoState(groupId))
-        }.value = buildInfoState(group, members, events, timeline)
+        }.value = buildInfoState(group, members, events, combinedTimeline)
         refreshAllSummariesWithoutRecursion()
     }
 
@@ -7203,6 +7221,112 @@ object GroupChatCoordinator {
     private fun parseRole(value: String): GroupRole = when (value) {
         "ADMIN" -> GroupRole.ADMINISTRATOR
         else -> runCatching { GroupRole.valueOf(value) }.getOrDefault(GroupRole.MEMBER)
+    }
+
+    private fun mapEventToSystemTimelineMessage(
+        group: StoredGroup,
+        event: StoredGroupEvent,
+        memberByDevice: Map<String, StoredGroupMember>,
+    ): GroupTimelineMessage? {
+        val payload = runCatching { JSONObject(event.body.orEmpty()) }.getOrNull() ?: JSONObject()
+        val kind = event.kind
+        val isMemberAdded = kind == GroupEventKind.MEMBER_ADDED.name || kind == GroupEventKind.MEMBER_ADDED.wireName
+        val isMemberRemoved = kind == GroupEventKind.MEMBER_REMOVED.name || kind == GroupEventKind.MEMBER_REMOVED.wireName
+        val isRoleChanged = kind == GroupEventKind.ROLE_CHANGED.name || kind == GroupEventKind.ROLE_CHANGED.wireName
+        val isOwnershipTransferred = kind == GroupEventKind.OWNERSHIP_TRANSFERRED.name || kind == GroupEventKind.OWNERSHIP_TRANSFERRED.wireName
+        val isGroupUpdated = kind == GroupEventKind.GROUP_UPDATED.name || kind == GroupEventKind.GROUP_UPDATED.wireName
+
+        val systemEventType: GroupSystemEventType
+        val targetDeviceId: String
+        val systemPayload: Map<String, String>
+
+        when {
+            isMemberAdded -> {
+                targetDeviceId = payload.optString("member_device_id", "")
+                if (targetDeviceId.isBlank()) return null
+                systemEventType = GroupSystemEventType.MEMBER_ADDED
+                systemPayload = mapOf("target_id" to targetDeviceId)
+            }
+            isMemberRemoved -> {
+                targetDeviceId = payload.optString("member_device_id", "")
+                if (targetDeviceId.isBlank()) return null
+                val isVoluntary = payload.optBoolean("voluntary", false) ||
+                    payload.optString("status") == "LEFT" ||
+                    targetDeviceId == event.authorDeviceId
+                systemEventType = if (isVoluntary) {
+                    GroupSystemEventType.MEMBER_LEFT
+                } else {
+                    GroupSystemEventType.MEMBER_REMOVED
+                }
+                systemPayload = mapOf("target_id" to targetDeviceId)
+            }
+            isRoleChanged -> {
+                targetDeviceId = payload.optString("member_device_id", "")
+                if (targetDeviceId.isBlank()) return null
+                systemEventType = GroupSystemEventType.ROLE_CHANGED
+                val role = payload.optString("role", "")
+                systemPayload = mutableMapOf("target_id" to targetDeviceId).apply {
+                    if (role.isNotBlank()) put("role", role)
+                }
+            }
+            isOwnershipTransferred -> {
+                targetDeviceId = payload.optString("member_device_id", "")
+                if (targetDeviceId.isBlank()) return null
+                systemEventType = GroupSystemEventType.OWNERSHIP_TRANSFERRED
+                systemPayload = mapOf("target_id" to targetDeviceId)
+            }
+            isGroupUpdated -> {
+                if (!payload.has("title")) return null
+                val title = payload.optString("title", "").trim()
+                if (title.isBlank()) return null
+                targetDeviceId = ""
+                systemEventType = GroupSystemEventType.GROUP_NAME_CHANGED
+                systemPayload = mapOf("title" to title)
+            }
+            else -> return null
+        }
+
+        val author = memberByDevice[event.authorDeviceId]
+        val authorName = author?.displayName?.ifBlank { null } ?: (event.authorDeviceId.take(8) + "…")
+        val targetMember = if (targetDeviceId.isNotBlank()) memberByDevice[targetDeviceId] else null
+        val targetName = targetMember?.displayName?.ifBlank { null }
+            ?: if (targetDeviceId.isNotBlank()) (targetDeviceId.take(8) + "…") else null
+
+        val isSelfActor = event.authorDeviceId == group.localDeviceId
+        val isSelfTarget = targetDeviceId.isNotBlank() && targetDeviceId == group.localDeviceId
+
+        return GroupTimelineMessage(
+            messageId = event.eventId,
+            authorId = event.authorDeviceId,
+            authorName = authorName,
+            authorRole = author?.role.toUiRole(),
+            text = SYSTEM_MESSAGE_PLACEHOLDER,
+            timestampLabel = formatTime(event.createdAtMs),
+            timestampEpochMs = event.createdAtMs,
+            isMine = isSelfActor,
+            isEdited = false,
+            isPinned = false,
+            attachment = null,
+            attachments = emptyList(),
+            replyTo = null,
+            reactions = emptyList(),
+            deliveryStatus = GroupDeliveryStatus.REPLICATED,
+            canReply = false,
+            canEdit = false,
+            canDelete = false,
+            canReact = false,
+            canPin = false,
+            poll = null,
+            readByMembers = emptyList(),
+            readReceipts = emptyList(),
+            isDeleted = false,
+            isSystem = true,
+            systemEventType = systemEventType,
+            targetMemberName = targetName,
+            systemPayload = systemPayload,
+            isSelfActor = isSelfActor,
+            isSelfTarget = isSelfTarget,
+        )
     }
 
     private fun String?.toUiRole(): com.example.twopchat.group.ui.GroupRole = when (this) {

@@ -161,6 +161,17 @@ data class GroupReadReceipt(
   val readEpochMs: Long = 0L,
 )
 
+enum class GroupSystemEventType {
+  MEMBER_ADDED,
+  MEMBER_REMOVED,
+  MEMBER_LEFT,
+  ROLE_CHANGED,
+  GROUP_NAME_CHANGED,
+  OWNERSHIP_TRANSFERRED
+}
+
+const val SYSTEM_MESSAGE_PLACEHOLDER = "[System Event]"
+
 @Immutable
 data class GroupTimelineMessage(
   val messageId: String,
@@ -186,8 +197,25 @@ data class GroupTimelineMessage(
   val poll: GroupPollUi? = null,
   val readByMembers: List<String> = emptyList(),
   val readReceipts: List<GroupReadReceipt> = emptyList(),
-  val isDeleted: Boolean = false
-)
+  val isDeleted: Boolean = false,
+  val isSystem: Boolean = false,
+  val systemEventType: GroupSystemEventType? = null,
+  val targetMemberName: String? = null,
+  val systemPayload: Map<String, String> = emptyMap(),
+  val isSelfActor: Boolean = false,
+  val isSelfTarget: Boolean = false
+) {
+  init {
+    if (isSystem) {
+      require(systemEventType != null) { "System message must have systemEventType" }
+      require(text.isEmpty() || text == SYSTEM_MESSAGE_PLACEHOLDER) {
+        "System messages should not carry encrypted text"
+      }
+    } else {
+      require(systemEventType == null) { "Regular message cannot have systemEventType" }
+    }
+  }
+}
 
 @Immutable
 data class GroupMemberPermissions(

@@ -136,6 +136,7 @@ import com.example.twopchat.ui.chat.StickerPickerBottomSheet
 import com.example.twopchat.ui.chat.StickerPackBottomSheet
 import com.example.twopchat.ui.chat.StickerPackRequestError
 import com.example.twopchat.ui.chat.SwipeToReplyContainer
+import com.example.twopchat.group.ui.components.GroupSystemMessageBubble
 import com.example.twopchat.ui.chat.SearchCategoryFilter
 import com.example.twopchat.ui.chat.SearchNavigationFabs
 import com.example.twopchat.ui.chat.SearchBottomBarPill
@@ -1299,51 +1300,58 @@ fun GroupChatScreen(
                             }
                         }
 
-                        SwipeToReplyContainer(
-                            onReply = {
-                                if (message.canReply) {
-                                    controller.startReply(state.groupId, message.messageId)
-                                }
-                            },
-                        ) {
-                            GroupMessageCard(
-                                groupId = state.groupId,
+                        if (message.isSystem) {
+                            GroupSystemMessageBubble(
                                 message = message,
-                                controller = controller,
-                                onEdit = { editingMessage = message },
-                                onDelete = { deletingMessage = message },
-                                onOptionsClick = { selectedMessageForOptions = message },
-                                onShowSeenBy = { showSeenByDialog = message },
-                                onMediaClick = { path ->
-                                    val lower = path.lowercase()
-                                    if (lower.endsWith(".mp4") || lower.endsWith(".mov") || lower.endsWith(".mkv") || lower.endsWith(".avi")) {
-                                        activeFullscreenVideo = path
-                                    } else {
-                                        selectedFullImagePath = path
+                                appLanguage = appLanguage,
+                            )
+                        } else {
+                            SwipeToReplyContainer(
+                                onReply = {
+                                    if (message.canReply) {
+                                        controller.startReply(state.groupId, message.messageId)
                                     }
                                 },
-                                onOpenVideo = { path -> activeFullscreenVideo = path },
-                                onOpenStickerPack = { msg -> viewedStickerMessage = msg },
-                                 isSelectMode = isSelectMode,
-                                isSelected = selectedMessages.any { it.messageId == message.messageId },
-                                isHighlighted = (highlightedMessageId == message.messageId),
-                                onToggleSelect = {
-                                    if (selectedMessages.any { it.messageId == message.messageId }) {
-                                        selectedMessages.removeAll { it.messageId == message.messageId }
-                                    } else {
-                                        selectedMessages.add(message)
-                                    }
-                                    if (selectedMessages.isEmpty()) isSelectMode = false
-                                },
-                                onReplyQuoteClick = { targetMsgId ->
-                                    val targetIndex = state.messages.indexOfFirst { it.messageId == targetMsgId }
-                                    if (targetIndex != -1) {
-                                        coroutineScope.launch {
-                                            listState.animateScrollToItem(targetIndex)
+                            ) {
+                                GroupMessageCard(
+                                    groupId = state.groupId,
+                                    message = message,
+                                    controller = controller,
+                                    onEdit = { editingMessage = message },
+                                    onDelete = { deletingMessage = message },
+                                    onOptionsClick = { selectedMessageForOptions = message },
+                                    onShowSeenBy = { showSeenByDialog = message },
+                                    onMediaClick = { path ->
+                                        val lower = path.lowercase()
+                                        if (lower.endsWith(".mp4") || lower.endsWith(".mov") || lower.endsWith(".mkv") || lower.endsWith(".avi")) {
+                                            activeFullscreenVideo = path
+                                        } else {
+                                            selectedFullImagePath = path
+                                        }
+                                    },
+                                    onOpenVideo = { path -> activeFullscreenVideo = path },
+                                    onOpenStickerPack = { msg -> viewedStickerMessage = msg },
+                                    isSelectMode = isSelectMode,
+                                    isSelected = selectedMessages.any { it.messageId == message.messageId },
+                                    isHighlighted = (highlightedMessageId == message.messageId),
+                                    onToggleSelect = {
+                                        if (selectedMessages.any { it.messageId == message.messageId }) {
+                                            selectedMessages.removeAll { it.messageId == message.messageId }
+                                        } else {
+                                            selectedMessages.add(message)
+                                        }
+                                        if (selectedMessages.isEmpty()) isSelectMode = false
+                                    },
+                                    onReplyQuoteClick = { targetMsgId ->
+                                        val targetIndex = state.messages.indexOfFirst { it.messageId == targetMsgId }
+                                        if (targetIndex != -1) {
+                                            coroutineScope.launch {
+                                                listState.animateScrollToItem(targetIndex)
+                                            }
                                         }
                                     }
-                                }
-                            )
+                                )
+                            }
                         }
                     }
                 }
