@@ -251,7 +251,6 @@ type probeResult struct {
 	conn     net.Conn
 	endpoint string
 	tier     ProbingTier
-	err      error
 }
 
 // ProbeFast races connection attempts across candidate endpoints in tiered priority order.

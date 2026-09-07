@@ -322,7 +322,7 @@ func TestLargeFileStreamingWithIntegrity(t *testing.T) {
 
 	// Start transfer and cancel immediately after first chunk
 	cancelCalled := false
-	err = transferMgr.SendFileStream(transferCtx, "peer-fp-abc", testMessageID, "", "test.bin", "", "", func(payload []byte) error {
+	_ = transferMgr.SendFileStream(transferCtx, "peer-fp-abc", testMessageID, "", "test.bin", "", "", func(payload []byte) error {
 		if !cancelCalled {
 			cancelCalled = true
 			cancel() // Cancel context mid-transfer

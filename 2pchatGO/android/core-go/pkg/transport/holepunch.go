@@ -56,7 +56,6 @@ func (hp *HolePuncher) Punch(ctx context.Context, remoteEndpoints []string, maxA
 
 	type punchResult struct {
 		conn net.Conn
-		err  error
 		ep   string
 	}
 

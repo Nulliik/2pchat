@@ -316,9 +316,8 @@ func (s *RelayTunnelServer) handleConnection(conn net.Conn) {
 			s.mu.Unlock()
 
 		case RelayFrameTypeConnect:
-			targetFP := string(frame.Payload)
 			s.mu.Lock()
-			peerConn, exists := s.subscribers[targetFP]
+			peerConn, exists := s.subscribers[string(frame.Payload)]
 			if !exists {
 				s.mu.Unlock()
 				// Peer not registered / offline

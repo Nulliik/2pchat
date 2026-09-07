@@ -61,7 +61,6 @@ type PeerActor struct {
 	streamMu      sync.RWMutex
 	chatStream    net.Conn
 	controlStream net.Conn
-	fileStream    net.Conn
 	callbacks     EventCallbacks
 	pendingAcks   map[string]chan bool
 	receivedIDsMu sync.Mutex

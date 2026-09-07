@@ -44,6 +44,9 @@ func TestResponder_DoesNotRevealIdentityToUnknownInitiator(t *testing.T) {
 		t.Fatal(err)
 	}
 	eveEphPriv, eveEphPub, err := crypto.GenerateX25519Keypair()
+	if err != nil {
+		t.Fatal(err)
+	}
 	_ = eveEphPriv
 	_ = evePrekeyPriv
 
@@ -158,6 +161,9 @@ func TestResponder_PeerValidator_PreReplyDenial_ZeroIdentityLeaked(t *testing.T)
 		t.Fatal(err)
 	}
 	eveEphPriv, eveEphPub, err := crypto.GenerateX25519Keypair()
+	if err != nil {
+		t.Fatal(err)
+	}
 	_ = eveEphPriv
 	_ = evePrekeyPriv
 

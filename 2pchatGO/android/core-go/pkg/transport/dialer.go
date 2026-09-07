@@ -140,7 +140,6 @@ func NewAdaptiveDialer(torProxyAddr string, proxyEnabled bool, timeout time.Dura
 		directDialer: &net.Dialer{
 			Timeout:   timeout,
 			KeepAlive: 30 * time.Second,
-			DualStack: true,
 			Resolver:  FallbackResolver,
 		},
 	}
@@ -440,7 +439,7 @@ func (d *AdaptiveDialer) DialContext(ctx context.Context, network, address strin
 		}
 
 		if torDialer == nil {
-			return nil, fmt.Errorf("Tor SOCKS5 dialer is uninitialized (proxy: %s)", torProxyAddr)
+			return nil, fmt.Errorf("tor SOCKS5 dialer is uninitialized (proxy: %s)", torProxyAddr)
 		}
 
 		type dialResult struct {
@@ -480,7 +479,7 @@ func (d *AdaptiveDialer) DialContext(ctx context.Context, network, address strin
 	if class == TransportYggdrasil {
 		if yggMode == YggdrasilModeProxy {
 			if yggDialer == nil {
-				return nil, fmt.Errorf("Yggdrasil SOCKS5 dialer is uninitialized (proxy: %s)", yggAddr)
+				return nil, fmt.Errorf("yggdrasil SOCKS5 dialer is uninitialized (proxy: %s)", yggAddr)
 			}
 
 			type dialResult struct {

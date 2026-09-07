@@ -120,35 +120,39 @@ class MessageCacheTest {
 
     @Test
     fun testConcurrentAccessThreadSafety() {
-        val executor = Executors.newFixedThreadPool(8)
-        val latch = CountDownLatch(8)
-        val errorCount = java.util.concurrent.atomic.AtomicInteger(0)
+        repeat(50) { iteration ->
+            MessageCache.clear()
+            val executor = Executors.newFixedThreadPool(8)
+            val latch = CountDownLatch(8)
+            val errorCount = java.util.concurrent.atomic.AtomicInteger(0)
 
-        for (threadIdx in 0 until 8) {
-            executor.execute {
-                try {
-                    for (i in 0 until 200) {
-                        val id = "msg-${threadIdx * 1000 + i}"
-                        MessageCache.put(id, createDummyMessage(id))
-                        val retrieved = MessageCache.get(id)
-                        if (retrieved == null || retrieved.id != id) {
-                            errorCount.incrementAndGet()
+            for (threadIdx in 0 until 8) {
+                executor.execute {
+                    try {
+                        for (i in 0 until 200) {
+                            // 8 threads × 25 keys = 200 ≤ MAX_ENTRIES (256) to avoid false-positive LRU eviction
+                            val id = "msg-${threadIdx * 25 + (i % 25)}"
+                            MessageCache.put(id, createDummyMessage(id))
+                            val retrieved = MessageCache.get(id)
+                            if (retrieved == null || retrieved.id != id) {
+                                errorCount.incrementAndGet()
+                            }
+                            if (i % 5 == 0) {
+                                MessageCache.invalidate(id)
+                            }
                         }
-                        if (i % 5 == 0) {
-                            MessageCache.invalidate(id)
-                        }
+                    } catch (_: Exception) {
+                        errorCount.incrementAndGet()
+                    } finally {
+                        latch.countDown()
                     }
-                } catch (_: Exception) {
-                    errorCount.incrementAndGet()
-                } finally {
-                    latch.countDown()
                 }
             }
-        }
 
-        assertTrue(latch.await(5, TimeUnit.SECONDS))
-        executor.shutdown()
-        assertEquals(0, errorCount.get())
+            assertTrue("Iteration $iteration timed out", latch.await(5, TimeUnit.SECONDS))
+            executor.shutdown()
+            assertEquals("Iteration $iteration failed with errors", 0, errorCount.get())
+        }
     }
 
     @Test

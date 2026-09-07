@@ -21,7 +21,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.22"
+          go-version-file: 2pchatGO/android/core-go/go.mod
           cache-dependency-path: 2pchatGO/android/core-go/go.sum
 
       - name: Set up JDK 17

@@ -1,0 +1,32 @@
+name: soak-nightly
+
+on:
+  workflow_dispatch:
+    inputs:
+      duration:
+        description: "Длительность прогона"
+        default: "6h"
+  # schedule:                      # включить после мержа cmd/soak
+  #   - cron: "0 2 * * *"          # nightly 02:00 UTC
+
+permissions:
+  contents: read
+
+jobs:
+  core-soak:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: 2pchatGO/android/core-go/go.mod
+
+      - name: Core soak (host-level, 12 нод)
+        working-directory: 2pchatGO/android/core-go
+        run: go run ./cmd/soak --duration ${{ inputs.duration || '6h' }} --nodes 12 --report soak-report.json
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: soak-report
+          path: 2pchatGO/android/core-go/soak-report.json
