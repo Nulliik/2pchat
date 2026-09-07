@@ -1005,6 +1005,9 @@ class NativeBridgeImpl(
     override fun setDiscoveryStrictSignatures(strict: Boolean) {
         NativeBridge.setDiscoveryStrictSignatures(strict)
     }
+
+    override fun getDeterministicTorOnionKey(index: Int): NativeBridge.DeterministicTorOnionKey? =
+        NativeBridge.getDeterministicTorOnionKey(index)
 }
 
 internal fun shouldPublishIdentitySessionEstablished(

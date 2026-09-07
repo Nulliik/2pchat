@@ -93,7 +93,14 @@ fun TorSettingsPage(
     val torOnionAddress by TorManager.onionAddress.collectAsState()
     var showOnionQr by remember { mutableStateOf(false) }
     var showRotateOnionDialog by remember { mutableStateOf(false) }
+    var showEnableDeterministicDialog by remember { mutableStateOf(false) }
     var isRotatingOnion by remember { mutableStateOf(false) }
+    var deterministicOnionEnabled by remember {
+        mutableStateOf(P2PPreferences.isTorDeterministicOnionEnabled(context))
+    }
+    var onionIndex by remember {
+        mutableStateOf(P2PPreferences.getTorOnionIndex(context))
+    }
 
     var torUserRequested by remember {
         mutableStateOf(P2PPreferences.isTorEnabled(context) || isTorRunning || isTorConnecting)
@@ -119,6 +126,12 @@ fun TorSettingsPage(
                 }
                 P2PPreferences.TOR_TRANSPORT -> {
                     torTransport = P2PPreferences.torTransport(context)
+                }
+                P2PPreferences.TOR_DETERMINISTIC_ONION_ENABLED -> {
+                    deterministicOnionEnabled = P2PPreferences.isTorDeterministicOnionEnabled(context)
+                }
+                P2PPreferences.TOR_ONION_INDEX -> {
+                    onionIndex = P2PPreferences.getTorOnionIndex(context)
                 }
             }
         }
@@ -553,6 +566,88 @@ fun TorSettingsPage(
                                 modifier = Modifier.align(Alignment.CenterHorizontally),
                             )
                         }
+
+                        HorizontalDivider(
+                            color = onSurfaceColor.copy(alpha = 0.08f),
+                            modifier = Modifier.padding(vertical = 10.dp)
+                        )
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    if (!deterministicOnionEnabled) {
+                                        showEnableDeterministicDialog = true
+                                    } else {
+                                        deterministicOnionEnabled = false
+                                        scope.launch {
+                                            TorManager.setDeterministicOnionEnabled(context, false)
+                                            onionIndex = P2PPreferences.getTorOnionIndex(context)
+                                        }
+                                    }
+                                }
+                                .padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
+                                Text(
+                                    text = com.example.twopchat.data.Localizations.tr(
+                                        appLanguage,
+                                        ru = "Детерминированный адрес",
+                                        en = "Deterministic address",
+                                        de = "Deterministische Adresse",
+                                        es = "Dirección determinista",
+                                        fr = "Adresse déterministe",
+                                        pt = "Endereço determinístico",
+                                        tr = "Belirleyici adres"
+                                    ),
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = onSurfaceColor,
+                                )
+                                Text(
+                                    text = if (deterministicOnionEnabled) {
+                                        com.example.twopchat.data.Localizations.tr(
+                                            appLanguage,
+                                            ru = "Привязан к seed-фразе (индекс: $onionIndex). Адрес сохраняется между переустановками.",
+                                            en = "Derived from seed phrase (index: $onionIndex). Preserved across reinstalls.",
+                                            de = "Aus Seed abgeleitet (Index: $onionIndex). Bleibt bei Neuinstallation erhalten.",
+                                            es = "Derivado de la frase semilla (índice: $onionIndex). Se conserva entre reinstalaciones.",
+                                            fr = "Dérivé de la phrase de récupération (index: $onionIndex). Conservé après réinstallation.",
+                                            pt = "Derivado da seed (índice: $onionIndex). Preservado entre reinstalações.",
+                                            tr = "Kurtarma ifadesinden türetildi (indeks: $onionIndex). Yeniden yüklemelerde korunur."
+                                        )
+                                    } else {
+                                        com.example.twopchat.data.Localizations.tr(
+                                            appLanguage,
+                                            ru = "Случайный временный адрес. Меняется при переустановке.",
+                                            en = "Random ephemeral address. Changes on app reinstall.",
+                                            de = "Zufällige flüchtige Adresse. Ändert sich bei Neuinstallation.",
+                                            es = "Dirección efímera aleatoria. Cambia al reinstalar.",
+                                            fr = "Adresse éphémère aléatoire. Change à la réinstallation.",
+                                            pt = "Endereço efêmero aleatório. Muda ao reinstalar.",
+                                            tr = "Rastgele geçici adres. Yeniden yüklemede değişir."
+                                        )
+                                    },
+                                    fontSize = 11.sp,
+                                    color = onSurfaceVariant,
+                                )
+                            }
+                            Switch(
+                                checked = deterministicOnionEnabled,
+                                onCheckedChange = { checked ->
+                                    if (checked) {
+                                        showEnableDeterministicDialog = true
+                                    } else {
+                                        deterministicOnionEnabled = false
+                                        scope.launch {
+                                            TorManager.setDeterministicOnionEnabled(context, false)
+                                            onionIndex = P2PPreferences.getTorOnionIndex(context)
+                                        }
+                                    }
+                                }
+                            )
+                        }
                     }
                 }
             }
@@ -783,16 +878,29 @@ fun TorSettingsPage(
             },
             text = {
                 Text(
-                    com.example.twopchat.data.Localizations.tr(
-                        appLanguage,
-                        ru = "Сгенерирует новый .onion ключ и автоматически разошлет его вашим доверенным контактам. Заблокированные пользователи навсегда потеряют связь с вашим узлом.",
-                        en = "Generates a new .onion keypair and broadcasts it only to trusted non-blocked contacts. Blocked users will permanently lose access to your node.",
-                        de = "Erstellt ein neues .onion-Schlüsselpaar und sendet es nur an vertrauenswürdige Kontakte. Blockierte Benutzer verlieren dauerhaft den Zugriff.",
-                        es = "Genera un nuevo par de claves .onion y lo envía solo a contactos de confianza. Los usuarios bloqueados perderán el acceso de forma permanente.",
-                        fr = "Génère une nouvelle paire de clés .onion et l'envoie uniquement aux contacts de confiance. Les utilisateurs bloqués perdront définitivement l'accès.",
-                        pt = "Gera um novo par de chaves .onion e envia apenas para contatos confiáveis. Usuários bloqueados perderão o acesso permanentemente.",
-                        tr = "Yeni bir .onion anahtar çifti oluşturur ve bunu yalnızca güvenilen kişilere iletir. Engellenen kullanıcılar düğümünüze erişimi kalıcı olarak kaybeder."
-                    ),
+                    if (deterministicOnionEnabled) {
+                        com.example.twopchat.data.Localizations.tr(
+                            appLanguage,
+                            ru = "Сгенерирует следующий .onion адрес (индекс ${onionIndex + 1}) из вашей seed-фразы и разошлет его вашим доверенным контактам. Заблокированные пользователи навсегда потеряют связь с вашим узлом.",
+                            en = "Generates the next .onion keypair (index ${onionIndex + 1}) derived from your seed phrase and broadcasts it to your trusted contacts. Blocked users will permanently lose access to your node.",
+                            de = "Erstellt das nächste .onion-Schlüsselpaar (Index ${onionIndex + 1}) aus Ihrem Seed und sendet es an vertrauenswürdige Kontakte.",
+                            es = "Genera el siguiente par de claves .onion (índice ${onionIndex + 1}) derivado de su semilla y lo envía a contactos de confianza.",
+                            fr = "Génère la paire de clés .onion suivante (index ${onionIndex + 1}) dérivée de votre graine et la diffuse aux contacts fiables.",
+                            pt = "Gera o próximo par de chaves .onion (índice ${onionIndex + 1}) derivado de sua seed e transmite para contatos confiáveis.",
+                            tr = "Tohum ifadenizden bir sonraki .onion anahtar çiftini (indeks ${onionIndex + 1}) türetir ve güvenilen kişilere iletir."
+                        )
+                    } else {
+                        com.example.twopchat.data.Localizations.tr(
+                            appLanguage,
+                            ru = "Сгенерирует новый .onion ключ и автоматически разошлет его вашим доверенным контактам. Заблокированные пользователи навсегда потеряют связь с вашим узлом.",
+                            en = "Generates a new .onion keypair and broadcasts it only to trusted non-blocked contacts. Blocked users will permanently lose access to your node.",
+                            de = "Erstellt ein neues .onion-Schlüsselpaar und sendet es nur an vertrauenswürdige Kontakte. Blockierte Benutzer verlieren dauerhaft den Zugriff.",
+                            es = "Genera un nuevo par de claves .onion y lo envía solo a contactos de confianza. Los usuarios bloqueados perderán el acceso de forma permanente.",
+                            fr = "Génère une nouvelle paire de clés .onion et l'envoie uniquement aux contacts de confiance. Les utilisateurs bloqués perdront définitivement l'accès.",
+                            pt = "Gera um novo par de chaves .onion e envia apenas para contatos confiáveis. Usuários bloqueados perderão o acesso permanentemente.",
+                            tr = "Yeni bir .onion anahtar çifti oluşturur ve bunu yalnızca güvenilen kişilere iletir. Engellenen kullanıcılar düğümünüze erişimi kalıcı olarak kaybeder."
+                        )
+                    },
                     fontSize = 13.sp,
                     color = onSurfaceVariant,
                 )
@@ -805,6 +913,7 @@ fun TorSettingsPage(
                         scope.launch {
                             val newAddr = TorManager.rotateOnionAddress(context)
                             isRotatingOnion = false
+                            onionIndex = P2PPreferences.getTorOnionIndex(context)
                             if (newAddr != null) {
                                 Toast.makeText(
                                     context,
@@ -873,6 +982,91 @@ fun TorSettingsPage(
                             tr = "İptal"
                         ),
                         color = onSurfaceVariant
+                    )
+                }
+            },
+            containerColor = surfaceColor,
+        )
+    }
+
+    if (showEnableDeterministicDialog) {
+        AlertDialog(
+            onDismissRequest = { showEnableDeterministicDialog = false },
+            title = {
+                Text(
+                    com.example.twopchat.data.Localizations.tr(
+                        appLanguage,
+                        ru = "Детерминированный .onion адрес",
+                        en = "Deterministic .onion Address",
+                        de = "Deterministische .onion-Adresse",
+                        es = "Dirección .onion determinista",
+                        fr = "Adresse .onion déterministe",
+                        pt = "Endereço .onion determinístico",
+                        tr = "Belirleyici .onion Adresi"
+                    ),
+                    fontWeight = FontWeight.Bold,
+                    color = onSurfaceColor,
+                )
+            },
+            text = {
+                Text(
+                    com.example.twopchat.data.Localizations.tr(
+                        appLanguage,
+                        ru = "✓ Ваш onion-адрес будет сохраняться между переустановками\n✓ Вы сможете менять его вручную через кнопку \"Сменить адрес\"\n\n⚠️ При восстановлении аккаунта из 24-словной фразы:\n• Onion-адрес сбросится на начальный (индекс 0)\n• Контактам потребуется обновить ваш адрес\n• История сообщений не восстанавливается (P2P)\n\n⚠️ Постоянный onion-адрес позволяет внешним наблюдателям коррелировать вашу активность в различных сетях.",
+                        en = "✓ Your onion address will be preserved across app reinstalls\n✓ You can rotate it manually via the \"Rotate address\" button\n\n⚠️ When restoring account from 24-word seed phrase:\n• Onion address resets to initial (index 0)\n• Contacts must obtain your updated address\n• Chat history is not restored (pure P2P)\n\n⚠️ A persistent onion address allows external observers to correlate your node across different networks.",
+                        de = "✓ Ihre Onion-Adresse bleibt bei Neuinstallationen erhalten\n✓ Manuelle Rotation über \"Adresse wechseln\"\n\n⚠️ Bei Wiederherstellung aus 24-Wort-Seed:\n• Onion-Adresse wird auf Index 0 zurückgesetzt\n• Kontakte müssen Ihre Adresse aktualisieren\n\n⚠️ Eine permanente Adresse ermöglicht Korrelation über verschiedene Netzwerke hinweg.",
+                        es = "✓ Su dirección onion se mantendrá entre reinstalaciones\n✓ Rotación manual mediante \"Cambiar dirección\"\n\n⚠️ Al restaurar cuenta desde frase de 24 palabras:\n• La dirección onion se restablece al índice 0\n• Los contactos deberán actualizar su dirección\n\n⚠️ Una dirección permanente permite a observadores externos correlacionar su actividad.",
+                        fr = "✓ Votre adresse onion sera conservée entre les réinstallations\n✓ Rotation manuelle via \"Changer d'adresse\"\n\n⚠️ Lors de la restauration avec la phrase de 24 mots :\n• L'adresse onion est réinitialisée à l'index 0\n• Vos contacts devront mettre à jour votre adresse\n\n⚠️ Une adresse persistante permet à des observateurs externes de corréler votre activité.",
+                        pt = "✓ Seu endereço onion será mantido entre reinstalações\n✓ Rotação manual via \"Trocar endereço\"\n\n⚠️ Ao restaurar conta a partir da frase de 24 palavras:\n• O endereço onion volta para o índice inicial 0\n• Os contatos precisarão atualizar seu endereço\n\n⚠️ Um endereço persistente permite a observadores correlacionar sua atividade.",
+                        tr = "✓ Onion adresiniz yeniden yüklemelerde korunur\n✓ \"Adresi Yenile\" butonuyla manuel yenileme\n\n⚠️ 24 kelimelik kurtarma ifadesinden geri yüklerken:\n• Onion adresi indeks 0'a sıfırlanır\n• Kişilerin adresinizi güncellemesi gerekir\n\n⚠️ Kalıcı bir adres harici gözlemcilerin aktivitenizi ilişkilendirmesine olanak tanır."
+                    ),
+                    fontSize = 13.sp,
+                    color = onSurfaceVariant,
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showEnableDeterministicDialog = false
+                        deterministicOnionEnabled = true
+                        scope.launch {
+                            TorManager.setDeterministicOnionEnabled(context, true)
+                            onionIndex = P2PPreferences.getTorOnionIndex(context)
+                        }
+                    }
+                ) {
+                    Text(
+                        com.example.twopchat.data.Localizations.tr(
+                            appLanguage,
+                            ru = "Включить",
+                            en = "Enable",
+                            de = "Aktivieren",
+                            es = "Habilitar",
+                            fr = "Activer",
+                            pt = "Ativar",
+                            tr = "Etkinleştir"
+                        ),
+                        fontWeight = FontWeight.Bold,
+                        color = primaryColor,
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showEnableDeterministicDialog = false }
+                ) {
+                    Text(
+                        com.example.twopchat.data.Localizations.tr(
+                            appLanguage,
+                            ru = "Отмена",
+                            en = "Cancel",
+                            de = "Abbrechen",
+                            es = "Cancelar",
+                            fr = "Annuler",
+                            pt = "Cancelar",
+                            tr = "İptal"
+                        ),
+                        color = onSurfaceVariant,
                     )
                 }
             },

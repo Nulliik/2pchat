@@ -6,6 +6,7 @@ package main
 import "C"
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -1234,4 +1235,36 @@ func Java_com_example_twopchat_NativeBridge_nativeSetDiscoveryStrictSignatures(
 	jStrict C.jboolean,
 ) {
 	bridge.GetManager().SetDiscoveryStrictSignatures(jStrict == C.JNI_TRUE)
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeGetDeterministicTorOnionKey
+func Java_com_example_twopchat_NativeBridge_nativeGetDeterministicTorOnionKey(
+	env *C.JNIEnv,
+	clazz C.jclass,
+	jIndex C.jint,
+) C.jstring {
+	if jIndex < 0 {
+		return C.nullJString()
+	}
+	hostname, secretKeyBytes, err := bridge.GetManager().GetDeterministicTorOnionKey(uint32(jIndex))
+	if err != nil {
+		return C.nullJString()
+	}
+	defer crypto.Zeroize(secretKeyBytes)
+
+	type torKeyResult struct {
+		Hostname        string `json:"hostname"`
+		SecretKeyBase64 string `json:"secret_key_base64"`
+	}
+	resBytes, err := json.Marshal(torKeyResult{
+		Hostname:        hostname,
+		SecretKeyBase64: base64.StdEncoding.EncodeToString(secretKeyBytes),
+	})
+	if err != nil {
+		return C.nullJString()
+	}
+
+	cRes := C.CString(string(resBytes))
+	defer C.free(unsafe.Pointer(cRes))
+	return C.createJString(env, cRes)
 }

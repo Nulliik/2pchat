@@ -46,6 +46,8 @@ object P2PPreferences : com.example.twopchat.security.SensitiveMemoryHolder {
     const val TOR_PUBLIC_BRIDGES_ENABLED = "settings_tor_public_bridges_enabled"
     const val TOR_TRANSPORT = "settings_tor_transport"
     const val TOR_ONION_HOSTNAME = "settings_tor_onion_hostname"
+    const val TOR_DETERMINISTIC_ONION_ENABLED = "settings_tor_deterministic_onion_enabled"
+    const val TOR_ONION_INDEX = "settings_tor_onion_index"
     const val PROXY_HOST = "settings_proxy_host"
     const val PROXY_PORT = "settings_proxy_port"
     const val DEFAULT_PROXY_HOST = "127.0.0.1"
@@ -364,6 +366,28 @@ object P2PPreferences : com.example.twopchat.security.SensitiveMemoryHolder {
 
     fun setTorHiddenServiceEnabled(context: Context, enabled: Boolean): Boolean {
         return prefs(context).edit().putBoolean(KEY_TOR_HIDDEN_SERVICE_ENABLED, enabled).commit()
+    }
+
+    fun isTorDeterministicOnionEnabled(context: Context): Boolean =
+        prefs(context).getBoolean(TOR_DETERMINISTIC_ONION_ENABLED, false)
+
+    fun setTorDeterministicOnionEnabled(context: Context, enabled: Boolean): Boolean =
+        prefs(context).edit().putBoolean(TOR_DETERMINISTIC_ONION_ENABLED, enabled).commit()
+
+    fun getTorOnionIndex(context: Context): Int =
+        prefs(context).getInt(TOR_ONION_INDEX, 0)
+
+    fun setTorOnionIndex(context: Context, index: Int): Boolean =
+        prefs(context).edit().putInt(TOR_ONION_INDEX, index).commit()
+
+    fun incrementTorOnionIndex(context: Context): Int {
+        val current = getTorOnionIndex(context)
+        if (current >= Int.MAX_VALUE - 1) {
+            throw IllegalStateException("Onion index exhausted (4 billion rotations)")
+        }
+        val next = current + 1
+        setTorOnionIndex(context, next)
+        return next
     }
 
     fun getEffectiveTorBridgeLines(context: Context): List<String> =

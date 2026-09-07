@@ -115,3 +115,11 @@ The signature is computed over the canonical JSON string of the manifest without
 
 - When importing a file starting with `PK\x03\x04` (ZIP magic), `ProfileBackupManager` detects it as `BackupFormat.V1_PLAINTEXT_ZIP`.
 - The system logs a security warning (`SafeLog.w`) and displays an alert informing the user that the file is unencrypted, advising them to re-export as `2PBK` v2.
+
+---
+
+## 7. Known Limitations
+
+- **Deterministic Tor Onion Addresses**:
+  Deterministic Tor onion addresses derived from the account seed via HKDF domain separation (`2pchat-tor-v3-onion-seed-v1`) are tied to an integer rotation index. Deterministic Tor onion addresses are not included in mnemonic backup. Upon account restoration from a 24-word seed phrase, the onion rotation index resets to index 0. Contacts who saved a previously rotated onion address (e.g., index > 0) must obtain the user's updated onion address.
+

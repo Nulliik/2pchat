@@ -863,6 +863,27 @@ object NativeBridge {
         }
     }
 
+    data class DeterministicTorOnionKey(
+        val hostname: String,
+        val secretKeyBytes: ByteArray
+    )
+
+    fun getDeterministicTorOnionKey(index: Int): DeterministicTorOnionKey? {
+        if (!isLoaded || index < 0) return null
+        return try {
+            val jsonStr = nativeGetDeterministicTorOnionKey(index) ?: return null
+            val obj = org.json.JSONObject(jsonStr)
+            val hostname = obj.optString("hostname", "")
+            val b64 = obj.optString("secret_key_base64", "")
+            if (hostname.isBlank() || b64.isBlank()) return null
+            val secretKeyBytes = android.util.Base64.decode(b64, android.util.Base64.NO_WRAP)
+            DeterministicTorOnionKey(hostname, secretKeyBytes)
+        } catch (e: Throwable) {
+            SafeLog.e(TAG, "nativeGetDeterministicTorOnionKey failed", e)
+            null
+        }
+    }
+
     // --- Native JNI declarations ---
     private external fun nativeSetStorageKey(key: ByteArray): Boolean
     private external fun nativeSetStorageDir(dir: String)
@@ -931,4 +952,5 @@ object NativeBridge {
     private external fun nativeSetDiscoverySeqCounter(seq: Long)
     private external fun nativeGetDiscoverySeqCounter(): Long
     private external fun nativeSetDiscoveryStrictSignatures(strict: Boolean)
+    private external fun nativeGetDeterministicTorOnionKey(index: Int): String?
 }

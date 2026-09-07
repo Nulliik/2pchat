@@ -513,45 +513,226 @@ object TorManager {
         hostname
     }
 
+    internal fun writeDeterministicOnionKeys(
+        hsDir: File,
+        key: NativeBridge.DeterministicTorOnionKey
+    ): Boolean {
+        return try {
+            if (!hsDir.exists() && !hsDir.mkdirs()) {
+                SafeLog.e(TAG, "[TOR] Failed to create hidden service directory for deterministic keys")
+                return false
+            }
+            setDirectoryPermissions0700(hsDir)
+
+            val keyFile = File(hsDir, "hs_ed25519_secret_key")
+            val tempKeyFile = File(hsDir, "hs_ed25519_secret_key.tmp")
+            tempKeyFile.writeBytes(key.secretKeyBytes)
+            setFilePermissions0600(tempKeyFile)
+            if (!tempKeyFile.renameTo(keyFile)) {
+                keyFile.writeBytes(key.secretKeyBytes)
+                tempKeyFile.delete()
+            }
+            setFilePermissions0600(keyFile)
+
+            val hostnameFile = File(hsDir, "hostname")
+            val tempHostnameFile = File(hsDir, "hostname.tmp")
+            tempHostnameFile.writeText("${key.hostname}\n")
+            setFilePermissions0600(tempHostnameFile)
+            if (!tempHostnameFile.renameTo(hostnameFile)) {
+                hostnameFile.writeText("${key.hostname}\n")
+                tempHostnameFile.delete()
+            }
+            setFilePermissions0600(hostnameFile)
+
+            val pubKeyFile = File(hsDir, "hs_ed25519_public_key")
+            if (pubKeyFile.exists()) {
+                pubKeyFile.delete()
+            }
+
+            true
+        } catch (e: Exception) {
+            SafeLog.e(TAG, "[TOR] Error writing deterministic onion keys", e)
+            false
+        } finally {
+            java.util.Arrays.fill(key.secretKeyBytes, 0.toByte())
+        }
+    }
+
+    private fun setFilePermissions0600(file: File) {
+        file.setReadable(false, false)
+        file.setReadable(true, true)
+        file.setWritable(false, false)
+        file.setWritable(true, true)
+        file.setExecutable(false, false)
+        try {
+            android.system.Os.chmod(file.absolutePath, 384 /* 0600 */)
+        } catch (_: Throwable) {
+            // pure JVM tests or OS errors
+        }
+    }
+
+    private fun setDirectoryPermissions0700(dir: File) {
+        dir.setReadable(false, false)
+        dir.setReadable(true, true)
+        dir.setWritable(false, false)
+        dir.setWritable(true, true)
+        dir.setExecutable(false, false)
+        dir.setExecutable(true, true)
+        try {
+            android.system.Os.chmod(dir.absolutePath, 448 /* 0700 */)
+        } catch (_: Throwable) {
+            // pure JVM tests or OS errors
+        }
+    }
+
+    suspend fun setDeterministicOnionEnabled(context: Context, enabled: Boolean): Boolean = withContext(Dispatchers.IO) {
+        val appContext = context.applicationContext
+        val wasEnabled = P2PPreferences.isTorDeterministicOnionEnabled(appContext)
+        if (wasEnabled == enabled) return@withContext true
+
+        P2PPreferences.setTorDeterministicOnionEnabled(appContext, enabled)
+
+        val appTorDir = File(appContext.filesDir, "app_tor")
+        val hsDir = File(appTorDir, "hidden_service_v3")
+
+        if (isTorRunning.value || isTorConnecting.value) {
+            stopTor()
+            if (enabled) {
+                val index = P2PPreferences.getTorOnionIndex(appContext)
+                val key = NativeBridge.getDeterministicTorOnionKey(index)
+                if (key != null) {
+                    writeDeterministicOnionKeys(hsDir, key)
+                    P2PPreferences.setTorOnionHostname(appContext, key.hostname)
+                    _onionAddress.value = key.hostname
+                    NativeBridge.setOnionAddress(key.hostname)
+                }
+            } else {
+                if (hsDir.exists()) {
+                    hsDir.deleteRecursively()
+                }
+                P2PPreferences.setTorOnionHostname(appContext, "")
+                _onionAddress.value = null
+                NativeBridge.setOnionAddress("")
+            }
+            startTor(appContext)
+            val newHostname = readAndPublishOnionAddressWithRetry(
+                context = appContext,
+                hiddenServiceDir = hsDir,
+                maxWaitMs = 15000L,
+                pollIntervalMs = 500L,
+            )
+            if (newHostname != null) {
+                P2PMessageRelay.broadcastOnionAddressUpdate(appContext, newHostname)
+            }
+        } else {
+            if (enabled) {
+                val index = P2PPreferences.getTorOnionIndex(appContext)
+                val key = NativeBridge.getDeterministicTorOnionKey(index)
+                if (key != null) {
+                    writeDeterministicOnionKeys(hsDir, key)
+                    P2PPreferences.setTorOnionHostname(appContext, key.hostname)
+                    _onionAddress.value = key.hostname
+                    NativeBridge.setOnionAddress(key.hostname)
+                }
+            } else {
+                if (hsDir.exists()) {
+                    hsDir.deleteRecursively()
+                }
+                P2PPreferences.setTorOnionHostname(appContext, "")
+                _onionAddress.value = null
+                NativeBridge.setOnionAddress("")
+            }
+        }
+        true
+    }
+
     suspend fun rotateOnionAddress(context: Context): String? = withContext(Dispatchers.IO) {
         val appContext = context.applicationContext
         SafeLog.i(TAG, "[TOR] Initiating Tor Onion Address Rotation")
 
-        // 1. Stop current Tor process cleanly
-        stopTor()
-
-        // 2. Delete old hidden_service_v3 directory and clear cached hostname
         val appTorDir = File(appContext.filesDir, "app_tor")
         val hsDir = File(appTorDir, "hidden_service_v3")
-        if (hsDir.exists()) {
-            hsDir.deleteRecursively()
-            SafeLog.i(TAG, "[TOR] Removed previous hidden_service_v3 keys and hostname")
-        }
-        P2PPreferences.setTorOnionHostname(appContext, "")
-        _onionAddress.value = null
-        NativeBridge.setOnionAddress("")
 
-        // 3. Restart Tor process
-        startTor(appContext)
+        val isDeterministic = P2PPreferences.isTorDeterministicOnionEnabled(appContext)
 
-        // 4. Poll for the newly generated hostname
-        val newHostname = readAndPublishOnionAddressWithRetry(
-            context = appContext,
-            hiddenServiceDir = hsDir,
-            maxWaitMs = 15000L,
-            pollIntervalMs = 500L,
-        )
+        if (isDeterministic) {
+            val current = P2PPreferences.getTorOnionIndex(appContext)
+            if (current >= Int.MAX_VALUE - 1) {
+                SafeLog.e(TAG, "[TOR] Onion rotation index exhausted")
+                return@withContext null
+            }
+            val targetIndex = current + 1
+            val key = NativeBridge.getDeterministicTorOnionKey(targetIndex)
+            if (key == null) {
+                SafeLog.e(TAG, "[TOR] Failed to derive deterministic onion key for index $targetIndex")
+                return@withContext null
+            }
 
-        if (newHostname != null) {
-            SafeLog.i(TAG, "[TOR] Onion Address Rotation SUCCEEDED (len=${newHostname.length})")
-            SafeLog.d(TAG, "[TOR] Onion Address Rotation SUCCEEDED: $newHostname")
-            // 5. Broadcast signed onion update to trusted contacts
+            // 1. Stop current Tor process cleanly
+            stopTor()
+
+            // 2. Write key FIRST (atomic rotation protection)
+            val writeOk = writeDeterministicOnionKeys(hsDir, key)
+            if (!writeOk) {
+                SafeLog.e(TAG, "[TOR] Failed to write deterministic onion keys for index $targetIndex")
+                return@withContext null
+            }
+
+            // 3. Atomically commit index ONLY after key file has been written
+            P2PPreferences.setTorOnionIndex(appContext, targetIndex)
+            P2PPreferences.setTorOnionHostname(appContext, key.hostname)
+            _onionAddress.value = key.hostname
+            NativeBridge.setOnionAddress(key.hostname)
+
+            // 4. Restart Tor process
+            startTor(appContext)
+
+            // 5. Poll / verify newly published hostname
+            val newHostname = readAndPublishOnionAddressWithRetry(
+                context = appContext,
+                hiddenServiceDir = hsDir,
+                maxWaitMs = 15000L,
+                pollIntervalMs = 500L,
+            ) ?: key.hostname
+
+            SafeLog.i(TAG, "[TOR] Deterministic Onion Rotation SUCCEEDED to index $targetIndex ($newHostname)")
             P2PMessageRelay.broadcastOnionAddressUpdate(appContext, newHostname)
+            return@withContext newHostname
         } else {
-            SafeLog.e(TAG, "[TOR] Onion Address Rotation FAILED to generate hostname within timeout")
-        }
+            // 1. Stop current Tor process cleanly
+            stopTor()
 
-        newHostname
+            // 2. Delete old hidden_service_v3 directory and clear cached hostname
+            if (hsDir.exists()) {
+                hsDir.deleteRecursively()
+                SafeLog.i(TAG, "[TOR] Removed previous hidden_service_v3 keys and hostname")
+            }
+            P2PPreferences.setTorOnionHostname(appContext, "")
+            _onionAddress.value = null
+            NativeBridge.setOnionAddress("")
+
+            // 3. Restart Tor process
+            startTor(appContext)
+
+            // 4. Poll for the newly generated hostname
+            val newHostname = readAndPublishOnionAddressWithRetry(
+                context = appContext,
+                hiddenServiceDir = hsDir,
+                maxWaitMs = 15000L,
+                pollIntervalMs = 500L,
+            )
+
+            if (newHostname != null) {
+                SafeLog.i(TAG, "[TOR] Onion Address Rotation SUCCEEDED (len=${newHostname.length})")
+                SafeLog.d(TAG, "[TOR] Onion Address Rotation SUCCEEDED: $newHostname")
+                // 5. Broadcast signed onion update to trusted contacts
+                P2PMessageRelay.broadcastOnionAddressUpdate(appContext, newHostname)
+            } else {
+                SafeLog.e(TAG, "[TOR] Onion Address Rotation FAILED to generate hostname within timeout")
+            }
+
+            return@withContext newHostname
+        }
     }
 
     suspend fun waitForSocksPort(socksPort: Int = effectiveSocksPort, timeoutMs: Long = 3000): Boolean = withContext(Dispatchers.IO) {
@@ -891,18 +1072,20 @@ object TorManager {
             if (!hsDir.exists() && !hsDir.mkdirs()) {
                 throw IllegalStateException("Unable to create Tor hidden service directory")
             }
-            hsDir.setReadable(false, false)
-            hsDir.setReadable(true, true)
-            hsDir.setWritable(false, false)
-            hsDir.setWritable(true, true)
-            hsDir.setExecutable(false, false)
-            hsDir.setExecutable(true, true)
-            try {
-                android.system.Os.chmod(hsDir.absolutePath, 448 /* 0700 */)
-            } catch (e: Exception) {
-                SafeLog.d(TAG, "Os.chmod failed: ${e.javaClass.simpleName}")
-            } catch (_: Throwable) {
-                // intentionally ignored: android.system.Os may not be mocked in pure JVM tests
+            setDirectoryPermissions0700(hsDir)
+
+            if (P2PPreferences.isTorDeterministicOnionEnabled(context)) {
+                val keyFile = File(hsDir, "hs_ed25519_secret_key")
+                val hostnameFile = File(hsDir, "hostname")
+                if (!keyFile.exists() || keyFile.length() != 96L || !hostnameFile.exists()) {
+                    val currentIndex = P2PPreferences.getTorOnionIndex(context)
+                    val key = NativeBridge.getDeterministicTorOnionKey(currentIndex)
+                    if (key != null) {
+                        writeDeterministicOnionKeys(hsDir, key)
+                    } else {
+                        SafeLog.w(TAG, "[TOR] Deterministic onion enabled but key derivation failed; falling back to ephemeral HS")
+                    }
+                }
             }
 
             // Check ports and free stale instances before generating torrc

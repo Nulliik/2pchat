@@ -70,4 +70,5 @@ interface IP2PBridge {
     fun setDiscoverySeqCounter(seq: Long) {}
     fun getDiscoverySeqCounter(): Long = 0L
     fun setDiscoveryStrictSignatures(strict: Boolean) {}
+    fun getDeterministicTorOnionKey(index: Int): com.example.twopchat.NativeBridge.DeterministicTorOnionKey? = null
 }

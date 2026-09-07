@@ -1487,3 +1487,21 @@ func (m *SessionManager) SetDiscoveryStrictSignatures(strict bool) {
 	}
 }
 
+// GetDeterministicTorOnionKey derives a standard 96-byte Tor v3 hs_ed25519_secret_key
+// and .onion address deterministically from the local identity seed and index.
+func (m *SessionManager) GetDeterministicTorOnionKey(index uint32) (string, []byte, error) {
+	m.mu.RLock()
+	id := m.identity
+	m.mu.RUnlock()
+
+	if id == nil || id.Private == nil {
+		return "", nil, errors.New("identity not initialized")
+	}
+
+	seed := id.Private.Bytes()
+	defer crypto.Zeroize(seed)
+
+	return crypto.DeriveTorOnionKey(seed, index)
+}
+
+
