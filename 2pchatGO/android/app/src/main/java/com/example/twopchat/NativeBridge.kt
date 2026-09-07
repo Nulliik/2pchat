@@ -731,6 +731,63 @@ object NativeBridge {
         }
     }
 
+    fun encryptBackupPayload(password: String, payload: ByteArray): ByteArray? {
+        if (!isLoaded) return null
+        return try {
+            nativeEncryptBackupPayload(password, payload)
+        } catch (e: Throwable) {
+            SafeLog.e(TAG, "nativeEncryptBackupPayload failed", e)
+            null
+        }
+    }
+
+    fun decryptBackupPayload(password: String, encryptedData: ByteArray): ByteArray? {
+        if (!isLoaded) return null
+        return try {
+            nativeDecryptBackupPayload(password, encryptedData)
+        } catch (e: Throwable) {
+            SafeLog.e(TAG, "nativeDecryptBackupPayload failed", e)
+            null
+        }
+    }
+
+    fun inspectBackupFingerprint(encryptedData: ByteArray): String? {
+        if (!isLoaded) return null
+        return try {
+            nativeInspectBackupFingerprint(encryptedData)
+        } catch (e: Throwable) {
+            SafeLog.e(TAG, "nativeInspectBackupFingerprint failed", e)
+            null
+        }
+    }
+
+    data class BackupSignatureResult(val signature: String, val verifyPub: String)
+
+    fun signBackupManifest(canonicalManifest: ByteArray): BackupSignatureResult? {
+        if (!isLoaded) return null
+        return try {
+            val jsonStr = nativeSignBackupManifest(canonicalManifest) ?: return null
+            val obj = org.json.JSONObject(jsonStr)
+            BackupSignatureResult(
+                signature = obj.getString("signature"),
+                verifyPub = obj.getString("verify_pub")
+            )
+        } catch (e: Throwable) {
+            SafeLog.e(TAG, "nativeSignBackupManifest failed", e)
+            null
+        }
+    }
+
+    fun verifyBackupManifest(verifyPubBase64: String, canonicalManifest: ByteArray, signatureBase64: String): Boolean {
+        if (!isLoaded) return false
+        return try {
+            nativeVerifyBackupManifest(verifyPubBase64, canonicalManifest, signatureBase64)
+        } catch (e: Throwable) {
+            SafeLog.e(TAG, "nativeVerifyBackupManifest failed", e)
+            false
+        }
+    }
+
     // --- Native JNI declarations ---
     private external fun nativeSetStorageKey(key: ByteArray): Boolean
     private external fun nativeSetStorageDir(dir: String)
@@ -789,4 +846,9 @@ object NativeBridge {
     private external fun nativeRefreshNatDiagnostics(): Boolean
     private external fun nativeGetNatDiagnosticsJSON(): String?
     private external fun nativeOnNetworkChanged(): Boolean
+    private external fun nativeEncryptBackupPayload(password: String, payload: ByteArray): ByteArray?
+    private external fun nativeDecryptBackupPayload(password: String, encryptedData: ByteArray): ByteArray?
+    private external fun nativeInspectBackupFingerprint(encryptedData: ByteArray): String?
+    private external fun nativeSignBackupManifest(canonicalManifest: ByteArray): String?
+    private external fun nativeVerifyBackupManifest(verifyPubBase64: String, canonicalManifest: ByteArray, signatureBase64: String): Boolean
 }

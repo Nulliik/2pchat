@@ -260,8 +260,22 @@ object Localizations {
         "paste_from_clipboard" to "Paste from Clipboard",
         "restore_btn" to "Restore Account",
         "invalid_seed_error" to "Invalid phrase or checksum error. Please check your words.",
-        "account_restored_success" to "Account successfully restored!",
-        "poll_notification_prefix" to "Poll: "
+        "poll_notification_prefix" to "Poll: ",
+        "restore_choose_method" to "Choose restoration method",
+        "restore_mode_phrase" to "Recovery Phrase (24 words)",
+        "restore_mode_phrase_desc" to "Restores your cryptographic ID & fingerprint. Messages are stored locally on devices and not restored.",
+        "restore_mode_file" to "Encrypted Backup File (.2pbackup)",
+        "restore_mode_file_desc" to "Restores your full account, contacts, and saved chat history from an encrypted file.",
+        "restore_checksum_valid" to "✓ Checksum valid (24/24 words)",
+        "restore_checksum_invalid" to "⚠ Invalid BIP-39 checksum",
+        "restore_checksum_incomplete" to "Enter all 24 words (%d/24)",
+        "restore_lockout_active" to "Too many attempts. Please wait %d s.",
+        "restore_select_file" to "Select .2pbackup File",
+        "restore_file_selected" to "Selected file: %s",
+        "restore_enter_password" to "Enter Backup Password",
+        "restore_in_progress" to "Restoring account...",
+        "restore_paste_split_success" to "Pasted 24 words from clipboard",
+        "restore_paste_split_fail" to "Clipboard does not contain valid words"
     )
 
     private val ruStrings = mapOf(
@@ -523,8 +537,22 @@ object Localizations {
         "paste_from_clipboard" to "Вставить из буфера",
         "restore_btn" to "Восстановить аккаунт",
         "invalid_seed_error" to "Неверная фраза или ошибка контрольной суммы. Проверьте введенные слова.",
-        "account_restored_success" to "Аккаунт успешно восстановлен!",
-        "poll_notification_prefix" to "Опрос: "
+        "poll_notification_prefix" to "Опрос: ",
+        "restore_choose_method" to "Выберите способ восстановления",
+        "restore_mode_phrase" to "Мнемоническая фраза (24 слова)",
+        "restore_mode_phrase_desc" to "Восстанавливает криптографический ID и отпечаток. Сообщения хранятся локально на устройствах и не восстанавливаются.",
+        "restore_mode_file" to "Файл резервной копии (.2pbackup)",
+        "restore_mode_file_desc" to "Восстанавливает профиль целиком, контакты и сохранённую историю сообщений из зашифрованного файла.",
+        "restore_checksum_valid" to "✓ Контрольная сумма верна (24/24)",
+        "restore_checksum_invalid" to "⚠ Неверная контрольная сумма BIP-39",
+        "restore_checksum_incomplete" to "Введите все 24 слова (%d/24)",
+        "restore_lockout_active" to "Слишком много попыток. Подождите %d сек.",
+        "restore_select_file" to "Выбрать файл .2pbackup",
+        "restore_file_selected" to "Выбран файл: %s",
+        "restore_enter_password" to "Введите пароль резервной копии",
+        "restore_in_progress" to "Восстановление аккаунта...",
+        "restore_paste_split_success" to "Вставлено 24 слова из буфера обмена",
+        "restore_paste_split_fail" to "В буфере обмена нет подходящих слов"
     )
 
     private val deStrings = mapOf(
@@ -783,8 +811,22 @@ object Localizations {
         "help_tip_screen_security_title" to "Schutz vor Bildschirmfotos & visuellen Lecks",
         "help_tip_screen_security_desc" to "Aktivieren Sie 'Bildschirmschutz' in den Sicherheitseinstellungen, um Screenshots zu blockieren und zu verhindern, dass Android Chat-Vorschauen in der App-Übersicht speichert.",
         "help_tip_tor_rotation_title" to "Sofortige Tor-Geschwindigkeitsoptimierung",
-        "help_tip_tor_rotation_desc" to "Falls die Nachrichtenübertragung langsam ist, tippen Sie in den Tor-Einstellungen oder im Chat-Kopf auf 'Identität erneuern'. Dies sendet ein SIGNAL NEWNYM, um Ihren Exit-Node auf eine schnellere Route zu wechseln.",
-        "poll_notification_prefix" to "Umfrage: "
+        "poll_notification_prefix" to "Umfrage: ",
+        "restore_choose_method" to "Wiederherstellungsmethode wählen",
+        "restore_mode_phrase" to "Wiederherstellungsphrase (24 Wörter)",
+        "restore_mode_phrase_desc" to "Stellt Ihre kryptografische ID und Ihren Fingerabdruck wieder her. Nachrichten werden lokal gespeichert und nicht wiederhergestellt.",
+        "restore_mode_file" to "Verschlüsselte Sicherungsdatei (.2pbackup)",
+        "restore_mode_file_desc" to "Stellt Ihr gesamtes Konto, Kontakte und gespeicherten Chatverlauf aus einer Datei wieder her.",
+        "restore_checksum_valid" to "✓ Prüfsumme gültig (24/24 Wörter)",
+        "restore_checksum_invalid" to "⚠ Ungültige BIP-39-Prüfsumme",
+        "restore_checksum_incomplete" to "Geben Sie alle 24 Wörter ein (%d/24)",
+        "restore_lockout_active" to "Zu viele Versuche. Bitte warten Sie %d s.",
+        "restore_select_file" to ".2pbackup-Datei auswählen",
+        "restore_file_selected" to "Ausgewählte Datei: %s",
+        "restore_enter_password" to "Sicherungspasswort eingeben",
+        "restore_in_progress" to "Konto wird wiederhergestellt...",
+        "restore_paste_split_success" to "24 Wörter aus der Zwischenablage eingefügt",
+        "restore_paste_split_fail" to "Zwischenablage enthält keine gültigen Wörter"
     )
 
     private val esStrings = mapOf(
@@ -1043,8 +1085,22 @@ object Localizations {
         "help_tip_screen_security_title" to "Prevención de fugas visuales y capturas de pantalla",
         "help_tip_screen_security_desc" to "Activa 'Protección de pantalla' en los ajustes de seguridad para bloquear capturas de pantalla y evitar que Android guarde miniaturas del chat en la vista de aplicaciones recientes.",
         "help_tip_tor_rotation_title" to "Aumento instantáneo de velocidad de Tor",
-        "help_tip_tor_rotation_desc" to "Si el envío de mensajes parece lento, toca 'Renovar identidad' en los ajustes de Tor o en el encabezado del chat. Esto envía una señal SIGNAL NEWNYM para rotar tu nodo de salida a un circuito más rápido.",
-        "poll_notification_prefix" to "Encuesta: "
+        "poll_notification_prefix" to "Encuesta: ",
+        "restore_choose_method" to "Elegir método de restauración",
+        "restore_mode_phrase" to "Frase de recuperación (24 palabras)",
+        "restore_mode_phrase_desc" to "Restaura tu ID y huella criptográfica. Los mensajes se guardan localmente y no se restauran.",
+        "restore_mode_file" to "Archivo de copia de seguridad (.2pbackup)",
+        "restore_mode_file_desc" to "Restaura tu cuenta completa, contactos e historial guardado desde un archivo cifrado.",
+        "restore_checksum_valid" to "✓ Suma de verificación válida (24/24 palabras)",
+        "restore_checksum_invalid" to "⚠ Suma de verificación BIP-39 no válida",
+        "restore_checksum_incomplete" to "Introduce las 24 palabras (%d/24)",
+        "restore_lockout_active" to "Demasiados intentos. Espera %d s.",
+        "restore_select_file" to "Seleccionar archivo .2pbackup",
+        "restore_file_selected" to "Archivo seleccionado: %s",
+        "restore_enter_password" to "Introducir contraseña de copia",
+        "restore_in_progress" to "Restaurando cuenta...",
+        "restore_paste_split_success" to "24 palabras pegadas desde el portapapeles",
+        "restore_paste_split_fail" to "El portapapeles no contiene palabras válidas"
     )
 
     private val frStrings = mapOf(
@@ -1303,8 +1359,22 @@ object Localizations {
         "help_tip_screen_security_title" to "Prévention des fuites visuelles et captures d'écran",
         "help_tip_screen_security_desc" to "Activez 'Protection d'écran' dans les paramètres de sécurité pour bloquer les captures d'écran et empêcher Android de mettre en cache les aperçus de discussion dans les applications récentes.",
         "help_tip_tor_rotation_title" to "Boost instantané de vitesse Tor",
-        "help_tip_tor_rotation_desc" to "Si l'envoi de messages semble lent, appuyez sur 'Renouveler l'identité' dans les paramètres Tor ou dans l'en-tête du chat. Cela envoie un SIGNAL NEWNYM pour faire basculer votre nœud de sortie vers un circuit plus rapide.",
-        "poll_notification_prefix" to "Sondage : "
+        "poll_notification_prefix" to "Sondage : ",
+        "restore_choose_method" to "Choisir la méthode de restauration",
+        "restore_mode_phrase" to "Phrase de récupération (24 mots)",
+        "restore_mode_phrase_desc" to "Restaure votre ID et empreinte cryptographique. Les messages sont stockés localement et non restaurés.",
+        "restore_mode_file" to "Fichier de sauvegarde chiffré (.2pbackup)",
+        "restore_mode_file_desc" to "Restaure votre compte complet, contacts et historique sauvegardé depuis un fichier chiffré.",
+        "restore_checksum_valid" to "✓ Somme de contrôle valide (24/24 mots)",
+        "restore_checksum_invalid" to "⚠ Somme de contrôle BIP-39 invalide",
+        "restore_checksum_incomplete" to "Entrez les 24 mots (%d/24)",
+        "restore_lockout_active" to "Trop de tentatives. Veuillez attendre %d s.",
+        "restore_select_file" to "Sélectionner un fichier .2pbackup",
+        "restore_file_selected" to "Fichier sélectionné : %s",
+        "restore_enter_password" to "Entrer le mot de passe de sauvegarde",
+        "restore_in_progress" to "Restauration du compte...",
+        "restore_paste_split_success" to "24 mots collés depuis le presse-papiers",
+        "restore_paste_split_fail" to "Le presse-papiers ne contient pas de mots valides"
     )
 
     private val ptStrings = mapOf(
@@ -1563,8 +1633,22 @@ object Localizations {
         "help_tip_screen_security_title" to "Prevenção de vazamentos visuais e capturas de tela",
         "help_tip_screen_security_desc" to "Ative 'Proteção de tela' nas configurações de segurança para bloquear capturas de tela e impedir que o Android salve miniaturas de chat no alternador de aplicativos recentes.",
         "help_tip_tor_rotation_title" to "Aceleração instantânea de velocidade do Tor",
-        "help_tip_tor_rotation_desc" to "Se o envio de mensagens parecer lento, toque em 'Renovar identidade' nas configurações do Tor ou no cabeçalho do chat. Isso aciona um SIGNAL NEWNYM para trocar seu nó de saída para um circuito mais rápido.",
-        "poll_notification_prefix" to "Enquete: "
+        "poll_notification_prefix" to "Enquete: ",
+        "restore_choose_method" to "Escolha o método de restauração",
+        "restore_mode_phrase" to "Frase de recuperação (24 palavras)",
+        "restore_mode_phrase_desc" to "Restaura seu ID e impressão digital criptográfica. Mensagens são armazenadas localmente e não restauradas.",
+        "restore_mode_file" to "Arquivo de backup criptografado (.2pbackup)",
+        "restore_mode_file_desc" to "Restaura sua conta completa, contatos e histórico salvo a partir de um arquivo criptografado.",
+        "restore_checksum_valid" to "✓ Checksum válida (24/24 palavras)",
+        "restore_checksum_invalid" to "⚠ Checksum BIP-39 inválida",
+        "restore_checksum_incomplete" to "Digite todas as 24 palavras (%d/24)",
+        "restore_lockout_active" to "Muitas tentativas. Aguarde %d s.",
+        "restore_select_file" to "Selecionar arquivo .2pbackup",
+        "restore_file_selected" to "Arquivo selecionado: %s",
+        "restore_enter_password" to "Digite a senha do backup",
+        "restore_in_progress" to "Restaurando conta...",
+        "restore_paste_split_success" to "24 palavras coladas da área de transferência",
+        "restore_paste_split_fail" to "A área de transferência não contém palavras válidas"
     )
 
     private val trStrings = mapOf(
@@ -1794,8 +1878,22 @@ object Localizations {
         "paste_from_clipboard" to "Panodan Yapıştır",
         "restore_btn" to "Hesabı Geri Yükle",
         "invalid_seed_error" to "Geçersiz ifade veya sağlama toplamı hatası. Lütfen kelimelerinizi kontrol edin.",
-        "account_restored_success" to "Hesap başarıyla geri yüklendi!",
-        "poll_notification_prefix" to "Anket: "
+        "poll_notification_prefix" to "Anket: ",
+        "restore_choose_method" to "Kurtarma yöntemini seçin",
+        "restore_mode_phrase" to "Kurtarma İfadesi (24 kelime)",
+        "restore_mode_phrase_desc" to "Kriptografik kimliğinizi ve parmak izinizi geri yükler. Mesajlar yerel olarak saklanır ve geri yüklenmez.",
+        "restore_mode_file" to "Şifrelenmiş Yedek Dosyası (.2pbackup)",
+        "restore_mode_file_desc" to "Tüm hesabınızı, kişilerinizi ve kaydedilmiş sohbet geçmişinizi şifrelenmiş bir dosyadan geri yükler.",
+        "restore_checksum_valid" to "✓ Sağlama geçerli (24/24 kelime)",
+        "restore_checksum_invalid" to "⚠ Geçersiz BIP-39 sağlaması",
+        "restore_checksum_incomplete" to "Tüm 24 kelimeyi girin (%d/24)",
+        "restore_lockout_active" to "Çok fazla deneme. Lütfen %d sn bekleyin.",
+        "restore_select_file" to ".2pbackup Dosyası Seçin",
+        "restore_file_selected" to "Seçilen dosya: %s",
+        "restore_enter_password" to "Yedekleme Parolasını Girin",
+        "restore_in_progress" to "Hesap geri yükleniyor...",
+        "restore_paste_split_success" to "Panodan 24 kelime yapıştırıldı",
+        "restore_paste_split_fail" to "Panoda geçerli kelime bulunamadı"
     )
 
     fun getString(key: String, language: String): String {

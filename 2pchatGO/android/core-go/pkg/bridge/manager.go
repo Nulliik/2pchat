@@ -1267,3 +1267,56 @@ func atomicWriteFile(path string, data []byte, perm os.FileMode) error {
 	}
 	return os.Rename(tmpPath, path)
 }
+
+// EncryptBackupPayload encrypts a profile backup payload with Argon2id + XChaCha20-Poly1305.
+func (m *SessionManager) EncryptBackupPayload(password string, payload []byte) ([]byte, error) {
+	m.mu.RLock()
+	id := m.identity
+	m.mu.RUnlock()
+
+	if id == nil {
+		return nil, errors.New("identity not initialized")
+	}
+
+	fp := id.Fingerprint()
+	return crypto.EncryptBackup(password, payload, fp)
+}
+
+// DecryptBackupPayload decrypts a 2PBK profile backup and returns the plaintext payload along with owner fingerprint.
+func (m *SessionManager) DecryptBackupPayload(password string, encryptedData []byte) ([]byte, string, error) {
+	plaintext, header, err := crypto.DecryptBackup(password, encryptedData)
+	if err != nil {
+		return nil, "", err
+	}
+	return plaintext, header.Fingerprint, nil
+}
+
+// InspectBackupFingerprint extracts the owner fingerprint from the authenticated 2PBK header without password.
+func (m *SessionManager) InspectBackupFingerprint(encryptedData []byte) (string, error) {
+	header, err := crypto.InspectBackupHeader(encryptedData)
+	if err != nil {
+		return "", err
+	}
+	return header.Fingerprint, nil
+}
+
+// SignBackupManifest signs the canonical backup manifest JSON with HKDF-derived backup signing key.
+func (m *SessionManager) SignBackupManifest(canonicalManifest []byte) (string, string, error) {
+	m.mu.RLock()
+	id := m.identity
+	m.mu.RUnlock()
+
+	if id == nil || id.Private == nil {
+		return "", "", errors.New("identity not initialized")
+	}
+
+	seed := id.Private.Bytes()
+	defer crypto.Zeroize(seed)
+
+	return crypto.SignBackupManifest(seed, canonicalManifest)
+}
+
+// VerifyBackupManifest verifies the Ed25519 signature on a canonical backup manifest.
+func (m *SessionManager) VerifyBackupManifest(verifyPubB64 string, canonicalManifest []byte, signatureB64 string) bool {
+	return crypto.VerifyBackupManifest(verifyPubB64, canonicalManifest, signatureB64)
+}

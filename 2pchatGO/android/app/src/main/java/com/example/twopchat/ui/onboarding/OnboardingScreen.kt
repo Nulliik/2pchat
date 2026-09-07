@@ -12,15 +12,20 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -32,16 +37,26 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.core.content.ContextCompat
 import com.example.twopchat.config.*
 import com.example.twopchat.NativeBridge
 import com.example.twopchat.bridge.P2PBridgeProvider
-import com.example.twopchat.yggdrasil.PacketTunnelProvider
-import com.example.twopchat.theme.*
 import com.example.twopchat.data.Localizations
+import com.example.twopchat.data.ProfileBackupManager
+import com.example.twopchat.security.Bip39Dictionary
+import com.example.twopchat.security.RestoreAttemptTracker
+import com.example.twopchat.theme.*
+import com.example.twopchat.yggdrasil.PacketTunnelProvider
 
 @Composable
 fun OnboardingScreen(
@@ -209,136 +224,17 @@ fun OnboardingScreen(
 
     // Account Restore Dialog
     if (showRestoreDialog) {
-        var restoreNick by remember { mutableStateOf("") }
-        var restorePhrase by remember { mutableStateOf("") }
-        var restoreError by remember { mutableStateOf<String?>(null) }
-        var isRestoring by remember { mutableStateOf(false) }
-
-        AlertDialog(
-            onDismissRequest = { if (!isRestoring) showRestoreDialog = false },
-            title = {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("🔑", fontSize = 20.sp)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = Localizations.getString("restore_account_title", appLanguage),
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 18.sp,
-                        color = onSurfaceColor
-                    )
-                }
-            },
-            text = {
-                Column(
-                    modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Text(
-                        text = Localizations.getString("restore_account_desc", appLanguage),
-                        fontSize = 13.sp,
-                        color = onSurfaceColor.copy(alpha = 0.8f)
-                    )
-
-                    OutlinedTextField(
-                        value = restoreNick,
-                        onValueChange = { restoreNick = it; restoreError = null },
-                        label = { Text(Localizations.getString("placeholder_username", appLanguage)) },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = primaryColor,
-                            focusedLabelColor = primaryColor
-                        )
-                    )
-
-                    OutlinedTextField(
-                        value = restorePhrase,
-                        onValueChange = { restorePhrase = it; restoreError = null },
-                        label = { Text(Localizations.getString("seed_backup_dialog_title", appLanguage)) },
-                        placeholder = { Text(Localizations.getString("enter_seed_placeholder", appLanguage), fontSize = 12.sp) },
-                        modifier = Modifier.fillMaxWidth().height(120.dp),
-                        shape = RoundedCornerShape(12.dp),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = primaryColor,
-                            focusedLabelColor = primaryColor
-                        )
-                    )
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.End
-                    ) {
-                        TextButton(
-                            onClick = {
-                                val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                                val clipText = clipboard.primaryClip?.getItemAt(0)?.text?.toString()?.trim()
-                                if (!clipText.isNullOrBlank()) {
-                                    restorePhrase = clipText
-                                    restoreError = null
-                                }
-                            }
-                        ) {
-                            Text("📋 " + Localizations.getString("paste_from_clipboard", appLanguage), color = primaryColor, fontSize = 12.sp)
-                        }
-                    }
-
-                    val errorText = restoreError
-                    if (errorText != null) {
-                        Text(
-                            text = errorText,
-                            color = Color(0xFFEF5350),
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        val trimmedNick = restoreNick.trim().ifEmpty { "User" }
-                        val trimmedPhrase = restorePhrase.trim()
-                        if (trimmedPhrase.isBlank()) {
-                            restoreError = Localizations.getString("invalid_seed_error", appLanguage)
-                            return@Button
-                        }
-
-                        isRestoring = true
-                        val success = NativeBridge.restoreFromMnemonic(trimmedNick, trimmedPhrase, "")
-                        if (success) {
-                            sharedPrefs.edit()
-                                .putString("username_profile", trimmedNick)
-                                .putBoolean("onboarding_complete", true)
-                                .apply()
-                            android.widget.Toast.makeText(context, Localizations.getString("account_restored_success", appLanguage), android.widget.Toast.LENGTH_SHORT).show()
-                            showRestoreDialog = false
-                            onComplete()
-                        } else {
-                            isRestoring = false
-                            restoreError = Localizations.getString("invalid_seed_error", appLanguage)
-                        }
-                    },
-                    enabled = !isRestoring,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = primaryColor,
-                        contentColor = if (primaryColor == MintGreen) StealthBlack else Color.White
-                    ),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Text(Localizations.getString("restore_btn", appLanguage), fontWeight = FontWeight.Bold)
-                }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = { showRestoreDialog = false },
-                    enabled = !isRestoring
-                ) {
-                    Text(Localizations.getString("close", appLanguage), color = onSurfaceColor.copy(alpha = 0.6f))
-                }
-            },
-            containerColor = surfaceColor,
-            shape = RoundedCornerShape(20.dp)
+        AccountRestoreModal(
+            appLanguage = appLanguage,
+            primaryColor = primaryColor,
+            surfaceColor = surfaceColor,
+            onSurfaceColor = onSurfaceColor,
+            sharedPrefs = sharedPrefs,
+            onDismiss = { showRestoreDialog = false },
+            onSuccess = {
+                showRestoreDialog = false
+                onComplete()
+            }
         )
     }
 
@@ -1095,4 +991,644 @@ fun saveImageToInternalStorage(context: android.content.Context, uri: Uri): Stri
     } catch (e: Exception) {
         null
     }
+}
+
+enum class RestoreMode {
+    PHRASE,
+    BACKUP_FILE
+}
+
+enum class ChecksumStatus {
+    INCOMPLETE,
+    VALID,
+    INVALID
+}
+
+@Composable
+fun AccountRestoreModal(
+    appLanguage: String,
+    primaryColor: Color,
+    surfaceColor: Color,
+    onSurfaceColor: Color,
+    sharedPrefs: android.content.SharedPreferences,
+    onDismiss: () -> Unit,
+    onSuccess: () -> Unit
+) {
+    val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+
+    LaunchedEffect(Unit) {
+        Bip39Dictionary.ensureLoaded(context)
+    }
+
+    var restoreMode by remember { mutableStateOf(RestoreMode.PHRASE) }
+    val restoreTracker = remember { RestoreAttemptTracker(sharedPrefs) }
+    var remainingLockoutMs by remember { mutableLongStateOf(restoreTracker.getRemainingLockoutMs()) }
+
+    LaunchedEffect(remainingLockoutMs) {
+        if (remainingLockoutMs > 0L) {
+            kotlinx.coroutines.delay(500)
+            remainingLockoutMs = restoreTracker.getRemainingLockoutMs()
+        }
+    }
+
+    // --- Phrase Mode State ---
+    var restoreNick by remember { mutableStateOf("") }
+    val words = remember { mutableStateListOf(*Array(24) { "" }) }
+    var rawPhraseInput by remember { mutableStateOf("") }
+    var isQuickPasteMode by remember { mutableStateOf(false) }
+    var focusedWordIndex by remember { mutableIntStateOf(0) }
+    var checksumStatus by remember { mutableStateOf(ChecksumStatus.INCOMPLETE) }
+    var isRestoringPhrase by remember { mutableStateOf(false) }
+    var phraseError by remember { mutableStateOf<String?>(null) }
+    var checksumDebounceJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+
+    fun scheduleChecksumValidation() {
+        checksumDebounceJob?.cancel()
+        checksumDebounceJob = coroutineScope.launch {
+            kotlinx.coroutines.delay(300)
+            val filled = words.count { it.isNotBlank() }
+            if (filled == 24) {
+                val cleanWords = words.map { it.trim().lowercase() }
+                val valid = Bip39Dictionary.validateChecksum(cleanWords)
+                checksumStatus = if (valid) ChecksumStatus.VALID else ChecksumStatus.INVALID
+            } else {
+                checksumStatus = ChecksumStatus.INCOMPLETE
+            }
+        }
+    }
+
+    fun applyParsedWords(parsed: List<String>) {
+        if (parsed.isNotEmpty()) {
+            for (i in 0 until 24) {
+                words[i] = if (i < parsed.size) parsed[i].lowercase() else ""
+            }
+            rawPhraseInput = words.filter { it.isNotBlank() }.joinToString(" ")
+            scheduleChecksumValidation()
+        }
+    }
+
+    // --- Backup File Mode State ---
+    var selectedBackupUri by remember { mutableStateOf<Uri?>(null) }
+    var backupFileName by remember { mutableStateOf<String?>(null) }
+    var backupFormat by remember { mutableStateOf<ProfileBackupManager.BackupFormat?>(null) }
+    var backupFingerprint by remember { mutableStateOf<String?>(null) }
+    var backupPassword by remember { mutableStateOf("") }
+    var isPasswordVisible by remember { mutableStateOf(false) }
+    var isImportingFile by remember { mutableStateOf(false) }
+    var fileImportError by remember { mutableStateOf<String?>(null) }
+
+    val filePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            selectedBackupUri = uri
+            fileImportError = null
+            backupFileName = context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                val idx = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                if (cursor.moveToFirst() && idx >= 0) cursor.getString(idx) else null
+            } ?: uri.lastPathSegment ?: "backup.2pbackup"
+
+            try {
+                context.contentResolver.openInputStream(uri)?.use { stream ->
+                    val inspected = ProfileBackupManager.inspectBackup(stream)
+                    backupFormat = inspected.format
+                    backupFingerprint = inspected.fingerprint
+                }
+            } catch (e: Exception) {
+                fileImportError = e.message ?: "Failed to read backup file"
+            }
+        }
+    }
+
+    val isBusy = isRestoringPhrase || isImportingFile
+    val isLockedOut = remainingLockoutMs > 0L
+
+    val canConfirm = !isBusy && !isLockedOut && when (restoreMode) {
+        RestoreMode.PHRASE -> checksumStatus == ChecksumStatus.VALID
+        RestoreMode.BACKUP_FILE -> selectedBackupUri != null && (
+            backupFormat == ProfileBackupManager.BackupFormat.V1_PLAINTEXT_ZIP ||
+            (backupFormat == ProfileBackupManager.BackupFormat.V2_ENCRYPTED && backupPassword.length >= 6)
+        )
+    }
+
+    AlertDialog(
+        onDismissRequest = { if (!isBusy) onDismiss() },
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("🔑", fontSize = 20.sp)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = Localizations.getString("restore_account_title", appLanguage),
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp,
+                    color = onSurfaceColor
+                )
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                // Mode Selector (Phrase vs Backup File)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(surfaceColor.copy(alpha = 0.6f), RoundedCornerShape(12.dp))
+                        .padding(4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(if (restoreMode == RestoreMode.PHRASE) primaryColor.copy(alpha = 0.2f) else Color.Transparent)
+                            .border(
+                                1.dp,
+                                if (restoreMode == RestoreMode.PHRASE) primaryColor else Color.Transparent,
+                                RoundedCornerShape(8.dp)
+                            )
+                            .clickable { restoreMode = RestoreMode.PHRASE }
+                            .padding(vertical = 8.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "🔤 " + Localizations.getString("restore_mode_phrase", appLanguage),
+                            fontSize = 12.sp,
+                            fontWeight = if (restoreMode == RestoreMode.PHRASE) FontWeight.Bold else FontWeight.Normal,
+                            color = if (restoreMode == RestoreMode.PHRASE) primaryColor else onSurfaceColor.copy(alpha = 0.7f),
+                            maxLines = 1
+                        )
+                    }
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(if (restoreMode == RestoreMode.BACKUP_FILE) primaryColor.copy(alpha = 0.2f) else Color.Transparent)
+                            .border(
+                                1.dp,
+                                if (restoreMode == RestoreMode.BACKUP_FILE) primaryColor else Color.Transparent,
+                                RoundedCornerShape(8.dp)
+                            )
+                            .clickable { restoreMode = RestoreMode.BACKUP_FILE }
+                            .padding(vertical = 8.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "💾 " + Localizations.getString("restore_mode_file", appLanguage),
+                            fontSize = 12.sp,
+                            fontWeight = if (restoreMode == RestoreMode.BACKUP_FILE) FontWeight.Bold else FontWeight.Normal,
+                            color = if (restoreMode == RestoreMode.BACKUP_FILE) primaryColor else onSurfaceColor.copy(alpha = 0.7f),
+                            maxLines = 1
+                        )
+                    }
+                }
+
+                // Informational Description Card
+                Card(
+                    shape = RoundedCornerShape(10.dp),
+                    colors = CardDefaults.cardColors(containerColor = primaryColor.copy(alpha = 0.07f)),
+                    border = BorderStroke(0.5.dp, primaryColor.copy(alpha = 0.2f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = if (restoreMode == RestoreMode.PHRASE) {
+                            Localizations.getString("restore_mode_phrase_desc", appLanguage)
+                        } else {
+                            Localizations.getString("restore_mode_file_desc", appLanguage)
+                        },
+                        fontSize = 12.sp,
+                        color = onSurfaceColor.copy(alpha = 0.85f),
+                        lineHeight = 16.sp,
+                        modifier = Modifier.padding(10.dp)
+                    )
+                }
+
+                // Lockout Banner
+                if (isLockedOut) {
+                    Card(
+                        shape = RoundedCornerShape(10.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFFB71C1C).copy(alpha = 0.2f)),
+                        border = BorderStroke(1.dp, Color(0xFFEF5350)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = String.format(
+                                Localizations.getString("restore_lockout_active", appLanguage),
+                                (remainingLockoutMs / 1000L) + 1
+                            ),
+                            color = Color(0xFFEF5350),
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth().padding(8.dp)
+                        )
+                    }
+                }
+
+                // Mode-specific content
+                if (restoreMode == RestoreMode.PHRASE) {
+                    // Nickname field
+                    OutlinedTextField(
+                        value = restoreNick,
+                        onValueChange = { restoreNick = it; phraseError = null },
+                        label = { Text(Localizations.getString("placeholder_username", appLanguage)) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = primaryColor,
+                            focusedLabelColor = primaryColor
+                        )
+                    )
+
+                    // Switch between Grid view and Quick Paste
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        TextButton(
+                            onClick = { isQuickPasteMode = !isQuickPasteMode }
+                        ) {
+                            Text(
+                                text = if (isQuickPasteMode) "⌨️ Switch to 24-Word Grid" else "📝 Quick Paste (All Words)",
+                                color = primaryColor,
+                                fontSize = 12.sp
+                            )
+                        }
+
+                        TextButton(
+                            onClick = {
+                                val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                                val clipText = clipboard.primaryClip?.getItemAt(0)?.text?.toString()?.trim()
+                                if (!clipText.isNullOrBlank()) {
+                                    val parsed = Bip39Dictionary.parseMnemonicWords(clipText)
+                                    if (parsed.isNotEmpty()) {
+                                        applyParsedWords(parsed)
+                                        phraseError = null
+                                        android.widget.Toast.makeText(
+                                            context,
+                                            Localizations.getString("restore_paste_split_success", appLanguage),
+                                            android.widget.Toast.LENGTH_SHORT
+                                        ).show()
+                                    } else {
+                                        phraseError = Localizations.getString("restore_paste_split_fail", appLanguage)
+                                    }
+                                }
+                            }
+                        ) {
+                            Text("📋 " + Localizations.getString("paste_from_clipboard", appLanguage), color = primaryColor, fontSize = 12.sp)
+                        }
+                    }
+
+                    if (isQuickPasteMode) {
+                        OutlinedTextField(
+                            value = rawPhraseInput,
+                            onValueChange = { input ->
+                                rawPhraseInput = input
+                                phraseError = null
+                                val parsed = Bip39Dictionary.parseMnemonicWords(input)
+                                applyParsedWords(parsed)
+                            },
+                            label = { Text(Localizations.getString("seed_backup_dialog_title", appLanguage)) },
+                            placeholder = { Text(Localizations.getString("enter_seed_placeholder", appLanguage), fontSize = 12.sp) },
+                            modifier = Modifier.fillMaxWidth().height(110.dp),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = primaryColor,
+                                focusedLabelColor = primaryColor
+                            )
+                        )
+                    } else {
+                        // Word suggestions row for focused word
+                        val currentWord = words.getOrNull(focusedWordIndex).orEmpty().trim().lowercase()
+                        val suggestions = remember(currentWord) {
+                            if (currentWord.length >= 2 && !Bip39Dictionary.isValidWord(currentWord)) {
+                                Bip39Dictionary.suggestWords(currentWord, limit = 4)
+                            } else {
+                                emptyList()
+                            }
+                        }
+
+                        if (suggestions.isNotEmpty()) {
+                            LazyRow(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                items(suggestions) { suggestion ->
+                                    SuggestionChip(
+                                        onClick = {
+                                            words[focusedWordIndex] = suggestion
+                                            if (focusedWordIndex < 23) {
+                                                focusedWordIndex++
+                                            }
+                                            scheduleChecksumValidation()
+                                        },
+                                        label = { Text(suggestion, fontSize = 11.sp, fontWeight = FontWeight.SemiBold) },
+                                        colors = SuggestionChipDefaults.suggestionChipColors(
+                                            containerColor = primaryColor.copy(alpha = 0.15f),
+                                            labelColor = primaryColor
+                                        ),
+                                        border = BorderStroke(1.dp, primaryColor.copy(alpha = 0.3f))
+                                    )
+                                }
+                            }
+                        }
+
+                        // 8 rows x 3 columns grid
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            for (row in 0 until 8) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    for (col in 0 until 3) {
+                                        val index = row * 3 + col
+                                        val word = words[index]
+                                        val isValid = Bip39Dictionary.isValidWord(word)
+
+                                        OutlinedTextField(
+                                            value = word,
+                                            onValueChange = { newText ->
+                                                words[index] = newText.trim().lowercase()
+                                                focusedWordIndex = index
+                                                phraseError = null
+                                                scheduleChecksumValidation()
+                                            },
+                                            label = { Text("${index + 1}", fontSize = 9.sp) },
+                                            singleLine = true,
+                                            modifier = Modifier.weight(1f),
+                                            shape = RoundedCornerShape(8.dp),
+                                            colors = OutlinedTextFieldDefaults.colors(
+                                                focusedBorderColor = if (isValid) Color(0xFF4CAF50) else if (word.isNotBlank()) Color(0xFFEF5350) else primaryColor,
+                                                unfocusedBorderColor = if (word.isBlank()) onSurfaceColor.copy(alpha = 0.2f) else if (isValid) Color(0xFF4CAF50) else Color(0xFFEF5350)
+                                            ),
+                                            textStyle = androidx.compose.ui.text.TextStyle(fontSize = 11.sp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Checksum Status Badge
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(
+                                when (checksumStatus) {
+                                    ChecksumStatus.VALID -> Color(0xFF1B5E20).copy(alpha = 0.2f)
+                                    ChecksumStatus.INVALID -> Color(0xFFB71C1C).copy(alpha = 0.2f)
+                                    ChecksumStatus.INCOMPLETE -> surfaceColor.copy(alpha = 0.5f)
+                                }
+                            )
+                            .border(
+                                1.dp,
+                                when (checksumStatus) {
+                                    ChecksumStatus.VALID -> Color(0xFF4CAF50)
+                                    ChecksumStatus.INVALID -> Color(0xFFEF5350)
+                                    ChecksumStatus.INCOMPLETE -> onSurfaceColor.copy(alpha = 0.15f)
+                                },
+                                RoundedCornerShape(8.dp)
+                            )
+                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Text(
+                            text = when (checksumStatus) {
+                                ChecksumStatus.VALID -> Localizations.getString("restore_checksum_valid", appLanguage)
+                                ChecksumStatus.INVALID -> Localizations.getString("restore_checksum_invalid", appLanguage)
+                                ChecksumStatus.INCOMPLETE -> String.format(
+                                    Localizations.getString("restore_checksum_incomplete", appLanguage),
+                                    words.count { it.isNotBlank() }
+                                )
+                            },
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = when (checksumStatus) {
+                                ChecksumStatus.VALID -> Color(0xFF4CAF50)
+                                ChecksumStatus.INVALID -> Color(0xFFEF5350)
+                                ChecksumStatus.INCOMPLETE -> onSurfaceColor.copy(alpha = 0.7f)
+                            }
+                        )
+                    }
+
+                    val err = phraseError
+                    if (err != null) {
+                        Text(
+                            text = err,
+                            color = Color(0xFFEF5350),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                } else {
+                    // --- Backup File UI ---
+                    OutlinedButton(
+                        onClick = { filePickerLauncher.launch(arrayOf("*/*")) },
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = primaryColor),
+                        border = BorderStroke(1.dp, primaryColor.copy(alpha = 0.4f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("📁 " + Localizations.getString("restore_select_file", appLanguage), fontWeight = FontWeight.SemiBold)
+                    }
+
+                    if (selectedBackupUri != null) {
+                        Card(
+                            shape = RoundedCornerShape(12.dp),
+                            colors = CardDefaults.cardColors(containerColor = surfaceColor.copy(alpha = 0.7f)),
+                            border = BorderStroke(0.5.dp, primaryColor.copy(alpha = 0.3f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Text(
+                                    text = String.format(Localizations.getString("restore_file_selected", appLanguage), backupFileName.orEmpty()),
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp,
+                                    color = onSurfaceColor
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                when (backupFormat) {
+                                    ProfileBackupManager.BackupFormat.V2_ENCRYPTED -> {
+                                        Text(
+                                            text = "🔒 Encrypted Backup v2 (2PBK)",
+                                            color = Color(0xFF4CAF50),
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Medium
+                                        )
+                                        if (!backupFingerprint.isNullOrBlank()) {
+                                            Text(
+                                                text = "Identity: ${backupFingerprint?.take(16)}...",
+                                                fontSize = 11.sp,
+                                                color = onSurfaceColor.copy(alpha = 0.6f)
+                                            )
+                                        }
+                                    }
+                                    ProfileBackupManager.BackupFormat.V1_PLAINTEXT_ZIP -> {
+                                        Text(
+                                            text = "⚠ Legacy Unencrypted Archive (ZIP)",
+                                            color = Color(0xFFFFA000),
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Medium
+                                        )
+                                    }
+                                    else -> {
+                                        Text(
+                                            text = "❓ Unknown / Damaged file",
+                                            color = Color(0xFFEF5350),
+                                            fontSize = 12.sp
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        if (backupFormat == ProfileBackupManager.BackupFormat.V2_ENCRYPTED) {
+                            OutlinedTextField(
+                                value = backupPassword,
+                                onValueChange = { backupPassword = it; fileImportError = null },
+                                label = { Text(Localizations.getString("restore_enter_password", appLanguage)) },
+                                singleLine = true,
+                                visualTransformation = if (isPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                                trailingIcon = {
+                                    IconButton(onClick = { isPasswordVisible = !isPasswordVisible }) {
+                                        Text(if (isPasswordVisible) "👁" else "🙈")
+                                    }
+                                },
+                                shape = RoundedCornerShape(12.dp),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = primaryColor,
+                                    focusedLabelColor = primaryColor
+                                ),
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    }
+
+                    val fileErr = fileImportError
+                    if (fileErr != null) {
+                        Text(
+                            text = fileErr,
+                            color = Color(0xFFEF5350),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    if (restoreMode == RestoreMode.PHRASE) {
+                        val trimmedNick = restoreNick.trim().ifEmpty { "User" }
+                        val phrase = words.joinToString(" ") { it.trim().lowercase() }
+                        isRestoringPhrase = true
+                        phraseError = null
+                        coroutineScope.launch {
+                            val success = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                NativeBridge.restoreFromMnemonic(trimmedNick, phrase, "")
+                            }
+                            if (success) {
+                                restoreTracker.recordSuccess()
+                                sharedPrefs.edit()
+                                    .putString("username_profile", trimmedNick)
+                                    .putBoolean("onboarding_completed", true) // FIXED TYPO
+                                    .apply()
+                                android.widget.Toast.makeText(
+                                    context,
+                                    Localizations.getString("account_restored_success", appLanguage),
+                                    android.widget.Toast.LENGTH_SHORT
+                                ).show()
+                                onSuccess()
+                            } else {
+                                restoreTracker.recordFailure()
+                                remainingLockoutMs = restoreTracker.getRemainingLockoutMs()
+                                phraseError = Localizations.getString("invalid_seed_error", appLanguage)
+                                isRestoringPhrase = false
+                            }
+                        }
+                    } else {
+                        val uri = selectedBackupUri ?: return@Button
+                        isImportingFile = true
+                        fileImportError = null
+                        coroutineScope.launch {
+                            val res = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                try {
+                                    context.contentResolver.openInputStream(uri)?.use { stream ->
+                                        ProfileBackupManager.importBackup(
+                                            context,
+                                            backupPassword,
+                                            stream,
+                                            allowForeignFingerprint = true
+                                        )
+                                    }
+                                } catch (e: Exception) {
+                                    ProfileBackupManager.BackupImportResult(success = false, errorMessage = e.message)
+                                }
+                            }
+                            if (res != null && res.success) {
+                                restoreTracker.recordSuccess()
+                                sharedPrefs.edit()
+                                    .putBoolean("onboarding_completed", true) // FIXED TYPO
+                                    .apply()
+                                if (!res.restoredNickname.isNullOrBlank()) {
+                                    sharedPrefs.edit().putString("username_profile", res.restoredNickname).apply()
+                                }
+                                android.widget.Toast.makeText(
+                                    context,
+                                    Localizations.getString("account_restored_success", appLanguage),
+                                    android.widget.Toast.LENGTH_SHORT
+                                ).show()
+                                onSuccess()
+                            } else {
+                                restoreTracker.recordFailure()
+                                remainingLockoutMs = restoreTracker.getRemainingLockoutMs()
+                                fileImportError = res?.errorMessage ?: "Failed to restore backup"
+                                isImportingFile = false
+                            }
+                        }
+                    }
+                },
+                enabled = canConfirm,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = primaryColor,
+                    contentColor = if (primaryColor == MintGreen) StealthBlack else Color.White
+                ),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                if (isBusy) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp,
+                        color = if (primaryColor == MintGreen) StealthBlack else Color.White
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(Localizations.getString("restore_in_progress", appLanguage), fontWeight = FontWeight.Bold)
+                } else {
+                    Text(Localizations.getString("restore_btn", appLanguage), fontWeight = FontWeight.Bold)
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = onDismiss,
+                enabled = !isBusy
+            ) {
+                Text(Localizations.getString("close", appLanguage), color = onSurfaceColor.copy(alpha = 0.6f))
+            }
+        },
+        containerColor = surfaceColor,
+        shape = RoundedCornerShape(20.dp)
+    )
 }
