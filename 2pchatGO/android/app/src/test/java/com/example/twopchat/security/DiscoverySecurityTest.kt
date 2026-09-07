@@ -106,19 +106,17 @@ class DiscoverySecurityTest {
     }
 
     @Test
-    fun testSequenceCounterPersistenceThrottling() {
+    fun testSequenceCounterPersistenceEveryIncrement() {
         var persistCount = 0
         val persistedSeqs = mutableListOf<Long>()
 
-        for (seq in 1L..250L) {
-            if (seq == 1L || seq % 100L == 0L) {
-                persistCount++
-                persistedSeqs.add(seq)
-            }
+        for (seq in 1L..5L) {
+            persistCount++
+            persistedSeqs.add(seq)
         }
 
-        assertEquals(3, persistCount)
-        assertEquals(listOf(1L, 100L, 200L), persistedSeqs)
+        assertEquals(5, persistCount)
+        assertEquals(listOf(1L, 2L, 3L, 4L, 5L), persistedSeqs)
     }
 
     @Test

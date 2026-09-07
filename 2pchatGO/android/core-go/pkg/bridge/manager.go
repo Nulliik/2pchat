@@ -1366,16 +1366,14 @@ func (m *SessionManager) SetDiscoverySeqStorageHooks(lookup func(fp string) uint
 	m.mu.Unlock()
 }
 
-// GetNextDiscoverySeq returns the next monotonic sequence number and invokes persistence hook with throttling.
+// GetNextDiscoverySeq returns the next monotonic sequence number and invokes persistence hook.
 func (m *SessionManager) GetNextDiscoverySeq() uint64 {
 	next := atomic.AddUint64(&m.discoverySeqCounter, 1)
-	if next%100 == 0 || next == 1 {
-		m.mu.RLock()
-		hook := m.seqPersistHook
-		m.mu.RUnlock()
-		if hook != nil {
-			hook(next)
-		}
+	m.mu.RLock()
+	hook := m.seqPersistHook
+	m.mu.RUnlock()
+	if hook != nil {
+		hook(next)
 	}
 	return next
 }

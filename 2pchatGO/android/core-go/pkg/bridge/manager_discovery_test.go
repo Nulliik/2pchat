@@ -63,17 +63,17 @@ func TestSessionManagerDiscoverySeqPersistenceCallback(t *testing.T) {
 		persisted <- seq
 	})
 
-	// Force counter to 99 so next increment hits 100 (which triggers throttle persist)
-	mgr.SetDiscoverySeqCounter(99)
+	// Force counter to 41 so next increment is 42
+	mgr.SetDiscoverySeqCounter(41)
 	seq := mgr.GetNextDiscoverySeq()
-	if seq != 100 {
-		t.Fatalf("Expected seq 100, got %d", seq)
+	if seq != 42 {
+		t.Fatalf("Expected seq 42, got %d", seq)
 	}
 
 	select {
 	case p := <-persisted:
-		if p != 100 {
-			t.Fatalf("Expected persisted seq 100, got %d", p)
+		if p != 42 {
+			t.Fatalf("Expected persisted seq 42, got %d", p)
 		}
 	case <-time.After(1 * time.Second):
 		t.Fatalf("Timeout waiting for sequence persistence hook")
