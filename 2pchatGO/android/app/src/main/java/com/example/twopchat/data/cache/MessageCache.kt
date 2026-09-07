@@ -1,5 +1,7 @@
 package com.example.twopchat.data.cache
 
+import com.example.twopchat.security.SensitiveMemoryHolder
+import com.example.twopchat.security.SensitiveMemoryRegistry
 import com.example.twopchat.ui.chat.Message
 
 /**
@@ -13,8 +15,17 @@ import com.example.twopchat.ui.chat.Message
  * - Thread-safe: synchronized access on internal LRU map.
  * - Evicted / cleared on logout, database wipe, or chat screen exit.
  * - Invalidated immediately on message update or deletion.
+ * - Purged automatically via [SensitiveMemoryRegistry] on backgrounding, lock, or wipe.
  */
-object MessageCache {
+object MessageCache : SensitiveMemoryHolder {
+    init {
+        SensitiveMemoryRegistry.register(this)
+    }
+
+    override fun clearSensitiveMemory() {
+        clear()
+    }
+
     const val MAX_ENTRIES = 256
     private val lock = Any()
 

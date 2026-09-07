@@ -5,8 +5,11 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.ViewModel
 
+import com.example.twopchat.security.SensitiveMemoryHolder
+import com.example.twopchat.security.SensitiveMemoryRegistry
+
 /** Configuration-stable owner for chat state which must outlive a Composable instance. */
-class ChatScreenViewModel : ViewModel() {
+class ChatScreenViewModel : ViewModel(), SensitiveMemoryHolder {
     val messages = mutableStateListOf<Message>()
     val isHistoryLoading = mutableStateOf(false)
     val loadedPersistedMessageCount = mutableIntStateOf(0)
@@ -17,10 +20,26 @@ class ChatScreenViewModel : ViewModel() {
     val editingMessage = mutableStateOf<Message?>(null)
     val selectedMessageForOptions = mutableStateOf<Message?>(null)
     val selectedMessages = mutableStateListOf<Message>()
+    val reloadRevision = mutableIntStateOf(0)
+
+    init {
+        SensitiveMemoryRegistry.register(this)
+    }
 
     override fun onCleared() {
+        SensitiveMemoryRegistry.unregister(this)
         super.onCleared()
         com.example.twopchat.data.cache.MessageCache.clear()
+    }
+
+    override fun clearSensitiveMemory() {
+        messages.clear()
+        inputText.value = ""
+        replyingToMessage.value = null
+        editingMessage.value = null
+        selectedMessageForOptions.value = null
+        selectedMessages.clear()
+        reloadRevision.intValue++
     }
 }
 

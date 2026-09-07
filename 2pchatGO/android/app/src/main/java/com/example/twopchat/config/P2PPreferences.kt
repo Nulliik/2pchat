@@ -17,7 +17,15 @@ import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
 /** Canonical keys for relay state which is intentionally small key/value metadata. */
-object P2PPreferences {
+object P2PPreferences : com.example.twopchat.security.SensitiveMemoryHolder {
+    init {
+        com.example.twopchat.security.SensitiveMemoryRegistry.register(this)
+    }
+
+    override fun clearSensitiveMemory() {
+        lastMessageCache.clear()
+    }
+
     private const val TAG = "P2PPreferences"
     val lastMessageCache = ConcurrentHashMap<String, String>()
     const val FILE_NAME = "2pchat_prefs"
@@ -387,6 +395,7 @@ object P2PPreferences {
             fingerprintToPeerNameCache.clear()
             fingerprintCacheInitialized = false
             isAppLockedState = false
+            lastMessageCache.clear()
         }
     }
 

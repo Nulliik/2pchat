@@ -130,8 +130,7 @@ class MainActivity : ComponentActivity() {
             if (effectiveElapsed >= timeoutMinutes * 60 * 1000L) {
                 isAppLockedState.value = true
                 P2PPreferences.setAppLocked(true)
-                SecureStorage.clearDbPassphrase()
-                com.example.twopchat.data.ChatDatabaseHelper.closeAllConnections()
+                com.example.twopchat.security.SensitiveMemoryRegistry.clearAll()
             }
         }
         pauseTime = 0L
@@ -350,8 +349,7 @@ class MainActivity : ComponentActivity() {
                         if (elapsed >= timeoutMinutes * 60 * 1000L) {
                             isAppLockedState.value = true
                             P2PPreferences.setAppLocked(true)
-                            SecureStorage.clearDbPassphrase()
-                            com.example.twopchat.data.ChatDatabaseHelper.closeAllConnections()
+                            com.example.twopchat.security.SensitiveMemoryRegistry.clearAll()
                         }
                     }
                 }
@@ -360,8 +358,7 @@ class MainActivity : ComponentActivity() {
             LaunchedEffect(isAppLocked) {
                 P2PPreferences.setAppLocked(isAppLocked)
                 if (isAppLocked) {
-                    SecureStorage.clearDbPassphrase()
-                    com.example.twopchat.data.ChatDatabaseHelper.closeAllConnections()
+                    com.example.twopchat.security.SensitiveMemoryRegistry.clearAll()
                 }
             }
 

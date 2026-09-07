@@ -13,7 +13,15 @@ import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
 /** Small envelope-encryption primitive backed by a non-exportable Android Keystore key. */
-object SecureStorage {
+object SecureStorage : SensitiveMemoryHolder {
+    init {
+        SensitiveMemoryRegistry.register(this)
+    }
+
+    override fun clearSensitiveMemory() {
+        clearDbPassphrase()
+    }
+
     private const val KEY_ALIAS = "2pchat_local_storage_v1"
     private const val PREFIX = "enc:v1:"
     private val stringDecryptionCache = LruCache<String, String>(1024)

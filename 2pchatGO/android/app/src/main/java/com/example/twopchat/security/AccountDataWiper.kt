@@ -35,8 +35,7 @@ object AccountDataWiper {
             },
             "clear in-memory account state" to {
                 com.example.twopchat.bridge.P2PBridgeProvider.reset()
-                com.example.twopchat.data.cache.MessageCache.clear()
-                MessageNotificationService.clearAvatarCache()
+                SensitiveMemoryRegistry.clearAll()
                 true
             },
             "clear all SharedPreferences" to {

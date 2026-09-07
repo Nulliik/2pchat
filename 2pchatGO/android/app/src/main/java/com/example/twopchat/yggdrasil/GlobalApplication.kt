@@ -105,6 +105,15 @@ class GlobalApplication: Application(), YggStateReceiver.StateReceiver {
         callback.register()
         val receiver = YggStateReceiver(this)
         receiver.register(this)
+
+        try {
+            androidx.lifecycle.ProcessLifecycleOwner.get().lifecycle.addObserver(
+                com.example.twopchat.security.SensitiveMemoryLifecycleMonitor
+            )
+            com.example.twopchat.security.SensitiveMemoryLifecycleMonitor.registerScreenOffReceiver(this)
+        } catch (e: Throwable) {
+            SafeLog.w("GlobalApplication", "Failed to register sensitive memory lifecycle monitor", e)
+        }
     }
 
     fun subscribe() {

@@ -128,7 +128,15 @@ internal class MessageNotificationService {
         val messageIds: List<String>,
     )
 
-    companion object {
+    companion object : com.example.twopchat.security.SensitiveMemoryHolder {
+        init {
+            com.example.twopchat.security.SensitiveMemoryRegistry.register(this)
+        }
+
+        override fun clearSensitiveMemory() {
+            clearAvatarCache()
+        }
+
         private const val CHANNEL_ID = "p2p_chat_messages"
         private const val PREFS_NAME = "2pchat_notification_ids"
         private const val NEXT_ID_KEY = "next_id"

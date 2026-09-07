@@ -595,7 +595,7 @@ fun ChatScreen(
         if (isActive) sharedPrefs.getInt("unread_count_$peerName", 0) else 0
     }
 
-    LaunchedEffect(peerName, isActive) {
+    LaunchedEffect(peerName, isActive, chatViewModel.reloadRevision.intValue) {
         if (!isActive) {
             isHistoryLoading = false
             return@LaunchedEffect
