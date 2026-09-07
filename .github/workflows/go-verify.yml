@@ -1,6 +1,6 @@
 name: go-verify
 
-on:
+"on":
   push:
     branches: [main]
   pull_request:
@@ -24,7 +24,7 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version-file: 2pchatGO/android/core-go/go.mod   # 1.26.3, не хардкод
+          go-version-file: 2pchatGO/android/core-go/go.mod
           cache-dependency-path: 2pchatGO/android/core-go/go.sum
 
       - name: Build
@@ -33,7 +33,7 @@ jobs:
       - name: Unit tests
         run: go test ./... -timeout 10m
 
-      - name: Race detector   # ← гейт из ревью 3B
+      - name: Race detector
         run: go test -race ./... -timeout 20m
 
       - name: Vet
@@ -91,10 +91,10 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
-      - name: Unit tests + lint (без NDK: быстро и достаточно для гейта)
+      - name: "Unit tests + lint (без NDK: быстро и достаточно для гейта)"
         working-directory: 2pchatGO/android
         run: ./gradlew testDebugUnitTest lintDebug --console=plain
 
-      - name: Focus: protocol compatibility
+      - name: "Focus: protocol compatibility"
         working-directory: 2pchatGO/android
         run: ./gradlew testDebugUnitTest --tests "com.example.twopchat.protocol.ProtocolCompatibilityTest" --console=plain
