@@ -638,6 +638,10 @@ func TestManagerReconnectsAfterTransportLoss(t *testing.T) {
 	if err != nil {
 		t.Fatalf("initial ConnectPeer failed: %v", err)
 	}
+	onlineDeadline := time.Now().Add(3 * time.Second)
+	for (!alice.IsPeerOnline(bobFP) || !bob.IsPeerOnline(aliceFP)) && time.Now().Before(onlineDeadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
 	if !alice.IsPeerOnline(bobFP) || !bob.IsPeerOnline(aliceFP) {
 		t.Fatal("peers were not online after initial handshake")
 	}
@@ -658,6 +662,10 @@ func TestManagerReconnectsAfterTransportLoss(t *testing.T) {
 	second, err := alice.ConnectPeer(endpoint, bobFP)
 	if err != nil {
 		t.Fatalf("reconnect failed: %v", err)
+	}
+	reconnectDeadline := time.Now().Add(3 * time.Second)
+	for (!alice.IsPeerOnline(bobFP) || !bob.IsPeerOnline(aliceFP)) && time.Now().Before(reconnectDeadline) {
+		time.Sleep(10 * time.Millisecond)
 	}
 	if second == first || !alice.IsPeerOnline(bobFP) {
 		t.Fatal("reconnect did not install a fresh online session")
