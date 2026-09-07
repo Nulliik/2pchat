@@ -10,6 +10,7 @@ static jmethodID g_midOnError = NULL;
 static jmethodID g_midOnPeerDiscovered = NULL;
 static jmethodID g_midOnFileProgress = NULL;
 static jmethodID g_midOnTrackerStatus = NULL;
+static jmethodID g_midOnDiscoverySeqPersist = NULL;
 
 static JNIEnv* getJNIEnv(int *attachedOut);
 static void releaseJNIEnv(int attached);
@@ -33,8 +34,20 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *reserved) {
         g_midOnPeerDiscovered = (*env)->GetStaticMethodID(env, g_nativeBridgeClass, "onPeerDiscovered", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V");
         g_midOnFileProgress = (*env)->GetStaticMethodID(env, g_nativeBridgeClass, "onFileProgress", "(Ljava/lang/String;Ljava/lang/String;JJD)V");
         g_midOnTrackerStatus = (*env)->GetStaticMethodID(env, g_nativeBridgeClass, "onTrackerStatus", "(Ljava/lang/String;ZIJLjava/lang/String;)V");
+        g_midOnDiscoverySeqPersist = (*env)->GetStaticMethodID(env, g_nativeBridgeClass, "onDiscoverySeqPersist", "(J)V");
     }
     return JNI_VERSION_1_6;
+}
+
+void callbackOnDiscoverySeqPersist(jlong seq) {
+    if (g_nativeBridgeClass == NULL || g_midOnDiscoverySeqPersist == NULL) return;
+    int attached = 0;
+    JNIEnv *env = getJNIEnv(&attached);
+    if (env != NULL) {
+        (*env)->CallStaticVoidMethod(env, g_nativeBridgeClass, g_midOnDiscoverySeqPersist, seq);
+        checkAndClearException(env);
+        releaseJNIEnv(attached);
+    }
 }
 
 void callbackOnTrackerStatus(const char *trackerURL, jboolean success, jint peerCount, jlong elapsedMs, const char *detail) {

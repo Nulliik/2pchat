@@ -6,6 +6,7 @@ package main
 import "C"
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net"
 	"time"
@@ -81,6 +82,9 @@ func init() {
 			ok = C.jboolean(C.JNI_FALSE)
 		}
 		C.callbackOnTrackerStatus(cURL, ok, C.jint(peerCount), C.jlong(elapsed.Milliseconds()), cDetail)
+	})
+	bridge.GetManager().SetDiscoverySeqPersistHook(func(seq uint64) {
+		C.callbackOnDiscoverySeqPersist(C.jlong(seq))
 	})
 }
 
@@ -1136,4 +1140,98 @@ func Java_com_example_twopchat_NativeBridge_nativeVerifyBackupManifest(
 		return C.JNI_TRUE
 	}
 	return C.JNI_FALSE
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeCreateDiscoveryRecord
+func Java_com_example_twopchat_NativeBridge_nativeCreateDiscoveryRecord(
+	env *C.JNIEnv,
+	clazz C.jclass,
+	jEndpointsJSON C.jstring,
+	jTtlSec C.jlong,
+	jPolicy C.jint,
+) C.jstring {
+	var endpointsJSON string
+	cEndpoints := C.getJStringUTFChars(env, jEndpointsJSON)
+	if cEndpoints != nil {
+		endpointsJSON = C.GoString(cEndpoints)
+		C.releaseJStringUTFChars(env, jEndpointsJSON, cEndpoints)
+	}
+
+	recordJSON, err := bridge.GetManager().CreateSignedDiscoveryRecord(endpointsJSON, int64(jTtlSec), uint32(jPolicy))
+	if err != nil {
+		return C.nullJString()
+	}
+
+	cRecord := C.CString(recordJSON)
+	defer C.free(unsafe.Pointer(cRecord))
+	return C.createJString(env, cRecord)
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeVerifyDiscoveryRecord
+func Java_com_example_twopchat_NativeBridge_nativeVerifyDiscoveryRecord(
+	env *C.JNIEnv,
+	clazz C.jclass,
+	jRecordJSON C.jstring,
+	jExpectedFingerprint C.jstring,
+	jCheckSeqGap C.jboolean,
+) C.jstring {
+	cRecord := C.getJStringUTFChars(env, jRecordJSON)
+	if cRecord == nil {
+		return C.nullJString()
+	}
+	recordJSON := C.GoString(cRecord)
+	C.releaseJStringUTFChars(env, jRecordJSON, cRecord)
+
+	var expectedFP string
+	cFP := C.getJStringUTFChars(env, jExpectedFingerprint)
+	if cFP != nil {
+		expectedFP = C.GoString(cFP)
+		C.releaseJStringUTFChars(env, jExpectedFingerprint, cFP)
+	}
+
+	endpoints, seq, err := bridge.GetManager().VerifyDiscoveryRecord(recordJSON, expectedFP, jCheckSeqGap == C.JNI_TRUE)
+	if err != nil {
+		return C.nullJString()
+	}
+
+	type verifyResult struct {
+		Endpoints []string `json:"endpoints"`
+		Seq       uint64   `json:"seq"`
+	}
+	resBytes, err := json.Marshal(verifyResult{Endpoints: endpoints, Seq: seq})
+	if err != nil {
+		return C.nullJString()
+	}
+
+	cRes := C.CString(string(resBytes))
+	defer C.free(unsafe.Pointer(cRes))
+	return C.createJString(env, cRes)
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeSetDiscoverySeqCounter
+func Java_com_example_twopchat_NativeBridge_nativeSetDiscoverySeqCounter(
+	env *C.JNIEnv,
+	clazz C.jclass,
+	jSeq C.jlong,
+) {
+	if jSeq >= 0 {
+		bridge.GetManager().SetDiscoverySeqCounter(uint64(jSeq))
+	}
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeGetDiscoverySeqCounter
+func Java_com_example_twopchat_NativeBridge_nativeGetDiscoverySeqCounter(
+	env *C.JNIEnv,
+	clazz C.jclass,
+) C.jlong {
+	return C.jlong(bridge.GetManager().GetNextDiscoverySeq())
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeSetDiscoveryStrictSignatures
+func Java_com_example_twopchat_NativeBridge_nativeSetDiscoveryStrictSignatures(
+	env *C.JNIEnv,
+	clazz C.jclass,
+	jStrict C.jboolean,
+) {
+	bridge.GetManager().SetDiscoveryStrictSignatures(jStrict == C.JNI_TRUE)
 }

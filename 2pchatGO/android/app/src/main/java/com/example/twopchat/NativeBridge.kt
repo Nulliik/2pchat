@@ -27,6 +27,7 @@ object NativeBridge {
     var onPeerDiscoveredListener: ((infoHashHex: String, endpoint: String, source: String) -> Unit)? = null
     var onTrackerStatusListener: ((trackerUrl: String, success: Boolean, peerCount: Int, elapsedMs: Long, detail: String) -> Unit)? = null
     var onFileProgressListener: ((peerFP: String, messageId: String, transferred: Long, total: Long, speedKbps: Double) -> Unit)? = null
+    var onDiscoverySeqPersistListener: ((seq: Long) -> Unit)? = null
 
     private fun logI(msg: String) {
         runCatching { SafeLog.i(TAG, msg) }
@@ -550,6 +551,18 @@ object NativeBridge {
         }
     }
 
+    @JvmStatic
+    fun onDiscoverySeqPersist(seq: Long) {
+        SafeLog.d(TAG, "[P2P-Discovery] Persisting discovery sequence counter: $seq")
+        bridgeScope.launch {
+            try {
+                onDiscoverySeqPersistListener?.invoke(seq)
+            } catch (e: Throwable) {
+                SafeLog.e(TAG, "Error in onDiscoverySeqPersistListener", e)
+            }
+        }
+    }
+
     private data class TrackerLogRecord(
         val wasSuccess: Boolean,
         val peerCount: Int,
@@ -788,6 +801,68 @@ object NativeBridge {
         }
     }
 
+    data class VerifiedDiscoveryRecord(
+        val endpoints: List<String>,
+        val seq: Long
+    )
+
+    fun createDiscoveryRecord(endpoints: List<String>, ttlSec: Long = 1800, policyFlags: Int = 0): String? {
+        if (!isLoaded) return null
+        return try {
+            val json = org.json.JSONArray(endpoints).toString()
+            nativeCreateDiscoveryRecord(json, ttlSec, policyFlags)
+        } catch (e: Throwable) {
+            SafeLog.e(TAG, "nativeCreateDiscoveryRecord failed", e)
+            null
+        }
+    }
+
+    fun verifyDiscoveryRecord(recordJSON: String, expectedFingerprint: String? = null, checkSeqGap: Boolean = true): VerifiedDiscoveryRecord? {
+        if (!isLoaded || recordJSON.isBlank()) return null
+        return try {
+            val resStr = nativeVerifyDiscoveryRecord(recordJSON, expectedFingerprint, checkSeqGap) ?: return null
+            val obj = org.json.JSONObject(resStr)
+            val arr = obj.optJSONArray("endpoints") ?: return null
+            val endpoints = mutableListOf<String>()
+            for (i in 0 until arr.length()) {
+                endpoints.add(arr.getString(i))
+            }
+            val seq = obj.optLong("seq", 0L)
+            VerifiedDiscoveryRecord(endpoints, seq)
+        } catch (e: Throwable) {
+            SafeLog.e(TAG, "nativeVerifyDiscoveryRecord failed", e)
+            null
+        }
+    }
+
+    fun setDiscoverySeqCounter(seq: Long) {
+        if (!isLoaded) return
+        try {
+            nativeSetDiscoverySeqCounter(seq)
+        } catch (e: Throwable) {
+            SafeLog.e(TAG, "nativeSetDiscoverySeqCounter failed", e)
+        }
+    }
+
+    fun getDiscoverySeqCounter(): Long {
+        if (!isLoaded) return 0L
+        return try {
+            nativeGetDiscoverySeqCounter()
+        } catch (e: Throwable) {
+            SafeLog.e(TAG, "nativeGetDiscoverySeqCounter failed", e)
+            0L
+        }
+    }
+
+    fun setDiscoveryStrictSignatures(strict: Boolean) {
+        if (!isLoaded) return
+        try {
+            nativeSetDiscoveryStrictSignatures(strict)
+        } catch (e: Throwable) {
+            SafeLog.e(TAG, "nativeSetDiscoveryStrictSignatures failed", e)
+        }
+    }
+
     // --- Native JNI declarations ---
     private external fun nativeSetStorageKey(key: ByteArray): Boolean
     private external fun nativeSetStorageDir(dir: String)
@@ -851,4 +926,9 @@ object NativeBridge {
     private external fun nativeInspectBackupFingerprint(encryptedData: ByteArray): String?
     private external fun nativeSignBackupManifest(canonicalManifest: ByteArray): String?
     private external fun nativeVerifyBackupManifest(verifyPubBase64: String, canonicalManifest: ByteArray, signatureBase64: String): Boolean
+    private external fun nativeCreateDiscoveryRecord(endpointsJSON: String?, ttlSec: Long, policyFlags: Int): String?
+    private external fun nativeVerifyDiscoveryRecord(recordJSON: String, expectedFingerprint: String?, checkSeqGap: Boolean): String?
+    private external fun nativeSetDiscoverySeqCounter(seq: Long)
+    private external fun nativeGetDiscoverySeqCounter(): Long
+    private external fun nativeSetDiscoveryStrictSignatures(strict: Boolean)
 }

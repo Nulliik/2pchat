@@ -60,6 +60,15 @@ object P2PPreferences : com.example.twopchat.security.SensitiveMemoryHolder {
     const val INCOGNITO_KEYBOARD = "settings_incognito_keyboard"
     const val USE_NATIVE_GO_CORE = "settings_use_native_go_core"
 
+    enum class DiscoverySecurityMode(val id: String) {
+        STRICT("strict"),          // Only signed records (LAN + Direct + DHT)
+        TRANSITIONAL("transitional"), // Signed preferred, unsigned fallback for BEP15 trackers
+        LEGACY("legacy")           // Unsigned allowed everywhere (for testing)
+    }
+
+    const val PREF_DISCOVERY_SECURITY_MODE = "discovery_security_mode"
+    const val PREF_DISCOVERY_SEQ_COUNTER = "discovery_seq_counter"
+
     enum class YggdrasilMode(val id: String) {
         PROXY("proxy"),
         VPN("vpn")
@@ -1243,6 +1252,23 @@ object P2PPreferences : com.example.twopchat.security.SensitiveMemoryHolder {
 
     fun setLinkPreviewsEnabled(context: Context, enabled: Boolean) {
         prefs(context).edit().putBoolean(SETTINGS_LINK_PREVIEWS, enabled).apply()
+    }
+
+    fun getDiscoverySecurityMode(context: Context): DiscoverySecurityMode {
+        val raw = prefs(context).getString(PREF_DISCOVERY_SECURITY_MODE, DiscoverySecurityMode.TRANSITIONAL.id)
+        return DiscoverySecurityMode.values().firstOrNull { it.id.equals(raw, ignoreCase = true) }
+            ?: DiscoverySecurityMode.TRANSITIONAL
+    }
+
+    fun setDiscoverySecurityMode(context: Context, mode: DiscoverySecurityMode) {
+        prefs(context).edit().putString(PREF_DISCOVERY_SECURITY_MODE, mode.id).apply()
+    }
+
+    fun getDiscoverySeqCounter(context: Context): Long =
+        prefs(context).getLong(PREF_DISCOVERY_SEQ_COUNTER, 0L)
+
+    fun setDiscoverySeqCounter(context: Context, seq: Long) {
+        prefs(context).edit().putLong(PREF_DISCOVERY_SEQ_COUNTER, seq).apply()
     }
 }
 

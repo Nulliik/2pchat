@@ -127,3 +127,89 @@ func TestLANEngineDirectBeaconDispatch(t *testing.T) {
 		t.Fatalf("Timeout waiting for LAN beacon reception")
 	}
 }
+
+func TestLANEngineSignedBeaconsAndStrictMode(t *testing.T) {
+	priv, _ := generateTestEdKey(t)
+	senderFP := "sender-fp-signed"
+
+	discovered := make(chan string, 5)
+	handler := func(fp, ep string) {
+		discovered <- fp
+	}
+
+	engine := NewLANEngine("receiver-fp", 50001, 0, handler)
+	if err := engine.Start(); err != nil {
+		t.Fatalf("Engine start failed: %v", err)
+	}
+	t.Cleanup(func() { _ = engine.Stop() })
+
+	port := engine.Port()
+	targetAddr := &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: port}
+	senderConn, err := net.DialUDP("udp4", nil, targetAddr)
+	if err != nil {
+		t.Fatalf("DialUDP failed: %v", err)
+	}
+	defer senderConn.Close()
+
+	// 1. Valid signed beacon accepted
+	record, err := NewDiscoveryRecord(senderFP, priv, []Endpoint{{Address: "127.0.0.1:50002"}}, 1, 10*time.Minute, 0)
+	if err != nil {
+		t.Fatalf("NewDiscoveryRecord failed: %v", err)
+	}
+	signedBeacon := LANBeacon{
+		Service:     LANServiceName,
+		Fingerprint: senderFP,
+		Port:        50002,
+		Timestamp:   time.Now().Unix(),
+		Record:      record,
+	}
+	raw, _ := json.Marshal(signedBeacon)
+	_, _ = senderConn.Write(raw)
+
+	select {
+	case fp := <-discovered:
+		if fp != senderFP {
+			t.Errorf("Expected %s, got %s", senderFP, fp)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatalf("Timeout waiting for signed LAN beacon")
+	}
+
+	// 2. Tampered signed beacon rejected
+	recordTampered := *record
+	recordTampered.Fingerprint = "mismatched-fp"
+	tamperedBeacon := LANBeacon{
+		Service:     LANServiceName,
+		Fingerprint: senderFP,
+		Port:        50002,
+		Timestamp:   time.Now().Unix(),
+		Record:      &recordTampered,
+	}
+	rawTampered, _ := json.Marshal(tamperedBeacon)
+	_, _ = senderConn.Write(rawTampered)
+
+	select {
+	case fp := <-discovered:
+		t.Fatalf("Tampered signed beacon should be rejected, got %s", fp)
+	case <-time.After(300 * time.Millisecond):
+		// Expected rejection
+	}
+
+	// 3. Strict mode rejects unsigned beacon
+	engine.SetStrictSignatures(true)
+	unsignedBeacon := LANBeacon{
+		Service:     LANServiceName,
+		Fingerprint: "unsigned-fp",
+		Port:        50003,
+		Timestamp:   time.Now().Unix(),
+	}
+	rawUnsigned, _ := json.Marshal(unsignedBeacon)
+	_, _ = senderConn.Write(rawUnsigned)
+
+	select {
+	case fp := <-discovered:
+		t.Fatalf("Unsigned beacon should be rejected in strict mode, got %s", fp)
+	case <-time.After(300 * time.Millisecond):
+		// Expected rejection
+	}
+}

@@ -2665,6 +2665,7 @@ object P2PMessageRelay {
                         log(appContext, "Ignoring own endpoint $endpoint returned by $source discovery")
                         return
                     }
+                    val discoveryMode = P2PPreferences.getDiscoverySecurityMode(appContext)
                     val activeChats = prefs.getStringSet("active_chats", emptySet()) ?: emptySet()
 
                     for (peerName in activeChats) {
@@ -2686,6 +2687,35 @@ object P2PMessageRelay {
                             infoHash.equals(discCode, ignoreCase = true) ||
                             infoHash.equals(fpHash, ignoreCase = true) ||
                             infoHash.equals(codeHash, ignoreCase = true)) {
+
+                            // Check if endpoint is a signed DiscoveryRecord JSON
+                            if (endpoint.trimStart().startsWith("{")) {
+                                val verified = getBridge(appContext).verifyDiscoveryRecord(endpoint, fp.takeIf { it.isNotEmpty() }, checkSeqGap = true)
+                                if (verified == null) {
+                                    log(appContext, "Rejected invalid, expired, or replayed discovery record for $peerName via $source")
+                                    continue
+                                }
+                                if (fp.isNotEmpty()) {
+                                    ChatDatabaseHelper.getInstance(appContext).upsertDiscoverySeq(fp, verified.seq)
+                                }
+                                log(appContext, "Discovered ${verified.endpoints.size} signed endpoints for $peerName (seq=${verified.seq}) via $source")
+                                for (verifiedEp in verified.endpoints) {
+                                    injectLocalDiscoveryCandidate(peerName, fp, verifiedEp)
+                                    rememberAuthenticatedPeerEndpoint(peerName, verifiedEp, appContext)
+                                    if (!getBridge(appContext).isPeerOnline(peerName, fp)) {
+                                        getBridge(appContext).reconnectPeerSession(peerName, verifiedEp, fp)
+                                    }
+                                }
+                                continue
+                            }
+
+                            // Handling unsigned endpoint according to DiscoverySecurityMode
+                            if (discoveryMode == P2PPreferences.DiscoverySecurityMode.STRICT) {
+                                log(appContext, "Rejecting unsigned endpoint $endpoint for $peerName via $source (STRICT mode active)")
+                                continue
+                            } else if (discoveryMode == P2PPreferences.DiscoverySecurityMode.TRANSITIONAL) {
+                                SafeLog.w("P2P-Discovery", "Accepting unsigned endpoint $endpoint from $source for $peerName (TRANSITIONAL legacy mode)")
+                            }
 
                             log(appContext, "Discovered endpoint $endpoint for $peerName via $source")
                             injectLocalDiscoveryCandidate(peerName, fp, endpoint)
@@ -2709,6 +2739,9 @@ object P2PMessageRelay {
             }
 
             maintenanceCoordinator.start(appContext, port, ::isPlaceholderPeerName)
+            relayScope.launch(Dispatchers.IO) {
+                ChatDatabaseHelper.getInstance(appContext).pruneStaleDiscoverySeqs()
+            }
 
             relayScope.launch {
                 var lastBroadcastedOnion: String? = null

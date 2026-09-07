@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"twopchat/core/pkg/crypto"
 	"twopchat/core/pkg/discovery"
@@ -45,6 +46,11 @@ type SessionManager struct {
 	upnpMapper      *transport.UPnPMapper
 	natDiag         *transport.NATDiagnostics
 	holePuncher     *transport.HolePuncher
+	discoverySeqCounter  uint64
+	seqPersistHook       func(seq uint64)
+	lastSeenDiscoverySeq sync.Map // map[string]uint64
+	seqLookupHook        func(fp string) uint64
+	seqUpsertHook        func(fp string, seq uint64)
 }
 
 func (m *SessionManager) SetTrackerStatusCallback(callback discovery.TrackerStatusCallback) {
@@ -300,6 +306,25 @@ func (m *SessionManager) Init() error {
 			m.discoverySvc.SetOnionAddress(m.onionAddress)
 		}
 		m.discoverySvc.SetYggdrasilUDPRelay(m.yggUDPRelay)
+		m.discoverySvc.SetRecordProvider(func(port int) *discovery.DiscoveryRecord {
+			m.mu.RLock()
+			id := m.identity
+			policy := m.policy
+			m.mu.RUnlock()
+			if id == nil || id.Signing == nil {
+				return nil
+			}
+			seq := m.GetNextDiscoverySeq()
+			rec, _ := discovery.NewDiscoveryRecord(
+				id.Fingerprint(),
+				id.Signing,
+				[]discovery.Endpoint{{Address: fmt.Sprintf(":%d", port), Class: "lan"}},
+				seq,
+				15*time.Minute,
+				uint32(policy.ToFlags()),
+			)
+			return rec
+		})
 	}
 
 	return nil
@@ -1320,3 +1345,147 @@ func (m *SessionManager) SignBackupManifest(canonicalManifest []byte) (string, s
 func (m *SessionManager) VerifyBackupManifest(verifyPubB64 string, canonicalManifest []byte, signatureB64 string) bool {
 	return crypto.VerifyBackupManifest(verifyPubB64, canonicalManifest, signatureB64)
 }
+
+// SetDiscoverySeqCounter initializes the monotonic discovery sequence counter from persistence.
+func (m *SessionManager) SetDiscoverySeqCounter(initialSeq uint64) {
+	atomic.StoreUint64(&m.discoverySeqCounter, initialSeq)
+}
+
+// SetDiscoverySeqPersistHook sets the callback invoked when the sequence counter should be persisted.
+func (m *SessionManager) SetDiscoverySeqPersistHook(hook func(seq uint64)) {
+	m.mu.Lock()
+	m.seqPersistHook = hook
+	m.mu.Unlock()
+}
+
+// SetDiscoverySeqStorageHooks sets callbacks for reading and persisting peer sequence numbers in SQLite.
+func (m *SessionManager) SetDiscoverySeqStorageHooks(lookup func(fp string) uint64, upsert func(fp string, seq uint64)) {
+	m.mu.Lock()
+	m.seqLookupHook = lookup
+	m.seqUpsertHook = upsert
+	m.mu.Unlock()
+}
+
+// GetNextDiscoverySeq returns the next monotonic sequence number and invokes persistence hook with throttling.
+func (m *SessionManager) GetNextDiscoverySeq() uint64 {
+	next := atomic.AddUint64(&m.discoverySeqCounter, 1)
+	if next%100 == 0 || next == 1 {
+		m.mu.RLock()
+		hook := m.seqPersistHook
+		m.mu.RUnlock()
+		if hook != nil {
+			hook(next)
+		}
+	}
+	return next
+}
+
+// CreateSignedDiscoveryRecord creates and signs a new DiscoveryRecord using the local identity key.
+func (m *SessionManager) CreateSignedDiscoveryRecord(endpointsJSON string, ttlSec int64, policy uint32) (string, error) {
+	m.mu.RLock()
+	id := m.identity
+	m.mu.RUnlock()
+	if id == nil || id.Signing == nil {
+		return "", errors.New("local identity not initialized")
+	}
+
+	var rawEndpoints []string
+	if endpointsJSON != "" {
+		if err := json.Unmarshal([]byte(endpointsJSON), &rawEndpoints); err != nil {
+			return "", fmt.Errorf("malformed endpointsJSON: %w", err)
+		}
+	}
+
+	endpoints := make([]discovery.Endpoint, len(rawEndpoints))
+	for i, ep := range rawEndpoints {
+		endpoints[i] = discovery.Endpoint{Address: ep}
+	}
+
+	if ttlSec <= 0 {
+		ttlSec = 1800 // default 30 minutes
+	}
+	ttl := time.Duration(ttlSec) * time.Second
+	if ttl > discovery.MaxDiscoveryRecordTTL {
+		ttl = discovery.MaxDiscoveryRecordTTL
+	}
+
+	seq := m.GetNextDiscoverySeq()
+	record, err := discovery.NewDiscoveryRecord(id.Fingerprint(), id.Signing, endpoints, seq, ttl, policy)
+	if err != nil {
+		return "", err
+	}
+
+	data, err := json.Marshal(record)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
+// VerifyDiscoveryRecord validates a discovery record JSON, checks replay protection, and returns filtered endpoints.
+func (m *SessionManager) VerifyDiscoveryRecord(recordJSON string, expectedFingerprint string, checkSeqGap bool) ([]string, uint64, error) {
+	var lastSeen uint64
+	if expectedFingerprint != "" {
+		if val, ok := m.lastSeenDiscoverySeq.Load(expectedFingerprint); ok {
+			lastSeen = val.(uint64)
+		} else {
+			m.mu.RLock()
+			lookup := m.seqLookupHook
+			m.mu.RUnlock()
+			if lookup != nil {
+				lastSeen = lookup(expectedFingerprint)
+				m.lastSeenDiscoverySeq.Store(expectedFingerprint, lastSeen)
+			}
+		}
+	}
+
+	record, err := discovery.ParseAndValidateRecord(
+		[]byte(recordJSON),
+		expectedFingerprint,
+		nil,
+		lastSeen,
+		time.Now(),
+		checkSeqGap,
+	)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	// Update lastSeenSeq in memory & SQLite
+	m.lastSeenDiscoverySeq.Store(record.Fingerprint, record.Seq)
+	m.mu.RLock()
+	upsert := m.seqUpsertHook
+	m.mu.RUnlock()
+	if upsert != nil {
+		upsert(record.Fingerprint, record.Seq)
+	}
+
+	// Filter endpoints through Anti-SSRF and NetworkPolicy
+	m.mu.RLock()
+	policy := m.policy
+	m.mu.RUnlock()
+
+	rawEndpoints := make([]string, len(record.Endpoints))
+	for i, ep := range record.Endpoints {
+		rawEndpoints[i] = ep.Address
+	}
+
+	subnets, _ := discovery.GetLocalSubnets()
+	filtered, err := discovery.FilterCandidates(policy, rawEndpoints, subnets)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	return filtered, record.Seq, nil
+}
+
+// SetDiscoveryStrictSignatures toggles whether unsigned discovery records/beacons are rejected.
+func (m *SessionManager) SetDiscoveryStrictSignatures(strict bool) {
+	m.mu.RLock()
+	svc := m.discoverySvc
+	m.mu.RUnlock()
+	if svc != nil {
+		svc.SetStrictSignatures(strict)
+	}
+}
+

@@ -102,6 +102,26 @@ func (s *DiscoveryService) SetTorProxy(enabled bool) {
 	}
 }
 
+// SetRecordProvider sets a factory to attach signed DiscoveryRecord to LAN beacons.
+func (s *DiscoveryService) SetRecordProvider(provider LANRecordProvider) {
+	s.mu.RLock()
+	lan := s.lanEngine
+	s.mu.RUnlock()
+	if lan != nil {
+		lan.SetRecordProvider(provider)
+	}
+}
+
+// SetStrictSignatures configures strict signature validation on incoming LAN discovery.
+func (s *DiscoveryService) SetStrictSignatures(strict bool) {
+	s.mu.RLock()
+	lan := s.lanEngine
+	s.mu.RUnlock()
+	if lan != nil {
+		lan.SetStrictSignatures(strict)
+	}
+}
+
 func (s *DiscoveryService) reportTrackerStatus(url string, result *AnnounceResult, started time.Time, err error) {
 	if s.trackerStatus == nil {
 		return

@@ -18,12 +18,16 @@ const (
 	LANServiceName        = "2pchat"
 )
 
+// LANRecordProvider produces a signed DiscoveryRecord for LAN broadcast.
+type LANRecordProvider func(port int) *DiscoveryRecord
+
 // LANBeacon represents the payload broadcast over local subnet.
 type LANBeacon struct {
-	Service     string `json:"service"`
-	Fingerprint string `json:"fingerprint"`
-	Port        int    `json:"port"`
-	Timestamp   int64  `json:"timestamp"`
+	Service     string           `json:"service"`
+	Fingerprint string           `json:"fingerprint"`
+	Port        int              `json:"port"`
+	Timestamp   int64            `json:"timestamp"`
+	Record      *DiscoveryRecord `json:"record,omitempty"`
 }
 
 // LANDiscoveryHandler is called when a local peer is detected via LAN broadcast.
@@ -31,17 +35,20 @@ type LANDiscoveryHandler func(peerFP string, endpoint string)
 
 // LANEngine handles local network peer discovery via UDP broadcast/multicast.
 type LANEngine struct {
-	mu          sync.Mutex
-	policy      transport.NetworkPolicy
-	fingerprint string
-	tcpPort     int
-	udpPort     int
-	running     int32
-	listener    *net.UDPConn
-	handler     LANDiscoveryHandler
-	ctx         context.Context
-	cancel      context.CancelFunc
-	wg          sync.WaitGroup
+	mu               sync.Mutex
+	policy           transport.NetworkPolicy
+	fingerprint      string
+	tcpPort          int
+	udpPort          int
+	running          int32
+	listener         *net.UDPConn
+	handler          LANDiscoveryHandler
+	recordProvider   LANRecordProvider
+	strictSignatures bool
+	lastSeenSeq      sync.Map // fingerprint -> uint64
+	ctx              context.Context
+	cancel           context.CancelFunc
+	wg               sync.WaitGroup
 }
 
 // NewLANEngine creates a new LAN discovery engine. If udpPort is 0, a dynamic port is chosen.
@@ -89,6 +96,20 @@ func (e *LANEngine) SetPolicy(p transport.NetworkPolicy) {
 	}
 }
 
+// SetRecordProvider configures a factory function to attach signed DiscoveryRecord to beacons.
+func (e *LANEngine) SetRecordProvider(provider LANRecordProvider) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.recordProvider = provider
+}
+
+// SetStrictSignatures configures whether unsigned LAN beacons are rejected.
+func (e *LANEngine) SetStrictSignatures(strict bool) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.strictSignatures = strict
+}
+
 // Start launches the background LAN beacon listener and periodic broadcaster.
 func (e *LANEngine) Start() error {
 	e.mu.Lock()
@@ -121,7 +142,7 @@ func (e *LANEngine) Start() error {
 
 func (e *LANEngine) listenLoop(conn *net.UDPConn) {
 	defer e.wg.Done()
-	buf := make([]byte, 1024)
+	buf := make([]byte, MaxDiscoveryRecordBytes)
 
 	for {
 		n, rAddr, err := conn.ReadFromUDP(buf)
@@ -136,6 +157,35 @@ func (e *LANEngine) listenLoop(conn *net.UDPConn) {
 
 		if beacon.Service != LANServiceName || beacon.Fingerprint == e.fingerprint || beacon.Port <= 0 {
 			continue // Ignore our own beacons and foreign packets
+		}
+
+		e.mu.Lock()
+		strict := e.strictSignatures
+		e.mu.Unlock()
+
+		if beacon.Record != nil {
+			// Verify embedded signed discovery record
+			if err := beacon.Record.Verify(nil); err != nil {
+				continue // Malformed or forged signature
+			}
+			if err := beacon.Record.IsValidAt(time.Now(), DefaultClockSkewAllowance); err != nil {
+				continue // Expired or future-dated record
+			}
+			if beacon.Record.Fingerprint != beacon.Fingerprint {
+				continue // Fingerprint mismatch
+			}
+			if val, ok := e.lastSeenSeq.Load(beacon.Record.Fingerprint); ok {
+				lastSeq := val.(uint64)
+				if beacon.Record.Seq <= lastSeq {
+					continue // Stale sequence (replay attack)
+				}
+				if beacon.Record.Seq > lastSeq+1000 {
+					continue // Sequence gap too large (potential DoS attack)
+				}
+			}
+			e.lastSeenSeq.Store(beacon.Record.Fingerprint, beacon.Record.Seq)
+		} else if strict {
+			continue // Reject unsigned beacon in strict discovery mode
 		}
 
 		endpoint := net.JoinHostPort(rAddr.IP.String(), strconv.Itoa(beacon.Port))
@@ -166,6 +216,7 @@ func (e *LANEngine) broadcastLoop() {
 func (e *LANEngine) sendBeacon() {
 	e.mu.Lock()
 	allowLAN := e.policy.AllowLAN
+	provider := e.recordProvider
 	e.mu.Unlock()
 	if !allowLAN {
 		return
@@ -176,6 +227,9 @@ func (e *LANEngine) sendBeacon() {
 		Fingerprint: e.fingerprint,
 		Port:        e.tcpPort,
 		Timestamp:   time.Now().Unix(),
+	}
+	if provider != nil {
+		beacon.Record = provider(e.tcpPort)
 	}
 
 	data, err := json.Marshal(beacon)

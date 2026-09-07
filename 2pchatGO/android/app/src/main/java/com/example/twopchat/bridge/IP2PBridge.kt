@@ -65,4 +65,9 @@ interface IP2PBridge {
     fun updateTrackers(trackers: List<String>): Boolean = false
     fun getLocalSeedMnemonic(): String? = null
     fun restoreFromMnemonic(nickname: String, mnemonic: String, aboutMe: String = ""): Boolean = false
+    fun createDiscoveryRecord(endpoints: List<String>, ttlSec: Long = 1800, policyFlags: Int = 0): String? = null
+    fun verifyDiscoveryRecord(recordJSON: String, expectedFingerprint: String? = null, checkSeqGap: Boolean = true): com.example.twopchat.NativeBridge.VerifiedDiscoveryRecord? = null
+    fun setDiscoverySeqCounter(seq: Long) {}
+    fun getDiscoverySeqCounter(): Long = 0L
+    fun setDiscoveryStrictSignatures(strict: Boolean) {}
 }

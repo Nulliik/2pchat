@@ -388,6 +388,15 @@ class NativeBridgeImpl(
             sessionListener?.onPeerDiscovered(infoHash, endpoint, source)
         }
 
+        NativeBridge.onDiscoverySeqPersistListener = { seq ->
+            try {
+                val appContext = com.example.twopchat.yggdrasil.GlobalApplication.appContext
+                P2PPreferences.setDiscoverySeqCounter(appContext, seq)
+            } catch (_: Exception) {
+                // intentionally ignored: appContext uninitialized in pure JVM unit tests
+            }
+        }
+
         NativeBridge.onFileProgressListener = { peerFP, messageID, transferred, total, speed ->
             val senderName = resolvePeerName(peerFP) ?: peerNameMap[peerFP] ?: peerFP
             messageListener?.onFileProgress(senderName, messageID, transferred, total, speed)
@@ -412,7 +421,19 @@ class NativeBridgeImpl(
         if (username.isNotBlank()) {
             NativeBridge.setNickname(username)
         }
-        return NativeBridge.initialize()
+        val initSuccess = NativeBridge.initialize()
+        if (initSuccess) {
+            try {
+                val appContext = com.example.twopchat.yggdrasil.GlobalApplication.appContext
+                val initialSeq = P2PPreferences.getDiscoverySeqCounter(appContext)
+                NativeBridge.setDiscoverySeqCounter(initialSeq)
+                val mode = P2PPreferences.getDiscoverySecurityMode(appContext)
+                NativeBridge.setDiscoveryStrictSignatures(mode == P2PPreferences.DiscoverySecurityMode.STRICT)
+            } catch (_: Exception) {
+                // intentionally ignored: appContext uninitialized in pure JVM unit tests
+            }
+        }
+        return initSuccess
     }
 
     override fun setIpv4Enabled(enabled: Boolean) {
@@ -967,6 +988,23 @@ class NativeBridgeImpl(
 
     override fun restoreFromMnemonic(nickname: String, mnemonic: String, aboutMe: String): Boolean =
         NativeBridge.restoreFromMnemonic(nickname, mnemonic, aboutMe)
+
+    override fun createDiscoveryRecord(endpoints: List<String>, ttlSec: Long, policyFlags: Int): String? =
+        NativeBridge.createDiscoveryRecord(endpoints, ttlSec, policyFlags)
+
+    override fun verifyDiscoveryRecord(recordJSON: String, expectedFingerprint: String?, checkSeqGap: Boolean): NativeBridge.VerifiedDiscoveryRecord? =
+        NativeBridge.verifyDiscoveryRecord(recordJSON, expectedFingerprint, checkSeqGap)
+
+    override fun setDiscoverySeqCounter(seq: Long) {
+        NativeBridge.setDiscoverySeqCounter(seq)
+    }
+
+    override fun getDiscoverySeqCounter(): Long =
+        NativeBridge.getDiscoverySeqCounter()
+
+    override fun setDiscoveryStrictSignatures(strict: Boolean) {
+        NativeBridge.setDiscoveryStrictSignatures(strict)
+    }
 }
 
 internal fun shouldPublishIdentitySessionEstablished(

@@ -33,11 +33,12 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
 
     companion object {
         private const val DATABASE_NAME = "twopchat.db"
-        internal const val DATABASE_VERSION = 17
+        internal const val DATABASE_VERSION = 18
         private const val TABLE_MESSAGES = "messages"
         private const val TABLE_PENDING_CONTROLS = "pending_controls"
         private const val TABLE_PEERS = "peers"
         private const val TABLE_MEDIA_ACCESS_LOG = "media_access_log"
+        private const val TABLE_DISCOVERY_SEQUENCES = "discovery_sequences"
         
         private const val KEY_ID = "id"
         private const val KEY_PEER_NAME = "peer_name"
@@ -68,6 +69,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
         private const val KEY_PEER_SOURCE = "peer_source"
         private const val KEY_POLICY_CONFIRMED = "policy_confirmed"
         private const val KEY_UPDATED_AT_MS = "updated_at_ms"
+        private const val KEY_LAST_SEQ = "last_seq"
         private const val TAG = "ChatDatabaseHelper"
         private val instanceLock = Any()
         private val migrationLock = Any()
@@ -200,6 +202,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
         createPeersTable(db)
         createCompositeIndices(db)
         createMediaAccessLogTable(db)
+        createDiscoverySequencesTable(db)
         if (!isControlPurged) {
             synchronized(migrationLock) {
                 if (!isControlPurged) {
@@ -253,6 +256,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
         createPendingControlsTable(db)
         createPeersTable(db)
         createMediaAccessLogTable(db)
+        createDiscoverySequencesTable(db)
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -401,6 +405,9 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
         }
         if (oldVersion < 17) {
             createMediaAccessLogTable(db)
+        }
+        if (oldVersion < 18) {
+            createDiscoverySequencesTable(db)
         }
     }
 
@@ -936,6 +943,22 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
             )
         } catch (e: Exception) {
             SafeLog.w(TAG, "Failed creating media_access_log table", e)
+        }
+    }
+
+    private fun createDiscoverySequencesTable(db: SQLiteDatabase) {
+        try {
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS $TABLE_DISCOVERY_SEQUENCES (
+                    $KEY_FINGERPRINT TEXT PRIMARY KEY,
+                    $KEY_LAST_SEQ INTEGER NOT NULL,
+                    $KEY_UPDATED_AT_MS INTEGER NOT NULL
+                )
+                """.trimIndent(),
+            )
+        } catch (e: Exception) {
+            SafeLog.w(TAG, "Failed creating discovery_sequences table", e)
         }
     }
 
@@ -1712,6 +1735,60 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
         setPeerTransportPolicy(peerNameOrFP, effective)
         setPolicyConfirmed(peerNameOrFP, true)
         return effective
+    }
+
+    fun upsertDiscoverySeq(fingerprint: String, seq: Long, timestamp: Long = System.currentTimeMillis()) {
+        if (fingerprint.isBlank()) return
+        try {
+            val values = ContentValues().apply {
+                put(KEY_FINGERPRINT, fingerprint)
+                put(KEY_LAST_SEQ, seq)
+                put(KEY_UPDATED_AT_MS, timestamp)
+            }
+            safeWritableDatabase.insertWithOnConflict(
+                TABLE_DISCOVERY_SEQUENCES,
+                null,
+                values,
+                SQLiteDatabase.CONFLICT_REPLACE
+            )
+        } catch (e: Exception) {
+            SafeLog.e(TAG, "Failed to upsert discovery sequence for $fingerprint", e)
+        }
+    }
+
+    fun getDiscoverySeq(fingerprint: String): Long? {
+        if (fingerprint.isBlank()) return null
+        return try {
+            safeReadableDatabase.query(
+                TABLE_DISCOVERY_SEQUENCES,
+                arrayOf(KEY_LAST_SEQ),
+                "$KEY_FINGERPRINT = ?",
+                arrayOf(fingerprint),
+                null, null, null
+            ).use { cursor ->
+                if (cursor.moveToFirst()) {
+                    cursor.getLong(0)
+                } else {
+                    null
+                }
+            }
+        } catch (e: Exception) {
+            SafeLog.e(TAG, "Failed to get discovery sequence for $fingerprint", e)
+            null
+        }
+    }
+
+    fun pruneStaleDiscoverySeqs(olderThanMs: Long = 7 * 24 * 3600 * 1000L) {
+        try {
+            val cutoff = System.currentTimeMillis() - olderThanMs
+            safeWritableDatabase.delete(
+                TABLE_DISCOVERY_SEQUENCES,
+                "$KEY_UPDATED_AT_MS < ?",
+                arrayOf(cutoff.toString())
+            )
+        } catch (e: Exception) {
+            SafeLog.e(TAG, "Failed to prune stale discovery sequences", e)
+        }
     }
 
     private fun createPeersTable(db: SQLiteDatabase) {
