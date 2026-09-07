@@ -6,8 +6,8 @@ on:
       duration:
         description: "Длительность прогона"
         default: "6h"
-  # schedule:                      # включить после мержа cmd/soak
-  #   - cron: "0 2 * * *"          # nightly 02:00 UTC
+  schedule:
+    - cron: "0 2 * * *"          # nightly 02:00 UTC
 
 permissions:
   contents: read

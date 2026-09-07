@@ -83,6 +83,13 @@ func GetManager() *SessionManager {
 	return globalManager
 }
 
+// GetNetManager returns the underlying network session Manager.
+func (m *SessionManager) GetNetManager() *session.Manager {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.netManager
+}
+
 // SetCallbacks sets the event callback hooks for JNI dispatch.
 func (m *SessionManager) SetCallbacks(cb session.EventCallbacks, onPeerDisc discovery.DiscoveryCallback) {
 	m.mu.Lock()
