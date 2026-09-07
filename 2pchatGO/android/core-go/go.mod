@@ -1,6 +1,6 @@
 module twopchat/core
 
-go 1.26.3
+go 1.26.6
 
 require (
 	github.com/hashicorp/yamux v0.1.2
