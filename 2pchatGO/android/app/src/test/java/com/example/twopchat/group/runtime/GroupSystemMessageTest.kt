@@ -5,9 +5,13 @@ import com.example.twopchat.group.ui.GroupSystemEventType
 import com.example.twopchat.group.ui.GroupTimelineMessage
 import com.example.twopchat.group.ui.SYSTEM_MESSAGE_PLACEHOLDER
 import com.example.twopchat.group.ui.components.GroupSystemMessageFormatter
+import com.example.twopchat.group.storage.StoredGroup
+import com.example.twopchat.group.storage.StoredGroupEvent
+import com.example.twopchat.group.storage.StoredGroupMember
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -412,5 +416,93 @@ class GroupSystemMessageTest {
         assertFalse("System message cannot be deleted", sysMsg.canDelete)
         assertFalse("System message cannot be reacted to", sysMsg.canReact)
         assertFalse("System message cannot be pinned", sysMsg.canPin)
+    }
+
+    @Test
+    fun testWallpaperAndSettingsUpdatesDoNotEmitGroupNameChanged() {
+        val group = StoredGroup(
+            groupId = "group_123",
+            title = "Текущее название",
+            description = "Описание",
+            avatarUri = null,
+            ownerDeviceId = "dev_alice_123456",
+            localDeviceId = "dev_alice_123456",
+            currentEpoch = 1L,
+            createdAtMs = 1000L,
+            updatedAtMs = 1000L,
+        )
+        val member = StoredGroupMember(
+            groupId = "group_123",
+            deviceId = "dev_alice_123456",
+            accountId = "acc_alice",
+            transportFingerprint = "fp_alice",
+            peerName = "alice",
+            signingKeyBase64 = "key_alice",
+            displayName = "Алиса",
+            role = "OWNER",
+            permissions = 0xFFFFFFFFL,
+            status = "ACTIVE",
+            joinedEpoch = 1L,
+            createdAtMs = 1000L,
+            updatedAtMs = 1000L,
+        )
+        val members = mapOf(member.deviceId to member)
+
+        // 1. Wallpaper update (even if title is present in payload!) -> Must return null
+        val wallpaperPayload = org.json.JSONObject().apply {
+            put("title", "Текущее название")
+            put("description", "Описание")
+            put("wallpaper_uri", "/data/wallpaper/fox.jpg")
+        }
+        val wallpaperEvent = StoredGroupEvent(
+            groupId = "group_123",
+            eventId = "evt_wp_1",
+            epoch = 1L,
+            authorDeviceId = "dev_alice_123456",
+            authorSeq = 2L,
+            hlcPhysicalMs = 2000L,
+            hlcLogical = 0,
+            kind = "GROUP_UPDATED",
+            body = wallpaperPayload.toString(),
+        )
+        val wpResult = GroupChatCoordinator.mapEventToSystemTimelineMessage(group, wallpaperEvent, members)
+        assertNull("Wallpaper update must never emit GROUP_NAME_CHANGED", wpResult)
+
+        // 2. Admin-only posting update -> Must return null
+        val adminPostingPayload = org.json.JSONObject().apply {
+            put("title", "Текущее название")
+            put("admin_only_posting", true)
+        }
+        val adminPostingEvent = wallpaperEvent.copy(
+            eventId = "evt_admin_only",
+            body = adminPostingPayload.toString(),
+        )
+        val adminResult = GroupChatCoordinator.mapEventToSystemTimelineMessage(group, adminPostingEvent, members)
+        assertNull("Admin-only posting toggle must never emit GROUP_NAME_CHANGED", adminResult)
+
+        // 3. Avatar update without title change -> Must return null
+        val avatarPayload = org.json.JSONObject().apply {
+            put("title", "Текущее название")
+            put("avatar_uri", "/data/avatar/photo.jpg")
+        }
+        val avatarEvent = wallpaperEvent.copy(
+            eventId = "evt_avatar",
+            body = avatarPayload.toString(),
+        )
+        val avatarResult = GroupChatCoordinator.mapEventToSystemTimelineMessage(group, avatarEvent, members)
+        assertNull("Avatar update without title change must never emit GROUP_NAME_CHANGED", avatarResult)
+
+        // 4. Real title change -> Must return GROUP_NAME_CHANGED message
+        val renamePayload = org.json.JSONObject().apply {
+            put("title", "Новое Название")
+        }
+        val renameEvent = wallpaperEvent.copy(
+            eventId = "evt_rename",
+            body = renamePayload.toString(),
+        )
+        val renameResult = GroupChatCoordinator.mapEventToSystemTimelineMessage(group, renameEvent, members)
+        assertNotNull("Real rename event must emit timeline system message", renameResult)
+        assertEquals(GroupSystemEventType.GROUP_NAME_CHANGED, renameResult?.systemEventType)
+        assertEquals("Новое Название", renameResult?.systemPayload?.get("title"))
     }
 }

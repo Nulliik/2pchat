@@ -609,12 +609,22 @@ object GroupChatCoordinator {
                 }.getOrElse { null to null }
             } else null to null
 
+            val currentGroup = db().getGroup(groupId)
+            val isTitleChanged = currentGroup != null && currentGroup.title != normalizedTitle
+            val isDescriptionChanged = currentGroup != null && currentGroup.description != normalizedDescription
+
             requestSerializedControl(
                 groupId,
                 "update_info",
                 JSONObject().apply {
                     put("title", normalizedTitle)
                     put("description", normalizedDescription)
+                    if (isTitleChanged) {
+                        put("title_changed", true)
+                    }
+                    if (isDescriptionChanged) {
+                        put("description_changed", true)
+                    }
                     // Always send avatar_uri field (even if null) so receiver knows it changed
                     if (avatarUri != null) {
                         put("avatar_uri", persistedPath ?: avatarUri)
@@ -6419,229 +6429,25 @@ object GroupChatCoordinator {
                     tr = "Üye"
                 )
 
-                val payloadJson = evt.payload?.let { pBytes ->
+                val payloadJson = evt.body?.let { b ->
+                    runCatching { JSONObject(b) }.getOrNull()
+                } ?: evt.payload?.let { pBytes ->
                     runCatching { JSONObject(String(pBytes, Charsets.UTF_8)) }.getOrNull()
                 }
 
-                val targetMemberName = payloadJson?.optString("member_device_id")?.let { targetId ->
+                val targetMemberName = payloadJson?.optString("member_device_id")?.ifBlank { null }?.let { targetId ->
+                    members.firstOrNull { it.deviceId == targetId }?.displayName ?: targetId.take(8)
+                } ?: payloadJson?.optString("target_author_device_id")?.ifBlank { null }?.let { targetId ->
                     members.firstOrNull { it.deviceId == targetId }?.displayName ?: targetId.take(8)
                 }
 
-                val actionDescription = when (evt.kind) {
-                    "GROUP_UPDATED" -> {
-                        when {
-                            payloadJson?.has("wallpaper_uri") == true || payloadJson?.has("wallpaper_data") == true ->
-                                com.example.twopchat.data.Localizations.tr(
-                                    appLang,
-                                    ru = "изменил обои чата",
-                                    en = "changed chat wallpaper",
-                                    de = "hat den Chat-Hintergrund geändert",
-                                    es = "cambió el fondo del chat",
-                                    fr = "a changé le fond d'écran",
-                                    pt = "alterou o papel de parede",
-                                    tr = "sohbet duvar kağıdını değiştirdi"
-                                )
-                            payloadJson?.has("avatar_uri") == true || payloadJson?.has("avatar_data") == true ->
-                                com.example.twopchat.data.Localizations.tr(
-                                    appLang,
-                                    ru = "изменил фото профиля беседы",
-                                    en = "changed group photo",
-                                    de = "hat das Gruppenbild geändert",
-                                    es = "cambió la foto del grupo",
-                                    fr = "a changé la photo du groupe",
-                                    pt = "alterou a foto do grupo",
-                                    tr = "grup fotoğrafını değiştirdi"
-                                )
-                            payloadJson?.has("title") == true ->
-                                com.example.twopchat.data.Localizations.tr(
-                                    appLang,
-                                    ru = "изменил название беседы на «%s»",
-                                    en = "changed group name to \"%s\"",
-                                    de = "hat den Gruppennamen geändert in «%s»",
-                                    es = "cambió el nombre del grupo a «%s»",
-                                    fr = "a changé le nom du groupe en « %s »",
-                                    pt = "alterou o nome do grupo para «%s»",
-                                    tr = "grup adını «%s» olarak değiştirdi"
-                                ).replace("%s", payloadJson.optString("title"))
-                            payloadJson?.has("description") == true ->
-                                com.example.twopchat.data.Localizations.tr(
-                                    appLang,
-                                    ru = "изменил описание беседы",
-                                    en = "changed group description",
-                                    de = "hat die Gruppenbeschreibung geändert",
-                                    es = "cambió la descripción del grupo",
-                                    fr = "a changé la description du groupe",
-                                    pt = "alterou a descrição do grupo",
-                                    tr = "grup açıklamasını değiştirdi"
-                                )
-                            else -> com.example.twopchat.data.Localizations.tr(
-                                appLang,
-                                ru = "обновил параметры беседы",
-                                en = "updated group settings",
-                                de = "hat die Gruppeneinstellungen aktualisiert",
-                                es = "actualizó los ajustes del grupo",
-                                fr = "a mis à jour les paramètres du groupe",
-                                pt = "atualizou as configurações do grupo",
-                                tr = "grup ayarlarını güncelledi"
-                            )
-                        }
-                    }
-                    "MEMBER_ADDED" -> {
-                        if (targetMemberName != null) {
-                            com.example.twopchat.data.Localizations.tr(
-                                appLang,
-                                ru = "добавил пользователя %s",
-                                en = "added user %s",
-                                de = "hat Benutzer %s hinzugefügt",
-                                es = "añadió al usuario %s",
-                                fr = "a ajouté l'utilisateur %s",
-                                pt = "adicionou o usuário %s",
-                                tr = "%s adlı kullanıcıyı ekledi"
-                            ).replace("%s", targetMemberName)
-                        } else {
-                            com.example.twopchat.data.Localizations.tr(
-                                appLang,
-                                ru = "добавил участника",
-                                en = "added a member",
-                                de = "hat ein Mitglied hinzugefügt",
-                                es = "añadió un miembro",
-                                fr = "a ajouté un membre",
-                                pt = "adicionou um membro",
-                                tr = "bir üye ekledi"
-                            )
-                        }
-                    }
-                    "MEMBER_REMOVED" -> {
-                        if (targetMemberName != null) {
-                            com.example.twopchat.data.Localizations.tr(
-                                appLang,
-                                ru = "исключил пользователя %s",
-                                en = "removed user %s",
-                                de = "hat Benutzer %s entfernt",
-                                es = "eliminó al usuario %s",
-                                fr = "a retiré l'utilisateur %s",
-                                pt = "removeu o usuário %s",
-                                tr = "%s adlı kullanıcıyı çıkardı"
-                            ).replace("%s", targetMemberName)
-                        } else {
-                            com.example.twopchat.data.Localizations.tr(
-                                appLang,
-                                ru = "исключил участника",
-                                en = "removed a member",
-                                de = "hat ein Mitglied entfernt",
-                                es = "eliminó un miembro",
-                                fr = "a retiré un membre",
-                                pt = "removeu um membro",
-                                tr = "bir üyeyi çıkardı"
-                            )
-                        }
-                    }
-                    "ROLE_CHANGED" -> {
-                        val roleStr = when (payloadJson?.optString("role")?.uppercase()) {
-                            "ADMIN" -> com.example.twopchat.data.Localizations.tr(
-                                appLang,
-                                ru = "Администратор",
-                                en = "Administrator",
-                                de = "Administrator",
-                                es = "Administrador",
-                                fr = "Administrateur",
-                                pt = "Administrador",
-                                tr = "Yönetici"
-                            )
-                            "MODERATOR" -> com.example.twopchat.data.Localizations.tr(
-                                appLang,
-                                ru = "Модератор",
-                                en = "Moderator",
-                                de = "Moderator",
-                                es = "Moderador",
-                                fr = "Modérateur",
-                                pt = "Moderador",
-                                tr = "Moderatör"
-                            )
-                            "MEMBER" -> com.example.twopchat.data.Localizations.tr(
-                                appLang,
-                                ru = "Участник",
-                                en = "Member",
-                                de = "Mitglied",
-                                es = "Miembro",
-                                fr = "Membre",
-                                pt = "Membro",
-                                tr = "Üye"
-                            )
-                            else -> payloadJson?.optString("role") ?: ""
-                        }
-                        if (targetMemberName != null) {
-                            val pattern = com.example.twopchat.data.Localizations.tr(
-                                appLang,
-                                ru = "изменил роль {user} на {role}",
-                                en = "changed role of {user} to {role}",
-                                de = "hat die Rolle von {user} in {role} geändert",
-                                es = "cambió el rol de {user} a {role}",
-                                fr = "a changé le rôle de {user} en {role}",
-                                pt = "alterou o papel de {user} para {role}",
-                                tr = "{user} adlı kullanıcının rolünü {role} olarak değiştirdi"
-                            )
-                            pattern.replace("{user}", targetMemberName).replace("{role}", roleStr)
-                        } else {
-                            com.example.twopchat.data.Localizations.tr(
-                                appLang,
-                                ru = "изменил роль участника",
-                                en = "changed member role",
-                                de = "hat die Rolle eines Mitglieds geändert",
-                                es = "cambió el rol del miembro",
-                                fr = "a changé le rôle du membre",
-                                pt = "alterou a função do membro",
-                                tr = "üye rolünü değiştirdi"
-                            )
-                        }
-                    }
-                    "PERMISSIONS_CHANGED", "MEMBER_MUTED" -> {
-                        if (targetMemberName != null) {
-                            com.example.twopchat.data.Localizations.tr(
-                                appLang,
-                                ru = "изменил права %s",
-                                en = "changed permissions for %s",
-                                de = "hat die Berechtigungen für %s geändert",
-                                es = "cambió los permisos de %s",
-                                fr = "a modifié les permissions de %s",
-                                pt = "alterou as permissões de %s",
-                                tr = "%s adlı kullanıcının izinlerini değiştirdi"
-                            ).replace("%s", targetMemberName)
-                        } else {
-                            com.example.twopchat.data.Localizations.tr(
-                                appLang,
-                                ru = "изменил права участника",
-                                en = "changed member permissions",
-                                de = "hat die Mitgliederberechtigungen geändert",
-                                es = "cambió los permisos del miembro",
-                                fr = "a modifié les permissions du membre",
-                                pt = "alterou as permissões do membro",
-                                tr = "üye izinlerini değiştirdi"
-                            )
-                        }
-                    }
-                    "PIN" -> com.example.twopchat.data.Localizations.tr(
-                        appLang,
-                        ru = "закрепил сообщение",
-                        en = "pinned a message",
-                        de = "hat eine Nachricht angeheftet",
-                        es = "fijó un mensaje",
-                        fr = "a épinglé un message",
-                        pt = "fixou uma mensagem",
-                        tr = "bir mesajı sabitledi"
-                    )
-                    "UNPIN" -> com.example.twopchat.data.Localizations.tr(
-                        appLang,
-                        ru = "открепил сообщение",
-                        en = "unpinned a message",
-                        de = "hat eine Nachricht losgelöst",
-                        es = "desfijó un mensaje",
-                        fr = "a désépinglé un message",
-                        pt = "desafixou uma mensagem",
-                        tr = "bir mesajın sabitlemesini kaldırdı"
-                    )
-                    else -> evt.kind.lowercase().replace('_', ' ')
-                }
+                val actionDescription = formatAdminAction(
+                    evt = evt,
+                    payloadJson = payloadJson,
+                    actorName = actorName,
+                    targetMemberName = targetMemberName,
+                    appLang = appLang,
+                )
 
                 GroupAdminLogEntry(
                     entryId = evt.eventId,
@@ -7286,7 +7092,7 @@ object GroupChatCoordinator {
         else -> runCatching { GroupRole.valueOf(value) }.getOrDefault(GroupRole.MEMBER)
     }
 
-    private fun mapEventToSystemTimelineMessage(
+    internal fun mapEventToSystemTimelineMessage(
         group: StoredGroup,
         event: StoredGroupEvent,
         memberByDevice: Map<String, StoredGroupMember>,
@@ -7339,6 +7145,9 @@ object GroupChatCoordinator {
                 systemPayload = mapOf("target_id" to targetDeviceId)
             }
             isGroupUpdated -> {
+                if (payload.has("wallpaper_uri") || payload.has("wallpaper_data")) return null
+                if (payload.has("admin_only_posting") || payload.has("tor_only_group")) return null
+                if ((payload.has("avatar_uri") || payload.has("avatar_data")) && !payload.optBoolean("title_changed", false)) return null
                 if (!payload.has("title")) return null
                 val title = payload.optString("title", "").trim()
                 if (title.isBlank()) return null
@@ -7761,7 +7570,7 @@ object GroupChatCoordinator {
         GroupEventKind.OWNERSHIP_TRANSFERRED,
     )
 
-    private fun isAdminLogKind(kind: String): Boolean = kind in setOf(
+    private fun isAdminLogKind(kind: String): Boolean = kind.uppercase(Locale.ROOT) in setOf(
         GroupEventKind.GROUP_UPDATED.name,
         GroupEventKind.MEMBER_ADDED.name,
         GroupEventKind.MEMBER_REMOVED.name,
@@ -7771,7 +7580,409 @@ object GroupChatCoordinator {
         GroupEventKind.PIN.name,
         GroupEventKind.UNPIN.name,
         StoredGroupEventKind.DELETE.name,
+        GroupEventKind.GROUP_UPDATED.wireName.uppercase(Locale.ROOT),
+        GroupEventKind.MEMBER_ADDED.wireName.uppercase(Locale.ROOT),
+        GroupEventKind.MEMBER_REMOVED.wireName.uppercase(Locale.ROOT),
+        GroupEventKind.ROLE_CHANGED.wireName.uppercase(Locale.ROOT),
+        GroupEventKind.MEMBER_RESTRICTED.wireName.uppercase(Locale.ROOT),
+        GroupEventKind.OWNERSHIP_TRANSFERRED.wireName.uppercase(Locale.ROOT),
+        GroupEventKind.PIN.wireName.uppercase(Locale.ROOT),
+        GroupEventKind.UNPIN.wireName.uppercase(Locale.ROOT),
+        GroupEventKind.DELETE.wireName.uppercase(Locale.ROOT),
     )
+
+    internal fun formatAdminAction(
+        evt: StoredGroupEvent,
+        payloadJson: JSONObject?,
+        actorName: String,
+        targetMemberName: String?,
+        appLang: String,
+    ): String {
+        return when (evt.kind.uppercase(Locale.ROOT)) {
+            "GROUP_UPDATED" -> {
+                when {
+                    payloadJson?.has("wallpaper_uri") == true || payloadJson?.has("wallpaper_data") == true -> {
+                        val wpUri = payloadJson.optString("wallpaper_uri", "")
+                        val wpData = payloadJson.optString("wallpaper_data", "")
+                        if (wpUri.isBlank() && wpData.isBlank()) {
+                            com.example.twopchat.data.Localizations.tr(
+                                appLang,
+                                ru = "удалил(а) обои чата",
+                                en = "removed chat wallpaper",
+                                de = "hat den Chat-Hintergrund entfernt",
+                                es = "eliminó el fondo del chat",
+                                fr = "a supprimé le fond d'écran",
+                                pt = "removeu o papel de parede",
+                                tr = "sohbet duvar kağıdını kaldırdı",
+                            )
+                        } else {
+                            com.example.twopchat.data.Localizations.tr(
+                                appLang,
+                                ru = "изменил(а) обои чата",
+                                en = "changed chat wallpaper",
+                                de = "hat den Chat-Hintergrund geändert",
+                                es = "cambió el fondo del chat",
+                                fr = "a changé le fond d'écran",
+                                pt = "alterou o papel de parede",
+                                tr = "sohbet duvar kağıdını değiştirdi",
+                            )
+                        }
+                    }
+                    payloadJson?.has("avatar_uri") == true || payloadJson?.has("avatar_data") == true -> {
+                        val avUri = payloadJson.optString("avatar_uri", "")
+                        val avData = payloadJson.optString("avatar_data", "")
+                        if (avUri.isBlank() && avData.isBlank()) {
+                            com.example.twopchat.data.Localizations.tr(
+                                appLang,
+                                ru = "удалил(а) фото группы",
+                                en = "removed group photo",
+                                de = "hat das Gruppenbild entfernt",
+                                es = "eliminó la foto del grupo",
+                                fr = "a supprimé la photo du groupe",
+                                pt = "removeu a foto do grupo",
+                                tr = "grup fotoğrafını kaldırdı",
+                            )
+                        } else {
+                            com.example.twopchat.data.Localizations.tr(
+                                appLang,
+                                ru = "изменил(а) фото группы",
+                                en = "changed group photo",
+                                de = "hat das Gruppenbild geändert",
+                                es = "cambió la foto del grupo",
+                                fr = "a changé la photo du groupe",
+                                pt = "alterou a foto do grupo",
+                                tr = "grup fotoğrafını değiştirdi",
+                            )
+                        }
+                    }
+                    payloadJson?.has("admin_only_posting") == true -> {
+                        val adminOnly = payloadJson.optBoolean("admin_only_posting", false)
+                        if (adminOnly) {
+                            com.example.twopchat.data.Localizations.tr(
+                                appLang,
+                                ru = "включил(а) режим «сообщения только от администраторов»",
+                                en = "enabled admin-only messaging",
+                                de = "hat den Nur-Admin-Nachrichtenmodus aktiviert",
+                                es = "activó el modo de solo administradores",
+                                fr = "a activé le mode messages des administrateurs uniquement",
+                                pt = "ativou o modo de apenas administradores",
+                                tr = "yalnızca yöneticiler modunu etkinleştirdi",
+                            )
+                        } else {
+                            com.example.twopchat.data.Localizations.tr(
+                                appLang,
+                                ru = "разрешил(а) всем участникам отправлять сообщения",
+                                en = "allowed all members to send messages",
+                                de = "hat allen Mitgliedern das Senden von Nachrichten erlaubt",
+                                es = "permitió a todos los miembros enviar mensajes",
+                                fr = "a autorisé tous les membres à envoyer des messages",
+                                pt = "permitiu que todos os membros enviem mensagens",
+                                tr = "tüm üyelerin mesaj göndermesine izin verdi",
+                            )
+                        }
+                    }
+                    payloadJson?.has("tor_only_group") == true -> {
+                        com.example.twopchat.data.Localizations.tr(
+                            appLang,
+                            ru = "включил(а) принудительную маршрутизацию через Tor",
+                            en = "enabled Tor-only routing",
+                            de = "hat Tor-Only-Routing aktiviert",
+                            es = "activó el enrutamiento solo por Tor",
+                            fr = "a activé le routage uniquement via Tor",
+                            pt = "ativou o roteamento exclusivo via Tor",
+                            tr = "yalnızca Tor yönlendirmesini etkinleştirdi",
+                        )
+                    }
+                    payloadJson?.has("title") == true && payloadJson.optString("title").isNotBlank() -> {
+                        com.example.twopchat.data.Localizations.tr(
+                            appLang,
+                            ru = "изменил(а) название беседы на «%s»",
+                            en = "changed group name to \"%s\"",
+                            de = "hat den Gruppennamen geändert in «%s»",
+                            es = "cambió el nombre del grupo a «%s»",
+                            fr = "a changé le nom du groupe en « %s »",
+                            pt = "alterou o nome do grupo para «%s»",
+                            tr = "grup adını «%s» olarak değiştirdi",
+                        ).replace("%s", payloadJson.optString("title"))
+                    }
+                    payloadJson?.has("description") == true -> {
+                        com.example.twopchat.data.Localizations.tr(
+                            appLang,
+                            ru = "изменил(а) описание беседы",
+                            en = "changed group description",
+                            de = "hat die Gruppenbeschreibung geändert",
+                            es = "cambió la descripción del grupo",
+                            fr = "a changé la description du groupe",
+                            pt = "alterou a descrição do grupo",
+                            tr = "grup açıklamasını değiştirdi",
+                        )
+                    }
+                    else -> com.example.twopchat.data.Localizations.tr(
+                        appLang,
+                        ru = "обновил(а) параметры беседы",
+                        en = "updated group settings",
+                        de = "hat die Gruppeneinstellungen aktualisiert",
+                        es = "actualizó los ajustes del grupo",
+                        fr = "a mis à jour les paramètres du groupe",
+                        pt = "atualizou as configurações do grupo",
+                        tr = "grup ayarlarını güncelledi",
+                    )
+                }
+            }
+            "MEMBER_ADDED" -> {
+                if (targetMemberName != null) {
+                    com.example.twopchat.data.Localizations.tr(
+                        appLang,
+                        ru = "добавил(а) пользователя %s",
+                        en = "added user %s",
+                        de = "hat Benutzer %s hinzugefügt",
+                        es = "añadió al usuario %s",
+                        fr = "a ajouté l'utilisateur %s",
+                        pt = "adicionou o usuário %s",
+                        tr = "%s adlı kullanıcıyı ekledi",
+                    ).replace("%s", targetMemberName)
+                } else {
+                    com.example.twopchat.data.Localizations.tr(
+                        appLang,
+                        ru = "добавил(а) участника",
+                        en = "added a member",
+                        de = "hat ein Mitglied hinzugefügt",
+                        es = "añadió un miembro",
+                        fr = "a ajouté un membre",
+                        pt = "adicionou um membro",
+                        tr = "bir üye ekledi",
+                    )
+                }
+            }
+            "MEMBER_REMOVED" -> {
+                val isBanned = payloadJson?.optString("status") == "BANNED" ||
+                    payloadJson?.optBoolean("banned", false) == true ||
+                    payloadJson?.optString("action") == "ban"
+                val isVoluntary = payloadJson?.optBoolean("voluntary", false) == true ||
+                    (payloadJson?.optString("status") == "LEFT" && payloadJson.optString("member_device_id") == evt.authorDeviceId)
+
+                when {
+                    isVoluntary -> {
+                        com.example.twopchat.data.Localizations.tr(
+                            appLang,
+                            ru = "покинул(а) беседу",
+                            en = "left the group",
+                            de = "hat die Gruppe verlassen",
+                            es = "salió del grupo",
+                            fr = "a quitté le groupe",
+                            pt = "saiu do grupo",
+                            tr = "gruptan ayrıldı",
+                        )
+                    }
+                    isBanned -> {
+                        if (targetMemberName != null) {
+                            com.example.twopchat.data.Localizations.tr(
+                                appLang,
+                                ru = "заблокировал(а) пользователя %s",
+                                en = "banned user %s",
+                                de = "hat Benutzer %s gesperrt",
+                                es = "bloqueó al usuario %s",
+                                fr = "a banni l'utilisateur %s",
+                                pt = "baniu o usuário %s",
+                                tr = "%s adlı kullanıcıyı yasakladı",
+                            ).replace("%s", targetMemberName)
+                        } else {
+                            com.example.twopchat.data.Localizations.tr(
+                                appLang,
+                                ru = "заблокировал(а) участника",
+                                en = "banned a member",
+                                de = "hat ein Mitglied gesperrt",
+                                es = "bloqueó a un miembro",
+                                fr = "a banni un membre",
+                                pt = "baniu um membro",
+                                tr = "bir üyeyi yasakladı",
+                            )
+                        }
+                    }
+                    else -> {
+                        if (targetMemberName != null) {
+                            com.example.twopchat.data.Localizations.tr(
+                                appLang,
+                                ru = "исключил(а) пользователя %s",
+                                en = "removed user %s",
+                                de = "hat Benutzer %s entfernt",
+                                es = "eliminó al usuario %s",
+                                fr = "a retiré l'utilisateur %s",
+                                pt = "removeu o usuário %s",
+                                tr = "%s adlı kullanıcıyı çıkardı",
+                            ).replace("%s", targetMemberName)
+                        } else {
+                            com.example.twopchat.data.Localizations.tr(
+                                appLang,
+                                ru = "исключил(а) участника",
+                                en = "removed a member",
+                                de = "hat ein Mitglied entfernt",
+                                es = "eliminó un miembro",
+                                fr = "a retiré un membre",
+                                pt = "removeu um membro",
+                                tr = "bir üyeyi çıkardı",
+                            )
+                        }
+                    }
+                }
+            }
+            "ROLE_CHANGED" -> {
+                val roleStr = when (payloadJson?.optString("role")?.uppercase(Locale.ROOT)) {
+                    "ADMIN", "ADMINISTRATOR" -> com.example.twopchat.data.Localizations.tr(
+                        appLang,
+                        ru = "Администратор",
+                        en = "Administrator",
+                        de = "Administrator",
+                        es = "Administrador",
+                        fr = "Administrateur",
+                        pt = "Administrador",
+                        tr = "Yönetici",
+                    )
+                    "MODERATOR" -> com.example.twopchat.data.Localizations.tr(
+                        appLang,
+                        ru = "Модератор",
+                        en = "Moderator",
+                        de = "Moderator",
+                        es = "Moderador",
+                        fr = "Modérateur",
+                        pt = "Moderador",
+                        tr = "Moderatör",
+                    )
+                    "MEMBER" -> com.example.twopchat.data.Localizations.tr(
+                        appLang,
+                        ru = "Участник",
+                        en = "Member",
+                        de = "Mitglied",
+                        es = "Miembro",
+                        fr = "Membre",
+                        pt = "Membro",
+                        tr = "Üye",
+                    )
+                    else -> payloadJson?.optString("role") ?: ""
+                }
+                if (targetMemberName != null) {
+                    val pattern = com.example.twopchat.data.Localizations.tr(
+                        appLang,
+                        ru = "изменил(а) роль {user} на {role}",
+                        en = "changed role of {user} to {role}",
+                        de = "hat die Rolle von {user} in {role} geändert",
+                        es = "cambió el rol de {user} a {role}",
+                        fr = "a changé le rôle de {user} en {role}",
+                        pt = "alterou o papel de {user} para {role}",
+                        tr = "{user} adlı kullanıcının rolünü {role} olarak değiştirdi",
+                    )
+                    pattern.replace("{user}", targetMemberName).replace("{role}", roleStr)
+                } else {
+                    com.example.twopchat.data.Localizations.tr(
+                        appLang,
+                        ru = "изменил(а) роль участника",
+                        en = "changed member role",
+                        de = "hat die Rolle eines Mitglieds geändert",
+                        es = "cambió el rol del miembro",
+                        fr = "a changé le rôle du membre",
+                        pt = "alterou a função do membro",
+                        tr = "üye rolünü değiştirdi",
+                    )
+                }
+            }
+            "MEMBER_RESTRICTED", "PERMISSIONS_CHANGED", "MEMBER_MUTED", "RESTRICT" -> {
+                if (targetMemberName != null) {
+                    com.example.twopchat.data.Localizations.tr(
+                        appLang,
+                        ru = "ограничил(а) права пользователя %s",
+                        en = "restricted permissions for %s",
+                        de = "hat die Berechtigungen für %s eingeschränkt",
+                        es = "restringió los permisos de %s",
+                        fr = "a restreint les permissions de %s",
+                        pt = "restringiu as permissões de %s",
+                        tr = "%s adlı kullanıcının izinlerini kısıtladı",
+                    ).replace("%s", targetMemberName)
+                } else {
+                    com.example.twopchat.data.Localizations.tr(
+                        appLang,
+                        ru = "ограничил(а) права участника",
+                        en = "restricted member permissions",
+                        de = "hat Mitgliederberechtigungen eingeschränkt",
+                        es = "restringió los permisos del miembro",
+                        fr = "a restreint les permissions du membre",
+                        pt = "restringiu as permissões do membro",
+                        tr = "üye izinlerini kısıtladı",
+                    )
+                }
+            }
+            "OWNERSHIP_TRANSFERRED", "TRANSFER_OWNERSHIP" -> {
+                if (targetMemberName != null) {
+                    com.example.twopchat.data.Localizations.tr(
+                        appLang,
+                        ru = "передал(а) права создателя пользователю %s",
+                        en = "transferred ownership to %s",
+                        de = "hat die Eigentümerschaft an %s übertragen",
+                        es = "transfirió la propiedad a %s",
+                        fr = "a transféré la propriété à %s",
+                        pt = "transferiu a propriedade para %s",
+                        tr = "sahipliği %s adlı kullanıcıya devretti",
+                    ).replace("%s", targetMemberName)
+                } else {
+                    com.example.twopchat.data.Localizations.tr(
+                        appLang,
+                        ru = "передал(а) права создателя",
+                        en = "transferred ownership",
+                        de = "hat die Eigentümerschaft übertragen",
+                        es = "transfirió la propiedad",
+                        fr = "a transféré la propriété",
+                        pt = "transferiu a propriedade",
+                        tr = "sahipliği devretti",
+                    )
+                }
+            }
+            "PIN" -> com.example.twopchat.data.Localizations.tr(
+                appLang,
+                ru = "закрепил(а) сообщение",
+                en = "pinned a message",
+                de = "hat eine Nachricht angeheftet",
+                es = "fijó un mensaje",
+                fr = "a épinglé un message",
+                pt = "fixou uma mensagem",
+                tr = "bir mesajı sabitledi",
+            )
+            "UNPIN" -> com.example.twopchat.data.Localizations.tr(
+                appLang,
+                ru = "открепил(а) сообщение",
+                en = "unpinned a message",
+                de = "hat eine Nachricht losgelöst",
+                es = "desfijó un mensaje",
+                fr = "a désépinglé un message",
+                pt = "desafixou uma mensagem",
+                tr = "bir mesajın sabitlemesini kaldırdı",
+            )
+            "DELETE" -> {
+                if (targetMemberName != null && targetMemberName != actorName) {
+                    com.example.twopchat.data.Localizations.tr(
+                        appLang,
+                        ru = "удалил(а) сообщение пользователя %s",
+                        en = "deleted message of user %s",
+                        de = "hat eine Nachricht von Benutzer %s gelöscht",
+                        es = "eliminó el mensaje del usuario %s",
+                        fr = "a supprimé le message de l'utilisateur %s",
+                        pt = "excluiu a mensagem do usuário %s",
+                        tr = "%s adlı kullanıcının mesajını sildi",
+                    ).replace("%s", targetMemberName)
+                } else {
+                    com.example.twopchat.data.Localizations.tr(
+                        appLang,
+                        ru = "удалил(а) сообщение",
+                        en = "deleted a message",
+                        de = "hat eine Nachricht gelöscht",
+                        es = "eliminó un mensaje",
+                        fr = "a supprimé un message",
+                        pt = "excluiu uma mensagem",
+                        tr = "bir mesajı sildi",
+                    )
+                }
+            }
+            else -> evt.kind.lowercase(Locale.ROOT).replace('_', ' ')
+        }
+    }
 
     private data class LocalIdentity(
         val fingerprint: String,

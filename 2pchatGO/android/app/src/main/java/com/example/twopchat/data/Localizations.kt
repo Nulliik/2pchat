@@ -1897,26 +1897,26 @@ object Localizations {
     )
 
     fun getString(key: String, language: String): String {
-        val strings = when (language) {
-            "Русский" -> ruStrings
-            "Deutsch" -> deStrings
-            "Español" -> esStrings
-            "Français" -> frStrings
-            "Português" -> ptStrings
-            "Türkçe" -> trStrings
+        val strings = when (language.trim().lowercase()) {
+            "ru", "rus", "russian", "русский" -> ruStrings
+            "de", "deu", "ger", "german", "deutsch" -> deStrings
+            "es", "spa", "spanish", "español" -> esStrings
+            "fr", "fra", "fre", "french", "français" -> frStrings
+            "pt", "por", "portuguese", "português" -> ptStrings
+            "tr", "tur", "turkish", "türkçe" -> trStrings
             else -> enStrings
         }
         return strings[key] ?: enStrings[key] ?: key
     }
 
     fun tr(language: String, ru: String, en: String, de: String = en, es: String = en, fr: String = en, pt: String = en, tr: String = en): String {
-        return when (language) {
-            "Русский" -> ru
-            "Deutsch" -> de
-            "Español" -> es
-            "Français" -> fr
-            "Português" -> pt
-            "Türkçe" -> tr
+        return when (language.trim().lowercase()) {
+            "ru", "rus", "russian", "русский" -> ru
+            "de", "deu", "ger", "german", "deutsch" -> de
+            "es", "spa", "spanish", "español" -> es
+            "fr", "fra", "fre", "french", "français" -> fr
+            "pt", "por", "portuguese", "português" -> pt
+            "tr", "tur", "turkish", "türkçe" -> tr
             else -> en
         }
     }

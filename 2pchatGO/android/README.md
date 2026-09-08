@@ -15,7 +15,7 @@ Source-controlled configuration currently declares:
 | Android SDK | compile 37, target 36, minimum 24 |
 | NDK | `26.3.11579264` |
 | Application ID | `com.example.twopchat.go`; QA override: `groupQaApplicationId` |
-| App version | `0.0.9.0`, code 26 |
+| App version | `0.0.9.2`, code 28 |
 
 These are repository settings, not a new toolchain compatibility certification. Install the declared SDK/NDK and provide `ANDROID_NDK_HOME` or `ANDROID_NDK_ROOT`. Gradle builds native libraries through `buildGoCoreBinaries`; that task is skipped if the NDK is absent, so an APK build alone must not be treated as proof of a fresh Go build.
 
