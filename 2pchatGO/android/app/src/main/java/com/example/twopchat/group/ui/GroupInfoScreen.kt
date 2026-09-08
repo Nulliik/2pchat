@@ -158,6 +158,14 @@ fun GroupInfoScreen(
         GroupChatCoordinator.successionState(state.metadata.groupId)
     }.collectAsState(initial = null)
 
+    LaunchedEffect(state.metadata.groupId) {
+        GroupChatCoordinator.updateSuccessionState(state.metadata.groupId)
+        val isOwner = state.members.firstOrNull { it.isCurrentUser }?.role == GroupRole.OWNER
+        if (!isOwner) {
+            runCatching { GroupChatCoordinator.runAntiEntropy() }
+        }
+    }
+
     var showSuccessionSetupDialog by remember { mutableStateOf(false) }
     var showRevokeSuccessionConfirmation by remember { mutableStateOf(false) }
     var showClaimSuccessionConfirmation by remember { mutableStateOf(false) }
@@ -1451,11 +1459,20 @@ fun GroupInfoScreen(
     }
 
     if (showSuccessionSetupDialog) {
+        val initialTimeout = successionState?.timeoutDays
+            ?: P2PPreferences.getLastSuccessionTimeoutDays(context, state.metadata.groupId)
+        val initialSuccessor = successionState?.successorFingerprint
+            ?: P2PPreferences.getLastSuccessorFingerprint(context, state.metadata.groupId)
+
         SuccessionSetupDialog(
             members = state.members.filter { !it.isCurrentUser },
+            initialSuccessorFP = initialSuccessor,
+            initialTimeoutDays = initialTimeout,
             appLanguage = appLanguage,
             onDismiss = { showSuccessionSetupDialog = false },
             onConfirm = { successorFP, timeoutDays ->
+                P2PPreferences.setLastSuccessionTimeoutDays(context, state.metadata.groupId, timeoutDays)
+                P2PPreferences.setLastSuccessorFingerprint(context, state.metadata.groupId, successorFP)
                 controller.setupSuccessor(state.metadata.groupId, successorFP, timeoutDays)
                 showSuccessionSetupDialog = false
             }
@@ -4082,13 +4099,24 @@ private fun SuccessionManagementCard(
 @Composable
 private fun SuccessionSetupDialog(
     members: List<GroupMember>,
+    initialSuccessorFP: String? = null,
+    initialTimeoutDays: Int = 30,
     appLanguage: String,
     onDismiss: () -> Unit,
     onConfirm: (successorFP: String, timeoutDays: Int) -> Unit
 ) {
-    var selectedMember by remember { mutableStateOf(members.firstOrNull()) }
-    var selectedTimeoutDays by remember { mutableIntStateOf(30) }
     val timeoutOptions = listOf(7, 14, 30, 60, 90, 180)
+    var selectedMember by remember(initialSuccessorFP, members) {
+        mutableStateOf(
+            members.firstOrNull {
+                (it.transportFingerprint.isNotBlank() && it.transportFingerprint.equals(initialSuccessorFP, ignoreCase = true)) ||
+                it.memberId.equals(initialSuccessorFP, ignoreCase = true)
+            } ?: members.firstOrNull()
+        )
+    }
+    var selectedTimeoutDays by remember(initialTimeoutDays) {
+        mutableIntStateOf(if (initialTimeoutDays in timeoutOptions) initialTimeoutDays else 30)
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,

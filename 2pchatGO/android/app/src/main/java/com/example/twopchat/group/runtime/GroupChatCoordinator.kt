@@ -1384,10 +1384,18 @@ object GroupChatCoordinator {
         val wire = json.toString()
         if (wire.toByteArray(Charsets.UTF_8).size > GroupWireProtocol.MAX_WIRE_BYTES) return true
         val fingerprint = P2PPreferences.getPeerFingerprint(context, senderPeerName).orEmpty()
-        val session = com.example.twopchat.protocol.ProtocolVersionManager.refresh(fingerprint)
-        if (!runCatching {
-                GroupWireProtocol.requiredCapabilities(json).all { session?.supports(it) == true }
-            }.getOrDefault(false)) return true
+        val session = if (fingerprint.isNotBlank()) {
+            com.example.twopchat.protocol.ProtocolVersionManager.refresh(fingerprint)
+        } else null
+        if (session != null) {
+            val supported = runCatching {
+                GroupWireProtocol.requiredCapabilities(json).all { session.supports(it) }
+            }.getOrDefault(false)
+            if (!supported) {
+                SafeLog.w(TAG, "Dropping group frame requiring unsupported capabilities from $senderPeerName")
+                return true
+            }
+        }
         scope.launch {
             runCatching { processIncoming(senderPeerName, json) }
                 .onFailure { error ->
@@ -1443,6 +1451,28 @@ object GroupChatCoordinator {
                             epochKey.keyMaterial,
                             onlyRecipientDeviceId = member.deviceId,
                         )
+                    }
+                    val bridge = P2PBridgeProvider.get(context)
+                    val certJson = bridge.getSuccessionCertificate(group.groupId)
+                        ?: ChatDatabaseHelper.getInstance(context).getGroupSuccessionState(group.groupId)?.activeCertJson
+                    if (certJson != null) {
+                        val certFrame = JSONObject().apply {
+                            put("version", GroupWireProtocol.VERSION)
+                            put("type", GroupWireProtocol.TYPE_SUCCESSION_CERT)
+                            put("group_id", group.groupId)
+                            put("certificate_json", certJson)
+                        }
+                        P2PMessageRelay.sendGroupFrame(context, member.peerName, certFrame)
+                        val lastHbJson = ChatDatabaseHelper.getInstance(context).getGroupSuccessionState(group.groupId)?.lastHbJson
+                        if (lastHbJson != null) {
+                            val hbFrame = JSONObject().apply {
+                                put("version", GroupWireProtocol.VERSION)
+                                put("type", GroupWireProtocol.TYPE_OWNER_HEARTBEAT)
+                                put("group_id", group.groupId)
+                                put("heartbeat_json", lastHbJson)
+                            }
+                            P2PMessageRelay.sendGroupFrame(context, member.peerName, hbFrame)
+                        }
                     }
                 }
             }
@@ -3075,6 +3105,34 @@ object GroupChatCoordinator {
             }
         } else if (request.supportsV2) {
             throw SecurityException("sync request asserting supports_v2 must be signed")
+        }
+        if (group.localDeviceId == group.ownerDeviceId) {
+            val context = applicationContext
+            if (context != null) {
+                val bridge = P2PBridgeProvider.get(context)
+                val chatDb = ChatDatabaseHelper.getInstance(context)
+                val certJson = bridge.getSuccessionCertificate(group.groupId)
+                    ?: chatDb.getGroupSuccessionState(group.groupId)?.activeCertJson
+                if (certJson != null) {
+                    val certFrame = JSONObject().apply {
+                        put("version", GroupWireProtocol.VERSION)
+                        put("type", GroupWireProtocol.TYPE_SUCCESSION_CERT)
+                        put("group_id", group.groupId)
+                        put("certificate_json", certJson)
+                    }
+                    P2PMessageRelay.sendGroupFrame(context, senderPeerName, certFrame)
+                    val lastHbJson = chatDb.getGroupSuccessionState(group.groupId)?.lastHbJson
+                    if (lastHbJson != null) {
+                        val hbFrame = JSONObject().apply {
+                            put("version", GroupWireProtocol.VERSION)
+                            put("type", GroupWireProtocol.TYPE_OWNER_HEARTBEAT)
+                            put("group_id", group.groupId)
+                            put("heartbeat_json", lastHbJson)
+                        }
+                        P2PMessageRelay.sendGroupFrame(context, senderPeerName, hbFrame)
+                    }
+                }
+            }
         }
         val events = mutableListOf<JSONObject>()
         var directOversizedEvent: JSONObject? = null
@@ -8308,13 +8366,11 @@ object GroupChatCoordinator {
         if (group.localDeviceId != group.ownerDeviceId) return false
 
         val members = storage.listMembers(groupId)
-        // Succession changes group authority. Every participating remote member
-        // must currently support it before we create any persistent certificate.
+        // Succession changes group authority. If any participating remote member
+        // is actively known to be incompatible (legacy or missing succession capability), reject.
         if (members.filter { it.isParticipating() && it.deviceId != group.localDeviceId }.any {
-                !com.example.twopchat.protocol.ProtocolVersionManager.supports(
-                    it.transportFingerprint,
-                    com.example.twopchat.protocol.Capability.GROUP_SUCCESSION_V1,
-                )
+                val session = com.example.twopchat.protocol.ProtocolVersionManager.refresh(it.transportFingerprint)
+                session != null && (session.peerIsLegacy || !session.supports(com.example.twopchat.protocol.Capability.GROUP_SUCCESSION_V1))
             }) return false
         val successorMember = members.firstOrNull { 
             (it.transportFingerprint.isNotBlank() && it.transportFingerprint.equals(successorFP, ignoreCase = true)) || 
@@ -8325,6 +8381,8 @@ object GroupChatCoordinator {
         val successorRealFP = successorMember.transportFingerprint.ifBlank { successorMember.deviceId }
 
         val context = applicationContext ?: return false
+        P2PPreferences.setLastSuccessionTimeoutDays(context, groupId, timeoutDays)
+        P2PPreferences.setLastSuccessorFingerprint(context, groupId, successorRealFP)
         val bridge = P2PBridgeProvider.get(context)
         val certJson = bridge.createSuccessionCertificate(groupId, successorRealFP, successorPub, timeoutDays)
             ?: return false
@@ -8426,6 +8484,11 @@ object GroupChatCoordinator {
         val members = storage.listMembers(groupId).filter { it.isParticipating() && it.deviceId != group.localDeviceId }
         members.forEach { member ->
             enqueueFrame(groupId, eventId, member.deviceId, json)
+            if (member.peerName.isNotBlank() && P2PMessageRelay.peerSessionStates[member.peerName] == true) {
+                applicationContext?.let { ctx ->
+                    P2PMessageRelay.sendGroupFrame(ctx, member.peerName, json)
+                }
+            }
         }
         scope.launch { flushDueOutbox() }
     }
@@ -8451,6 +8514,7 @@ object GroupChatCoordinator {
             isRevoked = currentState?.isRevoked ?: false,
         )
         updateSuccessionState(groupId)
+        scope.launch { refreshGroup(groupId) }
     }
 
     private suspend fun receiveSuccessionCertificate(senderPeerName: String, json: JSONObject) {
@@ -8474,6 +8538,7 @@ object GroupChatCoordinator {
             isRevoked = false,
         )
         updateSuccessionState(groupId)
+        scope.launch { refreshGroup(groupId) }
     }
 
     private suspend fun receiveSuccessionRevocation(senderPeerName: String, json: JSONObject) {

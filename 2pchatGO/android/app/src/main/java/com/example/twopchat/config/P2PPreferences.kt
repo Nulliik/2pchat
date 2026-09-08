@@ -1328,6 +1328,20 @@ object P2PPreferences : com.example.twopchat.security.SensitiveMemoryHolder {
         prefs(context).edit().putBoolean(KEY_BATTERY_OPT_BANNER_DISMISSED, dismissed).apply()
     }
 
+    fun getLastSuccessionTimeoutDays(context: Context, groupId: String): Int =
+        prefs(context).getInt("succession_timeout_days_$groupId", 30)
+
+    fun setLastSuccessionTimeoutDays(context: Context, groupId: String, days: Int) {
+        prefs(context).edit().putInt("succession_timeout_days_$groupId", days).apply()
+    }
+
+    fun getLastSuccessorFingerprint(context: Context, groupId: String): String? =
+        prefs(context).getString("succession_target_fp_$groupId", null)
+
+    fun setLastSuccessorFingerprint(context: Context, groupId: String, fp: String?) {
+        prefs(context).edit().putString("succession_target_fp_$groupId", fp).apply()
+    }
+
     fun getDrainStats(context: Context): com.example.twopchat.service.DrainStats =
         com.example.twopchat.service.BackgroundDiagnostics.getStats(context)
 }

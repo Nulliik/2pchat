@@ -138,4 +138,55 @@ class GroupSuccessionLogicTest {
         assertTrue(state.showGracePeriodBanner)
         assertFalse(state.showExpiryWarning)
     }
+
+    @Test
+    fun testSuccessionPreferencesPersistence() {
+        val prefsMap = mutableMapOf<String, Any?>()
+        val fakePrefs = object : android.content.SharedPreferences {
+            override fun getAll(): Map<String, *> = prefsMap
+            override fun getString(key: String?, defValue: String?): String? = prefsMap[key] as? String ?: defValue
+            override fun getStringSet(key: String?, defValues: Set<String>?): Set<String>? = prefsMap[key] as? Set<String> ?: defValues
+            override fun getInt(key: String?, defValue: Int): Int = (prefsMap[key] as? Number)?.toInt() ?: defValue
+            override fun getLong(key: String?, defValue: Long): Long = (prefsMap[key] as? Number)?.toLong() ?: defValue
+            override fun getFloat(key: String?, defValue: Float): Float = (prefsMap[key] as? Number)?.toFloat() ?: defValue
+            override fun getBoolean(key: String?, defValue: Boolean): Boolean = prefsMap[key] as? Boolean ?: defValue
+            override fun contains(key: String?): Boolean = prefsMap.containsKey(key)
+            override fun edit(): android.content.SharedPreferences.Editor = object : android.content.SharedPreferences.Editor {
+                private val temp = mutableMapOf<String, Any?>()
+                override fun putString(key: String?, value: String?): android.content.SharedPreferences.Editor { temp[key!!] = value; return this }
+                override fun putStringSet(key: String?, values: Set<String>?): android.content.SharedPreferences.Editor { temp[key!!] = values; return this }
+                override fun putInt(key: String?, value: Int): android.content.SharedPreferences.Editor { temp[key!!] = value; return this }
+                override fun putLong(key: String?, value: Long): android.content.SharedPreferences.Editor { temp[key!!] = value; return this }
+                override fun putFloat(key: String?, value: Float): android.content.SharedPreferences.Editor { temp[key!!] = value; return this }
+                override fun putBoolean(key: String?, value: Boolean): android.content.SharedPreferences.Editor { temp[key!!] = value; return this }
+                override fun remove(key: String?): android.content.SharedPreferences.Editor { temp.remove(key); prefsMap.remove(key); return this }
+                override fun clear(): android.content.SharedPreferences.Editor { temp.clear(); prefsMap.clear(); return this }
+                override fun commit(): Boolean { prefsMap.putAll(temp); return true }
+                override fun apply() { prefsMap.putAll(temp) }
+            }
+            override fun registerOnSharedPreferenceChangeListener(listener: android.content.SharedPreferences.OnSharedPreferenceChangeListener?) {}
+            override fun unregisterOnSharedPreferenceChangeListener(listener: android.content.SharedPreferences.OnSharedPreferenceChangeListener?) {}
+        }
+        val fakeContext = object : android.content.ContextWrapper(null) {
+            override fun getApplicationContext(): android.content.Context = this
+            override fun getSharedPreferences(name: String?, mode: Int): android.content.SharedPreferences = fakePrefs
+        }
+        com.example.twopchat.config.P2PPreferences.setCachedPrefsForTesting(fakePrefs)
+        try {
+            val groupId = "group_test_succession_pref"
+            // Default timeout is 30 days
+            assertEquals(30, com.example.twopchat.config.P2PPreferences.getLastSuccessionTimeoutDays(fakeContext, groupId))
+            assertEquals(null, com.example.twopchat.config.P2PPreferences.getLastSuccessorFingerprint(fakeContext, groupId))
+
+            // Set 7 days and successor
+            com.example.twopchat.config.P2PPreferences.setLastSuccessionTimeoutDays(fakeContext, groupId, 7)
+            com.example.twopchat.config.P2PPreferences.setLastSuccessorFingerprint(fakeContext, groupId, "fp_foxxxy_123")
+
+            // Verified retained
+            assertEquals(7, com.example.twopchat.config.P2PPreferences.getLastSuccessionTimeoutDays(fakeContext, groupId))
+            assertEquals("fp_foxxxy_123", com.example.twopchat.config.P2PPreferences.getLastSuccessorFingerprint(fakeContext, groupId))
+        } finally {
+            com.example.twopchat.config.P2PPreferences.setCachedPrefsForTesting(null)
+        }
+    }
 }
