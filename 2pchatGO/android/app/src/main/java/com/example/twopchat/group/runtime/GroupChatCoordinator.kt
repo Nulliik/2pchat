@@ -1146,30 +1146,38 @@ object GroupChatCoordinator {
                 tr = "Grup daveti: «%s»"
             ).replace("%s", groupTitle)
             val timeFormatted = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(createdAtMs))
-            val msgId = "invite_${groupId}_${inviteId}"
+            val stableMsgId = "invite_${groupId}"
+            val db = ChatDatabaseHelper.getInstance(context)
+            val existing = db.findInviteMessageForGroup(senderPeerName, groupId)
+                ?: db.getMessageById(stableMsgId)
+
+            if (existing != null) {
+                if (existing.text != inviteText) {
+                    db.updateMessageTextDirect(existing.id, inviteText)
+                }
+                return
+            }
+
             val inviteMessage = Message(
-                id = msgId,
+                id = stableMsgId,
                 text = inviteText,
                 isMe = isMe,
                 timestamp = timeFormatted,
             )
-            val db = ChatDatabaseHelper.getInstance(context)
-            if (db.getMessageById(msgId) == null) {
-                if (isMe) {
-                    db.saveMessage(senderPeerName, inviteMessage)
-                    P2PPreferences.lastMessageCache[senderPeerName] = inviteSummary
-                    P2PMessageRelay.runOnMain {
-                        P2PMessageRelay.messageListeners.forEach { it.onMessageReceived(senderPeerName, inviteMessage) }
-                    }
-                } else {
-                    P2PMessageRelay.persistAndDispatchIncoming(
-                        context = context,
-                        sender = senderPeerName,
-                        message = inviteMessage,
-                        notificationText = inviteSummary,
-                        countAsNew = true,
-                    )
+            if (isMe) {
+                db.saveMessage(senderPeerName, inviteMessage)
+                P2PPreferences.lastMessageCache[senderPeerName] = inviteSummary
+                P2PMessageRelay.runOnMain {
+                    P2PMessageRelay.messageListeners.forEach { it.onMessageReceived(senderPeerName, inviteMessage) }
                 }
+            } else {
+                P2PMessageRelay.persistAndDispatchIncoming(
+                    context = context,
+                    sender = senderPeerName,
+                    message = inviteMessage,
+                    notificationText = inviteSummary,
+                    countAsNew = true,
+                )
             }
         } catch (e: Exception) {
             SafeLog.e(TAG, "Failed to post invite message to direct chat with $senderPeerName", e)
@@ -4929,9 +4937,28 @@ object GroupChatCoordinator {
             proposalEventId ?: deviceId,
         ) ?: return
         enqueueEpochKeyPackages(groupId, event.eventId, nextEpoch, newSecret)
-        enqueuePendingMemberInvites(groupId, deviceId)
         if (signedInvite != null && inviteJson != null) {
+            enqueueFrame(
+                groupId,
+                signedInvite.inviteId,
+                deviceId,
+                inviteJson,
+            )
             broadcastFrame(groupId, signedInvite.inviteId, inviteJson)
+            val targetPeerName = peerName.ifBlank { fingerprint }
+            if (targetPeerName.isNotBlank() && !targetPeerName.startsWith("peer_")) {
+                postInviteMessageToDirectChat(
+                    senderPeerName = targetPeerName,
+                    groupId = groupId,
+                    inviteId = signedInvite.inviteId,
+                    groupTitle = group.title,
+                    inviterName = group.title,
+                    createdAtMs = System.currentTimeMillis(),
+                    isMe = true,
+                )
+            }
+        } else {
+            enqueuePendingMemberInvites(groupId, deviceId)
         }
         flushDueOutbox()
         refreshGroup(groupId)
@@ -6619,6 +6646,7 @@ object GroupChatCoordinator {
                     member.deviceId != group.localDeviceId &&
                     member.status == "ACTIVE" &&
                     !hasPendingInvites,
+                transportFingerprint = member.transportFingerprint.ifBlank { member.accountId }.ifBlank { member.deviceId },
             )
         }
         val canManageInfo = localPolicy?.let {

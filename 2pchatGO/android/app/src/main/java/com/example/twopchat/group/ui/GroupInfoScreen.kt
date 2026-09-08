@@ -3939,11 +3939,21 @@ private fun SuccessionManagementCard(
                     }
                 }
             } else {
+                val context = androidx.compose.ui.platform.LocalContext.current
                 val successorMember = members.firstOrNull {
-                    it.transportFingerprint.equals(state.successorFingerprint, ignoreCase = true) ||
-                    it.memberId.equals(state.successorFingerprint, ignoreCase = true)
+                    (it.transportFingerprint.isNotBlank() && it.transportFingerprint.equals(state.successorFingerprint, ignoreCase = true)) ||
+                    it.memberId.equals(state.successorFingerprint, ignoreCase = true) ||
+                    (it.transportFingerprint.isNotBlank() && com.example.twopchat.group.runtime.GroupChatCoordinator.stableDeviceId(it.transportFingerprint).equals(state.successorFingerprint, ignoreCase = true)) ||
+                    (state.successorFingerprint.isNotBlank() && com.example.twopchat.group.runtime.GroupChatCoordinator.stableDeviceId(state.successorFingerprint).equals(it.memberId, ignoreCase = true))
+                }
+                val fallbackContactName = androidx.compose.runtime.remember(state.successorFingerprint) {
+                    if (state.successorFingerprint.isNotBlank()) {
+                        P2PPreferences.findPeerNameByFingerprint(context, state.successorFingerprint)
+                            ?: com.example.twopchat.data.ChatDatabaseHelper.getInstance(context).getPeerNameByFingerprint(state.successorFingerprint)
+                    } else null
                 }
                 val successorName = successorMember?.displayName
+                    ?: fallbackContactName
                     ?: (state.successorFingerprint.take(12) + "...")
 
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {

@@ -80,6 +80,29 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
         @Volatile private var isMigrationChecked = false
         @Volatile private var isControlPurged = false
 
+        private val cleanupExecutor = java.util.concurrent.Executors.newSingleThreadExecutor { r ->
+            Thread(r, "ChatDbHelper-Cleanup").apply { isDaemon = true }
+        }
+
+        fun extractGroupIdFromInvite(msg: Message): String? {
+            val text = msg.text
+            if (text.contains("group=") && text.contains("group_token=")) {
+                val match = Regex("""group=([^& \s]+)""").find(text)
+                if (match != null) {
+                    val raw = match.groupValues[1]
+                    return runCatching { java.net.URLDecoder.decode(raw, "UTF-8") }.getOrNull()?.ifBlank { raw } ?: raw
+                }
+            }
+            if (msg.id.startsWith("invite_")) {
+                val stripped = msg.id.removePrefix("invite_")
+                val parts = stripped.split("_")
+                if (parts.isNotEmpty() && parts[0].isNotBlank()) {
+                    return parts[0]
+                }
+            }
+            return null
+        }
+
         fun getInstance(context: Context): ChatDatabaseHelper {
             val localInstance = instance
             if (localInstance != null) {
@@ -782,7 +805,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
                 }
             }
         }
-        return messages
+        return deduplicateInviteMessages(messages)
     }
 
     fun getStoredAttachments(): List<StoredAttachmentRecord> {
@@ -1130,7 +1153,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
             }
         }
         messages.reverse()
-        return messages
+        return deduplicateInviteMessages(messages)
     }
 
     fun getLastMessageForPeer(peerName: String): Message? {
@@ -1419,6 +1442,89 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
             com.example.twopchat.data.cache.MessageCache.invalidate(id)
         } catch (e: Exception) {
             SafeLog.e(TAG, "Failed to update text for $id", e)
+        }
+    }
+
+    fun findInviteMessageForGroup(peerName: String, groupId: String): Message? {
+        try {
+            val db = this.safeReadableDatabase
+            val cursor = db.query(
+                TABLE_MESSAGES,
+                null,
+                "$KEY_PEER_NAME = ? AND ($KEY_ID = ? OR $KEY_ID LIKE ?)",
+                arrayOf(peerName, "invite_$groupId", "invite_${groupId}_%"),
+                null,
+                null,
+                "$KEY_SENT_AT_MS DESC, rowid DESC",
+                "1"
+            )
+            cursor.use {
+                if (it.moveToFirst()) {
+                    return readMessageFromCursor(it, SecureStorage.newStringCipher())
+                }
+            }
+        } catch (e: Exception) {
+            SafeLog.e(TAG, "findInviteMessageForGroup failed for $groupId with $peerName", e)
+        }
+        return null
+    }
+
+    fun updateMessageTextDirect(id: String, newText: String): Boolean {
+        try {
+            val db = this.safeWritableDatabase
+            val values = ContentValues().apply {
+                put(KEY_MESSAGE_TEXT, enc(newText))
+            }
+            val rows = db.update(TABLE_MESSAGES, values, "$KEY_ID = ?", arrayOf(id))
+            if (rows > 0) com.example.twopchat.data.cache.MessageCache.invalidate(id)
+            return rows > 0
+        } catch (e: Exception) {
+            SafeLog.e(TAG, "Failed to direct update text for $id", e)
+            return false
+        }
+    }
+
+    fun deduplicateInviteMessages(messages: List<Message>): List<Message> {
+        if (messages.size <= 1) return messages
+        val inviteGroupsSeen = mutableSetOf<String>()
+        val result = ArrayList<Message>(messages.size)
+        val duplicatesToRemove = mutableListOf<String>()
+        for (i in messages.indices.reversed()) {
+            val msg = messages[i]
+            val groupId = extractGroupIdFromInvite(msg)
+            if (groupId != null) {
+                if (!inviteGroupsSeen.add(groupId)) {
+                    duplicatesToRemove.add(msg.id)
+                    continue
+                }
+            }
+            result.add(msg)
+        }
+        result.reverse()
+        if (duplicatesToRemove.isNotEmpty()) {
+            cleanupDuplicateMessageIds(duplicatesToRemove)
+        }
+        return result
+    }
+
+    private fun cleanupDuplicateMessageIds(ids: List<String>) {
+        if (ids.isEmpty()) return
+        cleanupExecutor.execute {
+            try {
+                val db = safeWritableDatabase
+                db.beginTransaction()
+                try {
+                    for (id in ids) {
+                        db.delete(TABLE_MESSAGES, "$KEY_ID = ?", arrayOf(id))
+                        com.example.twopchat.data.cache.MessageCache.invalidate(id)
+                    }
+                    db.setTransactionSuccessful()
+                } finally {
+                    db.endTransaction()
+                }
+            } catch (e: Exception) {
+                SafeLog.e(TAG, "cleanupDuplicateMessageIds failed", e)
+            }
         }
     }
 

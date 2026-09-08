@@ -56,6 +56,7 @@ import com.example.twopchat.data.Localizations
 import com.example.twopchat.theme.StealthBlack
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.text.buildAnnotatedString
@@ -1735,7 +1736,11 @@ internal fun GroupInviteCard(
     ) {
         val context = androidx.compose.ui.platform.LocalContext.current
         val appLanguage = remember(context) { com.example.twopchat.config.P2PPreferences.getAppLanguage(context) }
-        val isJoined = remember(inviteInfo.groupId) {
+        val summaries by com.example.twopchat.group.runtime.GroupChatCoordinator.summaries.collectAsState()
+        val isJoinedFromSummaries = remember(summaries, inviteInfo.groupId) {
+            summaries.any { it.groupId == inviteInfo.groupId }
+        }
+        val isJoined = isJoinedFromSummaries || remember(inviteInfo.groupId) {
             com.example.twopchat.group.runtime.GroupChatCoordinator.isGroupJoined(inviteInfo.groupId)
         }
         var localJoined by remember { mutableStateOf(false) }
