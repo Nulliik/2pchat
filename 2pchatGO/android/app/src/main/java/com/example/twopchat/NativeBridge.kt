@@ -826,6 +826,16 @@ object NativeBridge {
         }
     }
 
+    fun exportDecryptedKeyFile(name: String): ByteArray? {
+        if (!isLoaded) return null
+        return try {
+            nativeExportDecryptedKeyFile(name)
+        } catch (e: Throwable) {
+            SafeLog.e(TAG, "nativeExportDecryptedKeyFile failed", e)
+            null
+        }
+    }
+
     data class VerifiedDiscoveryRecord(
         val endpoints: List<String>,
         val seq: Long
@@ -1129,6 +1139,7 @@ object NativeBridge {
     private external fun nativeInspectBackupFingerprint(encryptedData: ByteArray): String?
     private external fun nativeSignBackupManifest(canonicalManifest: ByteArray): String?
     private external fun nativeVerifyBackupManifest(verifyPubBase64: String, canonicalManifest: ByteArray, signatureBase64: String): Boolean
+    private external fun nativeExportDecryptedKeyFile(name: String): ByteArray?
     private external fun nativeCreateDiscoveryRecord(endpointsJSON: String?, ttlSec: Long, policyFlags: Int): String?
     private external fun nativeVerifyDiscoveryRecord(recordJSON: String, expectedFingerprint: String?, checkSeqGap: Boolean): String?
     private external fun nativeSetDiscoverySeqCounter(seq: Long)

@@ -61,18 +61,25 @@ object AccountDataWiper {
         val dynamicallyDiscoveredPrefs = preferencesDir.listFiles().orEmpty()
             .filter { it.isFile && it.name.endsWith(".xml") }
             .map { it.name.removeSuffix(".xml") }
+            .filterNot { it == "2pchat_secure_prefs" }
             .map { name -> context.getSharedPreferences(name, Context.MODE_PRIVATE) }
 
-        val knownPreferences = listOf(
-            P2PPreferences.prefs(context),
+        val knownPreferences = listOfNotNull(
+            runCatching { P2PPreferences.prefs(context) }.getOrNull(),
             context.getSharedPreferences(P2PPreferences.FILE_NAME, Context.MODE_PRIVATE),
             context.getSharedPreferences("2pchat_notification_ids", Context.MODE_PRIVATE),
             context.getSharedPreferences("2pchat_network_traffic", Context.MODE_PRIVATE),
             context.getSharedPreferences("2pchat_lock_state", Context.MODE_PRIVATE),
         )
         val allPrefs = (knownPreferences + dynamicallyDiscoveredPrefs).distinct()
-        val cleared = allPrefs.all { it.edit().clear().commit() }
-        return deleteChildren(preferencesDir) && cleared
+        for (pref in allPrefs) {
+            try {
+                pref.edit().clear().commit()
+            } catch (t: Throwable) {
+                SafeLog.w("AccountDataWiper", "Failed to clear shared pref instance in memory; file will be deleted", t)
+            }
+        }
+        return deleteChildren(preferencesDir)
     }
 
     private fun deleteDatabases(context: Context): Boolean {

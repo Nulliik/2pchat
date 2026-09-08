@@ -564,13 +564,27 @@ object P2PPreferences : com.example.twopchat.security.SensitiveMemoryHolder {
             val appContext = context.applicationContext
             val preferences = try {
                 val masterKey = com.example.twopchat.security.KeystoreProvider.getOrBuildMasterKey(appContext)
-                EncryptedSharedPreferences.create(
+                val p = EncryptedSharedPreferences.create(
                     appContext,
                     ENCRYPTED_FILE_NAME,
                     masterKey,
                     EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
                     EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
                 )
+                try {
+                    p.all
+                    p
+                } catch (t: Throwable) {
+                    SafeLog.w("P2PPreferences", "Corrupted or orphaned encrypted prefs detected, recreating clean instance", t)
+                    appContext.deleteSharedPreferences(ENCRYPTED_FILE_NAME)
+                    EncryptedSharedPreferences.create(
+                        appContext,
+                        ENCRYPTED_FILE_NAME,
+                        masterKey,
+                        EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                        EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
+                    )
+                }
             } catch (e: Exception) {
                 SafeLog.e("P2PPreferences", "Failed to initialize EncryptedSharedPreferences", e)
                 throw IllegalStateException("EncryptedSharedPreferences initialization failed: Keystore unavailable", e)

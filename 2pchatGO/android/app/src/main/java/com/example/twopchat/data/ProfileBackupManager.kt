@@ -126,16 +126,28 @@ object ProfileBackupManager {
             // 1. Pack plaintext files into temporary ZIP
             FileOutputStream(tempZip).use { fos ->
                 ZipOutputStream(BufferedOutputStream(fos)).use { zip ->
-                    // 1.1. Add identity_v1.key
-                    val identityKeyFile = File(filesDir, "identity_v1.key")
-                    if (identityKeyFile.exists() && identityKeyFile.length() > 0) {
-                        addFileToZip(zip, identityKeyFile, "identity_v1.key")
+                    // 1.1. Add identity_v1.key (ensure plaintext 96 bytes in zip per BACKUP_FORMAT_V2)
+                    val decryptedIdKey = NativeBridge.exportDecryptedKeyFile("identity_v1.key")
+                    if (decryptedIdKey != null && decryptedIdKey.size == 96) {
+                        addBytesToZip(zip, decryptedIdKey, "identity_v1.key")
+                        com.example.twopchat.security.SecurityUtils.zeroize(decryptedIdKey)
+                    } else {
+                        val identityKeyFile = File(filesDir, "identity_v1.key")
+                        if (identityKeyFile.exists() && identityKeyFile.length() > 0) {
+                            addFileToZip(zip, identityKeyFile, "identity_v1.key")
+                        }
                     }
 
-                    // 1.2. Add prekey_v1.key
-                    val prekeyFile = File(filesDir, "prekey_v1.key")
-                    if (prekeyFile.exists() && prekeyFile.length() > 0) {
-                        addFileToZip(zip, prekeyFile, "prekey_v1.key")
+                    // 1.2. Add prekey_v1.key (ensure plaintext 32 bytes in zip per BACKUP_FORMAT_V2)
+                    val decryptedPrekey = NativeBridge.exportDecryptedKeyFile("prekey_v1.key")
+                    if (decryptedPrekey != null && decryptedPrekey.size == 32) {
+                        addBytesToZip(zip, decryptedPrekey, "prekey_v1.key")
+                        com.example.twopchat.security.SecurityUtils.zeroize(decryptedPrekey)
+                    } else {
+                        val prekeyFile = File(filesDir, "prekey_v1.key")
+                        if (prekeyFile.exists() && prekeyFile.length() > 0) {
+                            addFileToZip(zip, prekeyFile, "prekey_v1.key")
+                        }
                     }
 
                     // 1.3. Add profile_avatar.jpg
@@ -151,6 +163,11 @@ object ProfileBackupManager {
                         put("nickname", nickname)
                         put("fingerprint", fingerprint)
                         put("app_package", context.packageName)
+                    }
+
+                    val mnemonic = NativeBridge.getLocalSeedMnemonic()
+                    if (!mnemonic.isNullOrBlank()) {
+                        manifestObj.put("seed_mnemonic", mnemonic)
                     }
 
                     val canonicalManifest = manifestObj.toString().toByteArray(Charsets.UTF_8)
@@ -283,6 +300,7 @@ object ProfileBackupManager {
     ): BackupImportResult {
         var restoredNickname: String? = null
         var restoredFingerprint: String? = null
+        var seedMnemonic: String? = null
         val buffer = ByteArray(8192)
 
         ZipInputStream(ByteArrayInputStream(zipBytes)).use { zip ->
@@ -304,6 +322,7 @@ object ProfileBackupManager {
                         val manifest = JSONObject(String(manifestBytes, Charsets.UTF_8))
                         restoredNickname = manifest.optString("nickname")
                         restoredFingerprint = manifest.optString("fingerprint")
+                        seedMnemonic = if (manifest.has("seed_mnemonic")) manifest.optString("seed_mnemonic") else null
 
                         // Verify Ed25519 signature if present in v2
                         val sig = manifest.optString("signature", "")
@@ -349,8 +368,19 @@ object ProfileBackupManager {
         NativeBridge.reloadIdentity()
         NativeBridge.initialize()
 
-        val activeIdentity = NativeBridge.getLocalIdentity()
-        val activeFingerprint = activeIdentity?.fingerprint
+        var activeIdentity = NativeBridge.getLocalIdentity()
+        var activeFingerprint = activeIdentity?.fingerprint
+
+        // If key file was invalid or produced different identity, restore from embedded seed mnemonic
+        if ((activeFingerprint != restoredFingerprint || activeIdentity == null) && !seedMnemonic.isNullOrBlank()) {
+            SafeLog.w(TAG, "Active fingerprint ($activeFingerprint) != expected ($restoredFingerprint); restoring via seed mnemonic")
+            val restoredOk = NativeBridge.restoreFromMnemonic(restoredNickname ?: "", seedMnemonic, "")
+            if (restoredOk) {
+                NativeBridge.initialize()
+                activeIdentity = NativeBridge.getLocalIdentity()
+                activeFingerprint = activeIdentity?.fingerprint
+            }
+        }
 
         SafeLog.i(TAG, "Backup restored successfully. Active fingerprint: ${SafeLog.fp(activeFingerprint)}")
         return BackupImportResult(
@@ -367,6 +397,13 @@ object ProfileBackupManager {
         FileInputStream(file).use { input ->
             input.copyTo(zip)
         }
+        zip.closeEntry()
+    }
+
+    private fun addBytesToZip(zip: ZipOutputStream, data: ByteArray, entryName: String) {
+        val entry = ZipEntry(entryName)
+        zip.putNextEntry(entry)
+        zip.write(data)
         zip.closeEntry()
     }
 }

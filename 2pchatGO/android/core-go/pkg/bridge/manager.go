@@ -1379,6 +1379,36 @@ func (m *SessionManager) VerifyBackupManifest(verifyPubB64 string, canonicalMani
 	return crypto.VerifyBackupManifest(verifyPubB64, canonicalManifest, signatureB64)
 }
 
+// ExportDecryptedKeyFile returns the decrypted plaintext of identity_v1.key (96 bytes)
+// or prekey_v1.key (32 bytes) for packaging into an encrypted backup container.
+func (m *SessionManager) ExportDecryptedKeyFile(name string) ([]byte, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	if name == "identity_v1.key" {
+		if m.identity != nil && m.identity.Private != nil && len(m.identity.Signing) == 64 {
+			keyData := make([]byte, 96)
+			copy(keyData[:32], m.identity.Private.Bytes())
+			copy(keyData[32:96], m.identity.Signing)
+			return keyData, nil
+		}
+	} else if name == "prekey_v1.key" {
+		if m.prekeyPriv != nil {
+			keyData := make([]byte, 32)
+			copy(keyData[:32], m.prekeyPriv.Bytes())
+			return keyData, nil
+		}
+	} else {
+		return nil, fmt.Errorf("invalid key file name: %s", name)
+	}
+
+	effectiveDir := m.storageDir
+	if effectiveDir != "" {
+		return m.readKeyFile(filepath.Join(effectiveDir, name))
+	}
+	return nil, fmt.Errorf("key material for %s not available", name)
+}
+
 // SetDiscoverySeqCounter initializes the monotonic discovery sequence counter from persistence.
 func (m *SessionManager) SetDiscoverySeqCounter(initialSeq uint64) {
 	atomic.StoreUint64(&m.discoverySeqCounter, initialSeq)

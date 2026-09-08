@@ -1309,7 +1309,8 @@ object P2PMessageRelay {
         val allActive = prefs.getStringSet("active_chats", emptySet()).orEmpty()
         val placeholders = allActive.filter(::isPlaceholderPeerName)
 
-        val canonicalIdentities = prefs.all.entries.mapNotNull { (key, value) ->
+        val allEntries = runCatching { prefs.all }.getOrNull().orEmpty()
+        val canonicalIdentities = allEntries.entries.mapNotNull { (key, value) ->
             if (!key.startsWith("peer_fingerprint_") || value !is String) return@mapNotNull null
             val name = key.removePrefix("peer_fingerprint_")
             if (isPlaceholderPeerName(name)) null else name to value

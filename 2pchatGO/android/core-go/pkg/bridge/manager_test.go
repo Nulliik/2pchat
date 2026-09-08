@@ -38,6 +38,20 @@ func TestManagerInitAndIdentity(t *testing.T) {
 	if err != nil || signPub == "" {
 		t.Fatalf("Expected non-empty signing public key: %v", err)
 	}
+
+	idKeyBytes, err := mgr.ExportDecryptedKeyFile("identity_v1.key")
+	if err != nil || len(idKeyBytes) != 96 {
+		t.Fatalf("Expected 96-byte decrypted identity key file, got err=%v len=%d", err, len(idKeyBytes))
+	}
+
+	prekeyBytes, err := mgr.ExportDecryptedKeyFile("prekey_v1.key")
+	if err != nil || len(prekeyBytes) != 32 {
+		t.Fatalf("Expected 32-byte decrypted prekey file, got err=%v len=%d", err, len(prekeyBytes))
+	}
+
+	if _, err := mgr.ExportDecryptedKeyFile("invalid.key"); err == nil {
+		t.Fatalf("Expected error for invalid key file name")
+	}
 }
 
 func TestManagerConfigureLocalIdentity(t *testing.T) {

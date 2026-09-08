@@ -1168,6 +1168,27 @@ func Java_com_example_twopchat_NativeBridge_nativeVerifyBackupManifest(
 	return C.JNI_FALSE
 }
 
+//export Java_com_example_twopchat_NativeBridge_nativeExportDecryptedKeyFile
+func Java_com_example_twopchat_NativeBridge_nativeExportDecryptedKeyFile(
+	env *C.JNIEnv,
+	clazz C.jclass,
+	jName C.jstring,
+) C.jbyteArray {
+	cName := C.getJStringUTFChars(env, jName)
+	if cName == nil {
+		return C.nullJByteArray()
+	}
+	name := C.GoString(cName)
+	C.releaseJStringUTFChars(env, jName, cName)
+
+	data, err := bridge.GetManager().ExportDecryptedKeyFile(name)
+	if err != nil || len(data) == 0 {
+		return C.nullJByteArray()
+	}
+	defer crypto.Zeroize(data)
+	return createJByteArrayFromSlice(env, data)
+}
+
 //export Java_com_example_twopchat_NativeBridge_nativeCreateDiscoveryRecord
 func Java_com_example_twopchat_NativeBridge_nativeCreateDiscoveryRecord(
 	env *C.JNIEnv,
