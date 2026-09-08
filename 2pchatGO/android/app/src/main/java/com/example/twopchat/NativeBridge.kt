@@ -126,9 +126,38 @@ object NativeBridge {
     }
 
     @Volatile
+    var testLocalIdentity: LocalIdentity? = null
+
+    @Volatile
+    var testOnionAddress: String? = null
+
+    @Volatile
+    var testDeterministicOnionKeyProvider: ((Int) -> DeterministicTorOnionKey?)? = null
+
+    @Volatile
+    var testEncryptBackupPayload: ((String, ByteArray) -> ByteArray?)? = null
+
+    @Volatile
+    var testDecryptBackupPayload: ((String, ByteArray) -> ByteArray?)? = null
+
+    @Volatile
+    var testInspectBackupFingerprint: ((ByteArray) -> String?)? = null
+
+    fun resetTestingOverrides() {
+        testLocalIdentity = null
+        testOnionAddress = null
+        testDeterministicOnionKeyProvider = null
+        testEncryptBackupPayload = null
+        testDecryptBackupPayload = null
+        testInspectBackupFingerprint = null
+        isInitializeOverride = null
+    }
+
+    @Volatile
     private var cachedLocalIdentity: LocalIdentity? = null
 
     fun getLocalIdentity(): LocalIdentity? {
+        testLocalIdentity?.let { return it }
         if (!isLoaded) return null
         val cached = cachedLocalIdentity
         if (cached != null && cached.fingerprint.isNotBlank()) {
@@ -328,6 +357,7 @@ object NativeBridge {
     }
 
     fun setOnionAddress(address: String) {
+        testOnionAddress = address
         if (!isLoaded) return
         try {
             nativeSetOnionAddress(address)
@@ -339,12 +369,12 @@ object NativeBridge {
     }
 
     fun getOnionAddress(): String? {
-        if (!isLoaded) return null
+        if (!isLoaded) return testOnionAddress
         return try {
             nativeGetOnionAddress()
         } catch (e: Throwable) {
             SafeLog.e(TAG, "nativeGetOnionAddress failed", e)
-            null
+            testOnionAddress
         }
     }
 
@@ -770,6 +800,7 @@ object NativeBridge {
     }
 
     fun encryptBackupPayload(password: String, payload: ByteArray): ByteArray? {
+        testEncryptBackupPayload?.let { return it(password, payload) }
         if (!isLoaded) return null
         return try {
             nativeEncryptBackupPayload(password, payload)
@@ -780,6 +811,7 @@ object NativeBridge {
     }
 
     fun decryptBackupPayload(password: String, encryptedData: ByteArray): ByteArray? {
+        testDecryptBackupPayload?.let { return it(password, encryptedData) }
         if (!isLoaded) return null
         return try {
             nativeDecryptBackupPayload(password, encryptedData)
@@ -790,6 +822,7 @@ object NativeBridge {
     }
 
     fun inspectBackupFingerprint(encryptedData: ByteArray): String? {
+        testInspectBackupFingerprint?.let { return it(encryptedData) }
         if (!isLoaded) return null
         return try {
             nativeInspectBackupFingerprint(encryptedData)
@@ -904,6 +937,7 @@ object NativeBridge {
     )
 
     fun getDeterministicTorOnionKey(index: Int): DeterministicTorOnionKey? {
+        testDeterministicOnionKeyProvider?.let { return it(index) }
         if (!isLoaded || index < 0) return null
         return try {
             val jsonStr = nativeGetDeterministicTorOnionKey(index) ?: return null

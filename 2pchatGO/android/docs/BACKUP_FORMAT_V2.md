@@ -83,6 +83,9 @@ $$\text{BackupSigningKey} = \text{Ed25519.NewKeyFromSeed}(\text{BackupSigningSee
   "app_package": "com.example.twopchat.go",
   "nickname": "Alice",
   "fingerprint": "yS+...==",
+  "seed_mnemonic": "word1 word2 ... word24",
+  "tor_deterministic_enabled": true,
+  "tor_onion_index": 3,
   "files": [
     { "name": "identity_v1.key", "sha256": "..." },
     { "name": "prekey_v1.key", "sha256": "..." },

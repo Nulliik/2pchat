@@ -163,6 +163,8 @@ object ProfileBackupManager {
                         put("nickname", nickname)
                         put("fingerprint", fingerprint)
                         put("app_package", context.packageName)
+                        put("tor_deterministic_enabled", P2PPreferences.isTorDeterministicOnionEnabled(context))
+                        put("tor_onion_index", P2PPreferences.getTorOnionIndex(context))
                     }
 
                     val mnemonic = NativeBridge.getLocalSeedMnemonic()
@@ -215,6 +217,20 @@ object ProfileBackupManager {
         } finally {
             runCatching { tempZip.delete() }
             runCatching { tempEnc.delete() }
+        }
+    }
+
+    /**
+     * Creates an encrypted 2PBK v2 backup file directly.
+     */
+    fun exportBackup(context: Context, password: String, destinationFile: File): Boolean {
+        return try {
+            FileOutputStream(destinationFile).use { out ->
+                exportBackup(context, password, out)
+            }
+        } catch (e: Throwable) {
+            SafeLog.e(TAG, "Failed to export backup to file: ${destinationFile.absolutePath}", e)
+            false
         }
     }
 
@@ -292,6 +308,25 @@ object ProfileBackupManager {
         }
     }
 
+    /**
+     * Imports cryptographic keys and profile assets from a 2PBK v2 or legacy v1 file directly.
+     */
+    fun importBackup(
+        context: Context,
+        password: String?,
+        backupFile: File,
+        allowForeignFingerprint: Boolean = false,
+    ): BackupImportResult {
+        return try {
+            FileInputStream(backupFile).use { input ->
+                importBackup(context, password, input, allowForeignFingerprint)
+            }
+        } catch (e: Throwable) {
+            SafeLog.e(TAG, "Failed to import backup from file: ${backupFile.absolutePath}", e)
+            BackupImportResult(success = false, errorMessage = e.message ?: "Failed to read backup file")
+        }
+    }
+
     private fun extractAndApplyZip(
         context: Context,
         filesDir: File,
@@ -301,6 +336,8 @@ object ProfileBackupManager {
         var restoredNickname: String? = null
         var restoredFingerprint: String? = null
         var seedMnemonic: String? = null
+        var torDeterministicEnabled = false
+        var torOnionIndex = 0
         val buffer = ByteArray(8192)
 
         ZipInputStream(ByteArrayInputStream(zipBytes)).use { zip ->
@@ -323,6 +360,8 @@ object ProfileBackupManager {
                         restoredNickname = manifest.optString("nickname")
                         restoredFingerprint = manifest.optString("fingerprint")
                         seedMnemonic = if (manifest.has("seed_mnemonic")) manifest.optString("seed_mnemonic") else null
+                        torDeterministicEnabled = manifest.optBoolean("tor_deterministic_enabled", false)
+                        torOnionIndex = manifest.optInt("tor_onion_index", 0).coerceAtLeast(0)
 
                         // Verify Ed25519 signature if present in v2
                         val sig = manifest.optString("signature", "")
@@ -380,6 +419,32 @@ object ProfileBackupManager {
                 activeIdentity = NativeBridge.getLocalIdentity()
                 activeFingerprint = activeIdentity?.fingerprint
             }
+        }
+
+        // Restore Tor deterministic onion settings and keys
+        P2PPreferences.setTorDeterministicOnionEnabled(context, torDeterministicEnabled)
+        P2PPreferences.setTorOnionIndex(context, torOnionIndex)
+        if (torDeterministicEnabled) {
+            val key = NativeBridge.getDeterministicTorOnionKey(torOnionIndex)
+            if (key != null) {
+                val appTorDir = File(context.filesDir, "app_tor")
+                val hsDir = File(appTorDir, "hidden_service_v3")
+                com.example.twopchat.tor.TorManager.writeDeterministicOnionKeys(hsDir, key)
+                P2PPreferences.setTorOnionHostname(context, key.hostname)
+                NativeBridge.setOnionAddress(key.hostname)
+                SafeLog.i(TAG, "Restored deterministic Tor onion address: len=${key.hostname.length}, index=$torOnionIndex")
+            } else {
+                SafeLog.w(TAG, "Failed deriving deterministic Tor onion key for index $torOnionIndex")
+            }
+        } else {
+            // Ephemeral mode: clear deterministic hostname and cached onion address
+            val appTorDir = File(context.filesDir, "app_tor")
+            val hsDir = File(appTorDir, "hidden_service_v3")
+            if (hsDir.exists()) {
+                hsDir.deleteRecursively()
+            }
+            P2PPreferences.setTorOnionHostname(context, "")
+            NativeBridge.setOnionAddress("")
         }
 
         SafeLog.i(TAG, "Backup restored successfully. Active fingerprint: ${SafeLog.fp(activeFingerprint)}")

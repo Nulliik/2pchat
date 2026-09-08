@@ -585,6 +585,9 @@ object TorManager {
         }
     }
 
+    suspend fun setTorDeterministicOnionEnabled(context: Context, enabled: Boolean): Boolean =
+        setDeterministicOnionEnabled(context, enabled)
+
     suspend fun setDeterministicOnionEnabled(context: Context, enabled: Boolean): Boolean = withContext(Dispatchers.IO) {
         val appContext = context.applicationContext
         val wasEnabled = P2PPreferences.isTorDeterministicOnionEnabled(appContext)
@@ -658,8 +661,8 @@ object TorManager {
         if (isDeterministic) {
             val current = P2PPreferences.getTorOnionIndex(appContext)
             if (current >= Int.MAX_VALUE - 1) {
-                SafeLog.e(TAG, "[TOR] Onion rotation index exhausted")
-                return@withContext null
+                SafeLog.e(TAG, "[TOR] Onion rotation index exhausted: $current")
+                throw IllegalStateException("Tor onion rotation index exhausted: $current")
             }
             val targetIndex = current + 1
             val key = NativeBridge.getDeterministicTorOnionKey(targetIndex)

@@ -428,13 +428,17 @@ object P2PPreferences : com.example.twopchat.security.SensitiveMemoryHolder {
         return prefs(context).getString(lastEndpoint(peerName), null)
     }
 
+    @androidx.annotation.VisibleForTesting
+    @Volatile
+    var testingPrefsProvider: (() -> SharedPreferences)? = null
+
     /** Drops account-derived caches after the backing preferences are erased. */
     fun clearInMemoryState() {
         synchronized(this) {
             cachedPrefs?.let { p ->
                 runCatching { p.edit().clear().commit() }
             }
-            cachedPrefs = null
+            cachedPrefs = testingPrefsProvider?.invoke()
             fingerprintToPeerNameCache.clear()
             fingerprintCacheInitialized = false
             isAppLockedState = false
@@ -446,6 +450,11 @@ object P2PPreferences : com.example.twopchat.security.SensitiveMemoryHolder {
     fun setCachedPrefsForTesting(prefs: SharedPreferences?) {
         synchronized(this) {
             cachedPrefs = prefs
+            if (prefs != null) {
+                testingPrefsProvider = { prefs }
+            } else {
+                testingPrefsProvider = null
+            }
             fingerprintToPeerNameCache.clear()
             fingerprintCacheInitialized = false
         }
@@ -561,6 +570,10 @@ object P2PPreferences : com.example.twopchat.security.SensitiveMemoryHolder {
         cachedPrefs?.let { return it }
         return synchronized(this) {
             cachedPrefs?.let { return it }
+            testingPrefsProvider?.invoke()?.let {
+                cachedPrefs = it
+                return it
+            }
             val appContext = context.applicationContext
             val preferences = try {
                 val masterKey = com.example.twopchat.security.KeystoreProvider.getOrBuildMasterKey(appContext)
