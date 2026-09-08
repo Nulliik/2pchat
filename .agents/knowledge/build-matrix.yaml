@@ -1,0 +1,22 @@
+android:
+  root: 2pchatGO/android
+  gradle: "9.5.0"
+  agp: "9.3.1"
+  kotlin: "2.3.20"
+  jvm: 17
+  compile_sdk: 37
+  target_sdk: 36
+  min_sdk: 24
+  ndk: "26.3.11579264"
+
+go:
+  root: 2pchatGO/android/core-go
+  declared: "1.26.3"
+
+python:
+  root: repository
+  dependency_file: messenger/requirements.txt
+
+warning:
+  - "APK success does not prove native Go core was rebuilt."
+  - "CI currently has a Go toolchain declaration that may differ from go.mod; verify reproducibility."

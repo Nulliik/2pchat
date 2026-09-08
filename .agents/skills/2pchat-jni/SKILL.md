@@ -1,24 +1,17 @@
 ---
 name: 2pchat-jni
-description: Review Kotlin/Java-to-Go JNI boundaries for ownership, lifetime, threading, exceptions, callbacks and shutdown correctness.
+description: JNI/CGO lifecycle and memory-safety workflow.
 ---
 
-# 2PChat JNI
+Inspect `core-go/pkg/bridge` and all Android call sites.
 
-Always inspect both sides of the JNI boundary.
+Use existing:
+- `jni_safety_and_stress_test.go`
+- `advanced_stress_test.go`
+- `contract_test.go`
+- `core_verification_test.go`
+- E2E/reliability suites
 
-Check:
-- native handle lifetime
-- allocation/deallocation
-- references
-- thread attach/detach
-- callbacks
-- exception propagation
-- concurrent calls
-- cancellation
-- shutdown
-- stale handles
-- use-after-free
-- double-free
+Verify callback replacement, concurrent callbacks, shutdown, stale handles and error propagation.
 
-Never fix a crash by suppressing the symptom.
+If sanitizer support exists, use ASan/UBSan/race tooling appropriate to the native build. If not available, report UNVERIFIED.

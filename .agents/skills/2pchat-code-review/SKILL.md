@@ -1,22 +1,17 @@
 ---
 name: 2pchat-code-review
-description: Perform an adversarial code review of 2PChat changes with emphasis on correctness, security regressions and maintainability.
+description: Adversarial, evidence-based review of a 2PChat diff.
 ---
 
-# 2PChat Code Review
+Review the diff in this order:
+1. security boundary;
+2. state transition;
+3. ownership/lifecycle;
+4. error handling;
+5. serialization;
+6. concurrency;
+7. tests;
+8. compatibility;
+9. documentation.
 
-Review the complete diff, not only changed lines.
-
-Ask:
-- What assumptions changed?
-- What callers/callees are affected?
-- What state invariants changed?
-- What happens with malformed input?
-- What happens concurrently?
-- What happens after restart/crash?
-- What happens during migration?
-- Did protocol semantics change?
-- Did security posture weaken?
-- Are tests sufficient?
-
-Report confirmed issues separately from hypotheses.
+Reject unrelated refactors in security-sensitive changes unless justified.

@@ -1,0 +1,27 @@
+version: 2
+result_states:
+  - PASS
+  - FAIL
+  - UNVERIFIED
+
+critical_paths:
+  - 2pchatGO/android/core-go/pkg/crypto/
+  - 2pchatGO/android/core-go/pkg/session/
+  - 2pchatGO/android/core-go/pkg/protocol/
+  - 2pchatGO/android/core-go/pkg/transport/
+  - 2pchatGO/android/core-go/pkg/bridge/
+
+mandatory_for_critical:
+  - impact_analysis
+  - go_test
+  - go_race
+  - go_vet
+  - relevant_specialist_review
+  - adversarial_review
+  - final_diff_review
+
+android_native_rule:
+  assemble_debug_is_insufficient_without_native_task_evidence: true
+
+historical_audit_rule:
+  historical_findings_must_be_reproduced: true

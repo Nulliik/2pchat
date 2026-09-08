@@ -1038,72 +1038,73 @@ fun GroupChatScreen(
                         .fillMaxSize()
                         .padding(horizontal = 8.dp)
                         .testTag("group_message_list"),
-                    verticalArrangement = Arrangement.spacedBy(6.dp, Alignment.Bottom)
+                    verticalArrangement = if (state.messages.isEmpty()) Arrangement.Center else Arrangement.spacedBy(6.dp, Alignment.Bottom)
                 ) {
-                    item(key = "pagination") {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(8.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        when {
-                            state.isLoadingBefore -> CircularProgressIndicator(
+                    if (state.messages.isNotEmpty() || state.isLoadingBefore || state.hasMoreBefore) {
+                        item(key = "pagination") {
+                            Box(
                                 modifier = Modifier
-                                    .size(24.dp)
-                                    .testTag("older_messages_loading"),
-                                strokeWidth = 2.dp
-                            )
-                            state.hasMoreBefore -> TextButton(
-                                onClick = {
-                                    controller.loadOlderMessages(
-                                        state.groupId,
-                                        state.messages.firstOrNull()?.messageId
-                                    )
-                                },
-                                modifier = Modifier.testTag("load_older_messages")
+                                    .fillMaxWidth()
+                                    .padding(8.dp),
+                                contentAlignment = Alignment.Center
                             ) {
-                                Text(
-                                    com.example.twopchat.data.Localizations.tr(
-                                        appLanguage,
-                                        ru = "Загрузить ранние сообщения",
-                                        en = "Load earlier messages",
-                                        de = "Frühere Nachrichten laden",
-                                        es = "Cargar mensajes anteriores",
-                                        fr = "Charger les messages précédents",
-                                        pt = "Carregar mensagens anteriores",
-                                        tr = "Daha eski mesajları yükle"
-                                    ),
-                                    fontSize = 12.sp
-                                )
+                                when {
+                                    state.isLoadingBefore -> CircularProgressIndicator(
+                                        modifier = Modifier
+                                            .size(24.dp)
+                                            .testTag("older_messages_loading"),
+                                        strokeWidth = 2.dp
+                                    )
+                                    state.hasMoreBefore -> TextButton(
+                                        onClick = {
+                                            controller.loadOlderMessages(
+                                                state.groupId,
+                                                state.messages.firstOrNull()?.messageId
+                                            )
+                                        },
+                                        modifier = Modifier.testTag("load_older_messages")
+                                    ) {
+                                        Text(
+                                            com.example.twopchat.data.Localizations.tr(
+                                                appLanguage,
+                                                ru = "Загрузить ранние сообщения",
+                                                en = "Load earlier messages",
+                                                de = "Frühere Nachrichten laden",
+                                                es = "Cargar mensajes anteriores",
+                                                fr = "Charger les messages précédents",
+                                                pt = "Carregar mensagens anteriores",
+                                                tr = "Daha eski mesajları yükle"
+                                            ),
+                                            fontSize = 12.sp
+                                        )
+                                    }
+                                    state.messages.isNotEmpty() -> Text(
+                                        com.example.twopchat.data.Localizations.tr(
+                                            appLanguage,
+                                            ru = "Начало истории группы",
+                                            en = "Beginning of group history",
+                                            de = "Beginn des Gruppenverlaufs",
+                                            es = "Inicio del historial del grupo",
+                                            fr = "Début de l'historique du groupe",
+                                            pt = "Início do histórico do grupo",
+                                            tr = "Grup geçmişinin başlangıcı"
+                                        ),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                    )
+                                }
                             }
-                            state.messages.isNotEmpty() -> Text(
-                                com.example.twopchat.data.Localizations.tr(
-                                    appLanguage,
-                                    ru = "Начало истории группы",
-                                    en = "Beginning of group history",
-                                    de = "Beginn des Gruppenverlaufs",
-                                    es = "Inicio del historial del grupo",
-                                    fr = "Début de l'historique du groupe",
-                                    pt = "Início do histórico do grupo",
-                                    tr = "Grup geçmişinin başlangıcı"
-                                ),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                            )
                         }
                     }
-                }
 
-                if (state.messages.isEmpty() && !state.isLoadingBefore) {
-                    item(key = "empty") {
-                        Box(
-                            modifier = Modifier
-                                .fillParentMaxHeight(0.72f)
-                                .fillMaxWidth()
-                                .padding(horizontal = 24.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
+                    if (state.messages.isEmpty() && !state.isLoadingBefore) {
+                        item(key = "empty") {
+                            Box(
+                                modifier = Modifier
+                                    .fillParentMaxSize()
+                                    .padding(horizontal = 24.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
                             Surface(
                                 color = surfaceColor.copy(alpha = 0.88f),
                                 shape = RoundedCornerShape(22.dp),

@@ -23,7 +23,9 @@ jobs:
 
       - name: Core soak (host-level, 12 нод)
         working-directory: 2pchatGO/android/core-go
-        run: go run ./cmd/soak --duration ${{ inputs.duration || '6h' }} --nodes 12 --report soak-report.json
+        env:
+          SOAK_DURATION: ${{ inputs.duration || '6h' }}
+        run: go run ./cmd/soak --duration "$SOAK_DURATION" --nodes 12 --report soak-report.json
 
       - uses: actions/upload-artifact@v4
         if: always()

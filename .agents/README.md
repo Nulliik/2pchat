@@ -1,30 +1,17 @@
-# 2PChat AI Engineering Pack
+# 2PChat Agent System
 
-This directory is designed for Google Antigravity.
+## Agents
 
-## Layout
+- `2pchat-orchestrator` — routes work through the right review pipeline.
+- `2pchat-architect` — architecture, trust boundaries and impact.
+- `2pchat-implementer` — implementation under project rules.
+- `2pchat-crypto` — primitives, X3DH/Double Ratchet, key lifecycle.
+- `2pchat-protocol` — wire formats, state machines and compatibility.
+- `2pchat-jni` — CGO/JNI lifecycle, ownership and callbacks.
+- `2pchat-android` — Kotlin/Compose/Gradle/runtime.
+- `2pchat-go` — Go correctness/concurrency/performance.
+- `2pchat-network` — transport, framing, policy, Tor/proxy, endpoint handling.
+- `2pchat-adversary` — adversarial review.
+- `2pchat-final` — independent final gate.
 
-- `../AGENTS.md` — repository-wide mandatory rules
-- `skills/` — specialized workflows
-- `agents/` — independent reviewer roles
-- `mcp/` — local security/development MCP server
-- `mcp_config.json` — workspace MCP configuration
-
-## Recommended workflow
-
-For ordinary coding:
-1. Read AGENTS.md.
-2. Select the relevant skill.
-3. Implement the smallest safe change.
-4. Run relevant validation.
-5. Review the diff.
-
-For security-sensitive changes:
-1. Use `2pchat-security-audit`.
-2. Use `2pchat-crypto` for protocol/crypto work.
-3. Run security MCP tools.
-4. Ask an independent reviewer agent to challenge the change.
-5. Fix findings.
-6. Re-run validation.
-
-Do not treat the absence of findings as proof of security.
+Agents should not all receive the same generic prompt. Their job is to challenge different failure modes.

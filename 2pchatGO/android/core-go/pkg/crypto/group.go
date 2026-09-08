@@ -39,6 +39,33 @@ func ComputeRosterHash(entries []string) string {
 	return hex.EncodeToString(h[:])
 }
 
+// RosterMemberEntryV3 represents an individual member in the V3 canonical roster grammar.
+type RosterMemberEntryV3 struct {
+	DeviceID   string // lowercase hex
+	SigningKey string // base64 ed25519 public key
+	Role       string // "OWNER", "ADMIN", "MEMBER"
+	Status     string // "ACTIVE", "RESTRICTED"
+}
+
+// ComputeRosterHashV3 computes the canonical deterministic SHA-256 digest of active/restricted members.
+// Grammar per V3.2 Contract:
+// Entry: strings.ToLower(deviceId) + ":" + signingKey + ":" + role + ":" + status
+// Entries sorted lexicographically by raw UTF-8 bytes.
+// Digest = SHA256(DomainRosterDigestV3 + strings.Join(sorted, "\n"))
+func ComputeRosterHashV3(members []RosterMemberEntryV3) string {
+	var validEntries []string
+	for _, m := range members {
+		if m.Status == "ACTIVE" || m.Status == "RESTRICTED" {
+			entry := strings.ToLower(m.DeviceID) + ":" + m.SigningKey + ":" + m.Role + ":" + m.Status
+			validEntries = append(validEntries, entry)
+		}
+	}
+	sort.Strings(validEntries)
+	canonical := DomainRosterDigestV3 + strings.Join(validEntries, "\n")
+	h := sha256.Sum256([]byte(canonical))
+	return hex.EncodeToString(h[:])
+}
+
 // SignGroupPayload signs a canonical string using Ed25519 and returns Base64 signature.
 func SignGroupPayload(privKey ed25519.PrivateKey, canonicalPayload string) (string, error) {
 	if len(privKey) != ed25519.PrivateKeySize {

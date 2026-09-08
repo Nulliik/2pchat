@@ -1,274 +1,108 @@
-# 2PChat Engineering & Repository Agent Rules
+# 2PChat AI Engineering Rules v2
 
-## Mission
+## Authority
 
-2PChat is a security-critical peer-to-peer messaging application.
+The repository's existing `RULES.md`, `SECURITY.md`, ADRs, protocol specifications and current tests remain authoritative. This file adds AI-agent safety and verification requirements; it must not silently contradict project rules.
 
-Potential components include:
-- Android / Kotlin / Jetpack Compose
-- Go Core
-- JNI
-- P2P networking
-- local persistence
-- X3DH
-- Double Ratchet
-- cryptographic primitives
-- authentication and identity
-- protocol serialization
+## Repository map
 
-Treat cryptography, protocol state, JNI, persistence, networking, authentication and trust decisions as high-risk code.
+Primary Android tree:
+`2pchatGO/android`
 
-Security, correctness, compatibility and verifiability take priority over speed.
+Go core:
+`2pchatGO/android/core-go`
 
-## Mandatory Security Change Protocol
+Go packages currently include:
+- `pkg/crypto`
+- `pkg/session`
+- `pkg/protocol`
+- `pkg/transport`
+- `pkg/discovery`
+- `pkg/bridge`
 
-Before changing security-sensitive code, determine:
-1. threat model
-2. security assumptions
-3. invariants
-4. trust boundaries
-5. attack surface
-6. compatibility impact
-7. failure modes
-8. relevant callers/callees
-9. relevant tests
+Executables:
+- `core-go/cmd/2pcore-cli`
+- `core-go/cmd/lib2pcore`
+- `core-go/cmd/soak`
 
-Inspect:
-- callers
-- callees
-- serialization
-- persistence
-- concurrency
-- JNI boundaries
-- error handling
-- configuration
-- tests
+## Mandatory behavior
 
-Never infer security from compilation alone.
+Before changing security-sensitive code:
+1. identify the threat model;
+2. identify security invariants;
+3. inspect callers and callees;
+4. inspect serialization/wire format;
+5. inspect persistence and restore paths;
+6. inspect concurrency and lifecycle;
+7. inspect JNI/CGO boundaries;
+8. inspect existing regression/fuzz/interoperability tests;
+9. identify compatibility impact;
+10. define a regression test before finalizing.
 
-Never invent cryptographic algorithms or silently replace primitives.
-Prefer established, audited primitives and mature libraries.
+Never:
+- invent cryptographic primitives;
+- silently replace primitives;
+- disable validation;
+- remove security tests to make CI pass;
+- treat historical audit findings as current findings without re-verification;
+- claim an APK build proves fresh native Go binaries were built;
+- claim runtime verification without a device/emulator;
+- expose unrestricted shell/network capabilities through MCP.
 
-## Android
+## Security-critical areas
 
-Before changing Android/Kotlin/Compose code inspect:
-- Gradle configuration
-- modules/source sets
-- AndroidManifest.xml
-- build variants
-- dependencies
-- R8/ProGuard rules
-- permissions
-- exported components
-- intents/deep links
-- lifecycle
-- coroutines/dispatchers
-- JNI bindings
-- persistence
+Changes to these areas require Security Gate:
+- `core-go/pkg/crypto/**`
+- `core-go/pkg/session/**`
+- `core-go/pkg/protocol/**`
+- `core-go/pkg/transport/**`
+- `core-go/pkg/bridge/**`
+- JNI/CGO glue
+- identity/prekey/session persistence
+- packet framing/authentication
+- network policy, Tor/proxy, relay and endpoint classification
+- Android storage/security configuration
 
-Relevant validation:
-```bash
-./gradlew test
-./gradlew lint
-./gradlew assembleDebug
-```
+## Required verification
 
-Run instrumentation/UI tests when applicable.
+Go:
+- `go build ./...`
+- `go test ./...`
+- `go test -race ./...`
+- `go vet ./...`
 
-## Go Core
+Android:
+- `./gradlew testDebugUnitTest`
+- `./gradlew assembleDebug`
+- verify whether `buildGoCoreBinaries` actually executed
+- if available, instrumentation/E2E on emulator/device
 
-For relevant Go changes:
-```bash
-go test ./...
-go test -race ./...
-go vet ./...
-```
+Python compatibility:
+- install `messenger/requirements.txt`
+- `python -m pytest`
 
-Also use when available:
-```bash
-staticcheck ./...
-govulncheck ./...
-```
+Additional security checks when available:
+- `staticcheck`
+- `govulncheck`
+- `semgrep`
+- `gitleaks`
+- `trivy`
 
-Inspect goroutines, channels, locks, atomics, cancellation, ownership, lifetime, blocking and shutdown behavior.
+## Evidence model
 
-## JNI
+Every verification result is one of:
+- PASS — command completed successfully and evidence was captured.
+- FAIL — command ran and found a failure.
+- UNVERIFIED — command/tool/environment was unavailable or evidence was insufficient.
 
-For JNI changes inspect both sides:
-Kotlin/Java -> JNI -> Go.
+Never convert UNVERIFIED into PASS.
 
-Check:
-- ownership/lifetime
-- native handles
-- references
-- thread attachment
-- callbacks
-- exceptions
-- error propagation
-- synchronization
-- cancellation
-- shutdown
-- use-after-free
-- double-free
-- stale handles
+## Completion
 
-Never hide a native crash by swallowing errors.
-
-## Cryptography
-
-Never invent custom crypto.
-
-For crypto changes verify:
-- algorithm
-- key generation
-- randomness
-- nonce uniqueness
-- KDF inputs
-- domain/key separation
-- authentication
-- associated data
-- identity binding
-- replay protection
-- state transitions
-- persistence
-- crash recovery
-- key lifecycle/erasure where applicable
-
-For X3DH inspect identity keys, signed prekeys, one-time prekeys, signatures, DH composition, transcript/associated data and prekey exhaustion.
-
-For Double Ratchet inspect root key, sending/receiving chains, message keys, DH ratchet, skipped keys, counters, replay/out-of-order behavior, persistence and concurrent state access.
-
-Do not change protocol semantics silently.
-
-## Networking
-
-Treat all remote input as attacker-controlled.
-
-Inspect:
-- framing
-- parsing
-- serialization
-- authentication
-- replay
-- ordering
-- duplicates
-- partial I/O
-- size limits
-- timeouts
-- reconnects
-- resource exhaustion
-- TLS/DNS behavior where applicable
-
-## Serialization
-
-Check:
-- lengths
-- integer overflow
-- truncation
-- duplicate fields
-- unknown fields
-- canonicalization
-- versioning
-- backward/forward compatibility
-- parser discrepancies
-
-## Testing
-
-Use the relevant:
-- unit tests
-- integration tests
-- E2E tests
-- negative tests
-- malformed-input tests
-- concurrency/race tests
-- protocol interoperability tests
-- cryptographic test vectors
-- regression tests
-
-Do not disable tests, security checks or race detection merely to obtain a green build.
-
-## Repository Test Protocol
-
-If `messenger/requirements.txt` exists, install its dependencies before Python tests using the repository's documented environment/package manager.
-
-Default Python validation:
-```bash
-pytest
-```
-
-Do not assume pytest is the only suite. Determine affected components and run their validators.
-
-Never claim a command passed unless it was actually executed.
-
-If validation cannot be performed, report:
-`NOT VERIFIED`
-
-and explain why.
-
-## Git/Diff
-
-Before finalizing:
-```bash
-git status
-git diff
-```
-
-Check for:
-- secrets
-- private keys
-- tokens
-- credentials
-- debug code
-- generated artifacts
-- unrelated changes
-- weakened tests/security checks
-
-## Security Finding Format
-
-Every finding must contain:
-
-Severity:
-Confidence:
-Title:
-Affected Component:
-Attack Surface:
-Preconditions:
-Attacker Model:
-Exploitability:
-Impact:
-Root Cause:
-Technical Explanation:
-Proof / Evidence:
-Recommended Remediation:
-Regression Test:
-Compatibility Impact:
-Residual Risk:
-
-Do not present speculation as confirmation.
-
-## Completion Criteria
-
-Work is complete only after:
-1. implementation review
-2. architecture review
-3. diff review
-4. relevant tests
-5. relevant static analysis
-6. relevant security checks
-7. compatibility review
-8. error-handling review
-9. concurrency review
-10. JNI review when applicable
-11. crypto invariant review when applicable
-12. secret/debug scan
-
-Final report:
-- Summary
-- Files Changed
-- Security Impact
-- Compatibility
-- Validation (commands actually run)
-- Remaining Risks
-
-Golden rule:
-security + correctness + verifiability > speed.
+A security-sensitive task is complete only when:
+- code is reviewed;
+- affected tests pass;
+- relevant race/fuzz/interoperability checks pass where applicable;
+- security gate is PASS or explicitly reported as PARTIAL/UNVERIFIED;
+- final diff is inspected;
+- no unrelated files were changed.

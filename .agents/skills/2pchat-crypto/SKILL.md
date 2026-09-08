@@ -1,40 +1,38 @@
 ---
 name: 2pchat-crypto
-description: Review and implement cryptographic and secure-session code in 2PChat without inventing primitives or silently changing protocol semantics.
+description: Deep review of 2PChat cryptographic primitives and stateful ratchet implementation.
 ---
 
-# 2PChat Cryptography
+Inspect `core-go/pkg/crypto`.
 
-Treat protocol state as security-critical state.
+Known surfaces:
+- X25519
+- Ed25519
+- HKDF-SHA256
+- HMAC-SHA256
+- XSalsa20-Poly1305 SecretBox
+- ChaCha20-Poly1305
+- XChaCha20-Poly1305
+- X3DH-style prekey initialization
+- Double Ratchet
+- group/sender keys
+- encrypted backups
+- Tor/onion crypto helpers
 
-## Review
+Never replace a primitive during review.
 
-Check:
-- primitive choice
-- key generation
-- randomness
-- nonce uniqueness
-- KDF/domain separation
-- authentication
-- associated data
-- identity binding
-- replay protection
-- state transitions
-- persistence
-- crash recovery
-- concurrency
+Required scenarios:
+1. all-zero DH;
+2. malformed keys;
+3. signature mismatch;
+4. transcript/context confusion;
+5. role inversion;
+6. skipped-key retrieval;
+7. replay;
+8. authentication failure must not commit candidate state;
+9. ratchet transition;
+10. restart/restore;
+11. zeroization regression tests;
+12. Python interoperability.
 
-## X3DH
-
-Verify identity keys, signed prekeys, one-time prekeys, signatures, DH composition, transcript/associated data and prekey lifecycle.
-
-## Double Ratchet
-
-Verify root/chain/message keys, DH ratchet, counters, skipped keys, out-of-order messages, replay handling, persistence, crash recovery and concurrency.
-
-## Rules
-
-Never invent a primitive.
-Never replace a primitive silently.
-Prefer established libraries and published test vectors.
-When possible, cross-check outputs against independent implementations.
+Use existing vectors/tests before creating new ones.

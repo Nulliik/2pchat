@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "2pchat-local": {
+      "command": "python3",
+      "args": [
+        "/ABSOLUTE/PATH/TO/2pchat/.agents/mcp/server.py"
+      ],
+      "env": {
+        "TWO_P_CHAT_REPO": "/ABSOLUTE/PATH/TO/2pchat"
+      }
+    }
+  }
+}

@@ -48,8 +48,10 @@ jobs:
           ./gradlew assembleDebug --stacktrace
 
       - name: Prepare APK Artifact
+        env:
+          TAG_REF_NAME: ${{ github.ref_name }}
         run: |
-          VERSION="${{ github.ref_name }}"
+          VERSION="$TAG_REF_NAME"
           if [ -z "$VERSION" ] || [ "$VERSION" = "main" ]; then
             VERSION="0.0.8.2"
           fi
