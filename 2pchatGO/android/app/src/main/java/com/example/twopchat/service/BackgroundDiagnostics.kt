@@ -15,6 +15,18 @@ data class DrainStats(
 )
 
 /**
+ * Diagnostic statistics for group invite generation, relay delivery, and lifecycle.
+ */
+data class GroupInviteStats(
+    val invitesGenerated: Int = 0,
+    val invitesRelayed: Int = 0,
+    val invitesAccepted: Int = 0,
+    val invitesExpired: Int = 0,
+    val invitesRejected: Int = 0,
+    val relayAttemptsWithoutCapability: Int = 0,
+)
+
+/**
  * Thread-safe observability helper to track background worker outcomes,
  * execution frequency, and expedited requests.
  */
@@ -64,6 +76,62 @@ object BackgroundDiagnostics {
         sp.edit().putInt(PREF_EXPEDITED_COUNT, current + 1).apply()
     }
 
+    private const val PREF_INVITES_GENERATED = "diag_invites_generated"
+    private const val PREF_INVITES_RELAYED = "diag_invites_relayed"
+    private const val PREF_INVITES_ACCEPTED = "diag_invites_accepted"
+    private const val PREF_INVITES_EXPIRED = "diag_invites_expired"
+    private const val PREF_INVITES_REJECTED = "diag_invites_rejected"
+    private const val PREF_RELAY_NO_CAP = "diag_relay_no_cap"
+
+    @Synchronized
+    fun recordInviteGenerated(context: Context) {
+        val sp = P2PPreferences.prefs(context)
+        sp.edit().putInt(PREF_INVITES_GENERATED, sp.getInt(PREF_INVITES_GENERATED, 0) + 1).apply()
+    }
+
+    @Synchronized
+    fun recordInviteRelayed(context: Context) {
+        val sp = P2PPreferences.prefs(context)
+        sp.edit().putInt(PREF_INVITES_RELAYED, sp.getInt(PREF_INVITES_RELAYED, 0) + 1).apply()
+    }
+
+    @Synchronized
+    fun recordInviteAccepted(context: Context) {
+        val sp = P2PPreferences.prefs(context)
+        sp.edit().putInt(PREF_INVITES_ACCEPTED, sp.getInt(PREF_INVITES_ACCEPTED, 0) + 1).apply()
+    }
+
+    @Synchronized
+    fun recordInviteExpired(context: Context) {
+        val sp = P2PPreferences.prefs(context)
+        sp.edit().putInt(PREF_INVITES_EXPIRED, sp.getInt(PREF_INVITES_EXPIRED, 0) + 1).apply()
+    }
+
+    @Synchronized
+    fun recordInviteRejected(context: Context) {
+        val sp = P2PPreferences.prefs(context)
+        sp.edit().putInt(PREF_INVITES_REJECTED, sp.getInt(PREF_INVITES_REJECTED, 0) + 1).apply()
+    }
+
+    @Synchronized
+    fun recordRelayAttemptWithoutCapability(context: Context) {
+        val sp = P2PPreferences.prefs(context)
+        sp.edit().putInt(PREF_RELAY_NO_CAP, sp.getInt(PREF_RELAY_NO_CAP, 0) + 1).apply()
+    }
+
+    @Synchronized
+    fun getInviteStats(context: Context): GroupInviteStats {
+        val sp = P2PPreferences.prefs(context)
+        return GroupInviteStats(
+            invitesGenerated = sp.getInt(PREF_INVITES_GENERATED, 0),
+            invitesRelayed = sp.getInt(PREF_INVITES_RELAYED, 0),
+            invitesAccepted = sp.getInt(PREF_INVITES_ACCEPTED, 0),
+            invitesExpired = sp.getInt(PREF_INVITES_EXPIRED, 0),
+            invitesRejected = sp.getInt(PREF_INVITES_REJECTED, 0),
+            relayAttemptsWithoutCapability = sp.getInt(PREF_RELAY_NO_CAP, 0),
+        )
+    }
+
     @Synchronized
     fun getStats(context: Context): DrainStats {
         val sp = P2PPreferences.prefs(context)
@@ -98,6 +166,12 @@ object BackgroundDiagnostics {
             .remove(PREF_LAST_HEARTBEAT_TS)
             .remove(PREF_DRAIN_OUTCOMES_JSON)
             .remove(PREF_EXPEDITED_COUNT)
+            .remove(PREF_INVITES_GENERATED)
+            .remove(PREF_INVITES_RELAYED)
+            .remove(PREF_INVITES_ACCEPTED)
+            .remove(PREF_INVITES_EXPIRED)
+            .remove(PREF_INVITES_REJECTED)
+            .remove(PREF_RELAY_NO_CAP)
             .apply()
     }
 }

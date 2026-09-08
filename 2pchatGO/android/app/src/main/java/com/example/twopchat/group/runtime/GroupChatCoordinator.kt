@@ -8,6 +8,7 @@ import android.util.Base64
 import com.example.twopchat.logging.SafeLog
 import com.example.twopchat.relay.P2PMessageRelay
 import com.example.twopchat.config.P2PPreferences
+import com.example.twopchat.service.BackgroundDiagnostics
 import com.example.twopchat.bridge.P2PBridgeProvider
 import com.example.twopchat.media.*
 import com.example.twopchat.group.attachments.GroupAttachmentManifest
@@ -1974,50 +1975,68 @@ object GroupChatCoordinator {
         val session = com.example.twopchat.protocol.ProtocolVersionManager.refresh(candidateFingerprint)
         if (session != null && (session.peerIsLegacy || !session.supports(com.example.twopchat.protocol.Capability.GROUP_INVITE_RELAY_V1))) {
             SafeLog.w(TAG, "Candidate $candidatePeerName does not support group_invite_relay_v1, waiting for direct connection")
+            BackgroundDiagnostics.recordRelayAttemptWithoutCapability(context)
             return
         }
         P2PMessageRelay.sendGroupFrame(context, candidatePeerName, inviteJson)
+        BackgroundDiagnostics.recordInviteRelayed(context)
     }
 
     private suspend fun receiveInvite(senderPeerName: String, json: JSONObject) {
-        val invite = GroupWireProtocol.parseInvite(json)
+        val context = applicationContext
+        val invite = runCatching { GroupWireProtocol.parseInvite(json) }.getOrElse {
+            context?.let { ctx -> BackgroundDiagnostics.recordInviteRejected(ctx) }
+            throw it
+        }
         val now = System.currentTimeMillis()
-        require(invite.cryptoSuite == EpochAeadGroupCrypto.suiteId) {
-            "group invite uses an unsupported crypto suite"
+        if (invite.cryptoSuite != EpochAeadGroupCrypto.suiteId) {
+            context?.let { ctx -> BackgroundDiagnostics.recordInviteRejected(ctx) }
+            throw IllegalArgumentException("group invite uses an unsupported crypto suite")
         }
-        require(invite.createdAtMs <= now + MAX_CLOCK_SKEW_MS) {
-            "group invite was created too far in the future"
+        if (invite.createdAtMs > now + MAX_CLOCK_SKEW_MS) {
+            context?.let { ctx -> BackgroundDiagnostics.recordInviteRejected(ctx) }
+            throw IllegalArgumentException("group invite was created too far in the future")
         }
-        require(now - invite.createdAtMs <= INVITE_LIFETIME_MS) {
-            "group invite has expired"
+        if (now - invite.createdAtMs > INVITE_LIFETIME_MS) {
+            context?.let { ctx -> BackgroundDiagnostics.recordInviteExpired(ctx) }
+            throw IllegalArgumentException("group invite has expired")
         }
 
         /**
-         * RELAY SECURITY MODEL:
+         * RELAY SECURITY MODEL (Added for non-admin invite delivery via intermediate peers):
          *
-         * Original design: transport sender must match invite sender (owner).
-         * This blocked relay through intermediate peers (doggy -> puppy).
+         * Original design: Transport sender must match invite sender/owner
+         * (transportFingerprint(senderPeerName) == invite.senderFingerprint).
+         * Problem: When a non-admin invites a friend (e.g. doggy -> puppy), the owner (Foxxxy)
+         * approves the invite and issues a cryptographically signed GroupInvite. However, Foxxxy
+         * may have no direct network connection to puppy. Requiring direct transport from Foxxxy
+         * caused puppy to reject the legitimate invite when relayed through doggy.
          *
-         * New design: trust owner's cryptographic signature, not transport path.
+         * New design: Trust owner's Ed25519 signature, not the transport path.
          *
-         * Rationale:
-         * 1. Owner's Ed25519 signature on invite guarantees authenticity
-         * 2. invite.members recipient entry ensures invite is for this device
-         * 3. invite.createdAtMs + inviteId prevent replay attacks
-         * 4. Relay peer cannot forge owner's signature
-         * 5. Even if relay peer modifies invite, signature verification fails
+         * Why this is cryptographically sound and safe:
+         * 1. Owner's Ed25519 signature on canonical invite bytes guarantees authenticity and integrity.
+         * 2. invite.members recipient entry ensures the invite is addressed specifically to this device.
+         * 3. invite.createdAtMs + inviteId tracking enforce strict anti-replay (7-day maximum window).
+         * 4. Relay peers cannot forge the invite because they do not possess the owner's private key.
+         * 5. Any payload modification by a relay peer (title, epoch keys, roster) breaks the Ed25519 signature.
          *
-         * Threat model:
-         * - Malicious relay peer: Cannot forge invite (no owner's private key)
-         * - Replay attack: Prevented by timestamp + inviteId tracking
-         * - MITM on relay path: Prevented by end-to-end signature verification
+         * Threat Model:
+         * - Malicious relay peer: Cannot forge invite (requires owner's Ed25519 private key).
+         * - Tampering on relay path: Any alteration invalidates invite.verifySignature().
+         * - Replay attack: Prevented by 7-day expiration, 5-minute clock skew limit, and duplicate checks.
+         * - MITM attacker: Cannot decrypt or alter the invite payload without breaking end-to-end verification.
          *
-         * Trade-off: We trust owner's signature over transport-level authentication.
-         * This is safe because owner is already trusted (group creator).
+         * Trade-off: We trust the group owner's cryptographic signature over transport-level authentication.
+         * This is safe because the owner is already the ultimate root of trust for the group.
+         * See docs/RELAY_SECURITY.md for full architecture specification.
          */
         val isDirectFromOwner = transportFingerprint(senderPeerName) == invite.senderFingerprint
 
-        require(invite.verifySignature()) { "group invite signature is invalid" }
+        if (!invite.verifySignature()) {
+            context?.let { ctx -> BackgroundDiagnostics.recordInviteRejected(ctx) }
+            throw SecurityException("group invite signature is invalid")
+        }
         require(invite.members.map { it.deviceId }.toSet().size == invite.members.size) {
             "group invite contains duplicate device identities"
         }
@@ -2407,6 +2426,7 @@ object GroupChatCoordinator {
         refreshGroup(invite.groupId)
         refreshAllGroups()
         flushDueOutbox()
+        applicationContext?.let { BackgroundDiagnostics.recordInviteAccepted(it) }
     }
 
     private suspend fun declineInviteInternal(inviteId: String) {
@@ -5109,19 +5129,37 @@ object GroupChatCoordinator {
                         val inviteStr = payload.optString("invite_json")
                         if (inviteStr.isNotBlank()) {
                             runCatching {
+                                // Defense-in-depth verification (Critical Fix 2):
+                                // 1. Verify that the control event was emitted and signed by the group OWNER
+                                val currentOwner = db().getMember(originalGroup.groupId, current.ownerDeviceId)
+                                if (currentOwner == null || event.authorDeviceId != currentOwner.deviceId) {
+                                    SafeLog.w(TAG, "MEMBER_ADDED with invite_json ignored: event author is not group owner")
+                                    return@runCatching
+                                }
+                                if (!event.verifySignature(currentOwner.signingKeyBase64)) {
+                                    SafeLog.w(TAG, "MEMBER_ADDED event signature verification failed against owner signing key")
+                                    return@runCatching
+                                }
+                                // 2. Verify the embedded invite itself is valid and signed by the group owner
                                 val rawInviteJson = JSONObject(inviteStr)
                                 val parsedInvite = GroupWireProtocol.parseInvite(rawInviteJson)
-                                if (parsedInvite.verifySignature()) {
-                                    val candidate = parsedInvite.members.firstOrNull { it.role != GroupRole.OWNER.name }
-                                    if (candidate != null) {
-                                        val context = applicationContext
-                                        if (context != null) {
-                                            val chatDb = ChatDatabaseHelper.getInstance(context)
-                                            val candidatePeer = chatDb.getPeerNameByFingerprint(candidate.fingerprint)
-                                                ?: candidate.peerName.takeIf { it.isNotBlank() && !it.startsWith("peer_") }
-                                            if (!candidatePeer.isNullOrBlank()) {
-                                                relayInviteToCandidate(context, candidatePeer, candidate.fingerprint, rawInviteJson)
-                                            }
+                                if (!parsedInvite.verifySignature()) {
+                                    SafeLog.w(TAG, "Embedded invite signature verification failed")
+                                    return@runCatching
+                                }
+                                if (parsedInvite.ownerFingerprint != currentOwner.transportFingerprint) {
+                                    SafeLog.w(TAG, "Embedded invite owner fingerprint mismatch with group owner")
+                                    return@runCatching
+                                }
+                                val candidate = parsedInvite.members.firstOrNull { it.role != GroupRole.OWNER.name }
+                                if (candidate != null) {
+                                    val context = applicationContext
+                                    if (context != null) {
+                                        val chatDb = ChatDatabaseHelper.getInstance(context)
+                                        val candidatePeer = chatDb.getPeerNameByFingerprint(candidate.fingerprint)
+                                            ?: candidate.peerName.takeIf { it.isNotBlank() && !it.startsWith("peer_") }
+                                        if (!candidatePeer.isNullOrBlank()) {
+                                            relayInviteToCandidate(context, candidatePeer, candidate.fingerprint, rawInviteJson)
                                         }
                                     }
                                 }
@@ -5627,11 +5665,13 @@ object GroupChatCoordinator {
             cryptoSuite = EpochAeadGroupCrypto.suiteId,
             signatureBase64 = "",
         )
-        return unsigned.copy(
+        val signed = unsigned.copy(
             signatureBase64 = GroupIdentitySignatures.sign(
                 unsigned.canonicalForSignature(),
             ),
         )
+        applicationContext?.let { BackgroundDiagnostics.recordInviteGenerated(it) }
+        return signed
     }
 
     private fun enqueuePendingMemberInvites(
