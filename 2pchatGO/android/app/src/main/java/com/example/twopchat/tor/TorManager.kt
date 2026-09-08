@@ -972,14 +972,46 @@ object TorManager {
         }
     }
 
+    @Volatile
+    var startTorInvocationCount = 0
+        internal set
+
+    @Volatile
+    var startTorSuppressedCount = 0
+        internal set
+
+    fun resetCountersForTesting() {
+        startTorInvocationCount = 0
+        startTorSuppressedCount = 0
+    }
+
+    fun isAppInForeground(): Boolean =
+        com.example.twopchat.yggdrasil.AppForegroundTracker.isAppInForeground()
+
+    @Synchronized
+    fun init(context: Context) {
+        if (!isAppInForeground()) {
+            SafeLog.w(TAG, "Suppressed TorManager.init: process is in background/headless execution")
+            return
+        }
+        lastAppContext = context.applicationContext
+    }
+
     @Synchronized
     fun startTor(
         context: Context,
         bridges: List<String> = P2PPreferences.getEffectiveTorBridgeLines(context),
         isUserInitiated: Boolean = true,
     ) {
+        startTorInvocationCount++
         if (isUserInitiated) {
             bootstrapRetryCount = 0
+        }
+
+        if (!isAppInForeground()) {
+            startTorSuppressedCount++
+            SafeLog.w(TAG, "Suppressed start of Tor daemon: process is in background/headless execution")
+            return
         }
 
         if (_isTorRunning.value || _isTorConnecting.value) {

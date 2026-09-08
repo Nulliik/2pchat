@@ -241,6 +241,12 @@ fun ChatsTab(
     Column(
         modifier = Modifier.fillMaxSize()
     ) {
+        BatteryOptimizationBanner(
+            appLanguage = appLanguage,
+            primaryColor = primaryColor,
+            surfaceColor = surfaceColor,
+        )
+
         // ─── HERO CARD & STATUS PILLS (TOP HEADER) ───────────────────────────
         Box(modifier = Modifier.padding(horizontal = 16.dp)) {
             val isDarkHero = surfaceColor.luminance() < 0.5f

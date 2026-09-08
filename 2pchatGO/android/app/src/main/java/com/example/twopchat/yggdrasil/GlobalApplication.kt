@@ -20,12 +20,17 @@ const val SERVICE_NOTIFICATION_ID = 1000
 class GlobalApplication: Application(), YggStateReceiver.StateReceiver {
     private var currentState: State = State.Disabled
     private var updaterConnections: Int = 0
+    private val isFullProfileInitialized = java.util.concurrent.atomic.AtomicBoolean(false)
 
     companion object {
         lateinit var appContext: Context
             private set
 
         fun getContext(): Context = appContext
+
+        @Volatile
+        var isHeadlessWorkerOverride: Boolean? = null
+            internal set
     }
 
     override fun onCreate() {
@@ -41,6 +46,66 @@ class GlobalApplication: Application(), YggStateReceiver.StateReceiver {
             return
         }
 
+        registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
+            override fun onActivityCreated(activity: Activity, savedInstanceState: android.os.Bundle?) {
+                initFullProfile()
+            }
+            override fun onActivityStarted(activity: Activity) {
+                AppForegroundTracker.onActivityStarted()
+            }
+            override fun onActivityResumed(activity: Activity) {}
+            override fun onActivityPaused(activity: Activity) {}
+            override fun onActivityStopped(activity: Activity) {
+                AppForegroundTracker.onActivityStopped()
+            }
+            override fun onActivitySaveInstanceState(activity: Activity, outState: android.os.Bundle) {}
+            override fun onActivityDestroyed(activity: Activity) {}
+        })
+
+        val isHeadlessRun = !isForegroundActivityLaunch()
+        if (isHeadlessRun) {
+            SafeLog.i("GlobalApplication", "Headless background worker run detected; initializing minimal profile")
+            initMinimalProfile()
+        } else {
+            SafeLog.i("GlobalApplication", "Foreground activity launch detected; initializing full profile")
+            initFullProfile()
+        }
+    }
+
+    fun isForegroundActivityLaunch(): Boolean {
+        isHeadlessWorkerOverride?.let { return !it }
+        if (AppForegroundTracker.isAppInForeground()) return true
+        return runCatching {
+            val appProcessInfo = ActivityManager.RunningAppProcessInfo()
+            ActivityManager.getMyMemoryState(appProcessInfo)
+            appProcessInfo.importance == ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND
+        }.getOrDefault(false)
+    }
+
+    fun isMainProcessForegroundActivityLaunch(): Boolean = isForegroundActivityLaunch()
+
+    /**
+     * Minimal profile for headless execution (e.g. WorkManager background workers):
+     * NativeBridge + SQLCipher (lazy), crash handler,
+     * without Tor daemon, without FGS, without Keystore UI-prewarm,
+     * without registering sensitive memory screen monitors or VPN state receivers.
+     */
+    fun initMinimalProfile() {
+        setupCrashHandler()
+        loadSqlcipherLibrary()
+    }
+
+    /**
+     * Full profile for interactive foreground user sessions:
+     * Minimal profile + Keystore prewarm, VPN/Yggdrasil state receivers,
+     * NetworkStateCallback, and SensitiveMemory screen off/lifecycle monitors.
+     */
+    fun initFullProfile() {
+        if (!isFullProfileInitialized.compareAndSet(false, true)) return
+
+        setupCrashHandler()
+        loadSqlcipherLibrary()
+
         if (com.example.twopchat.BuildConfig.DEBUG) {
             try {
                 android.os.StrictMode.setThreadPolicy(
@@ -55,34 +120,6 @@ class GlobalApplication: Application(), YggStateReceiver.StateReceiver {
             } catch (_: Throwable) {
                 // intentionally ignored: StrictMode initialization in unit tests or unsupported Android runtime
             }
-        }
-
-        val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
-        Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
-            try {
-                SafeLog.e("FATAL_CRASH", "Uncaught exception in thread ${thread.name}", throwable)
-                val sw = java.io.StringWriter()
-                throwable.printStackTrace(java.io.PrintWriter(sw))
-                com.example.twopchat.AppLog.append(
-                    applicationContext,
-                    "[FATAL_CRASH] Thread: ${thread.name}\n$sw\n"
-                )
-            } catch (_: Throwable) {
-                // intentionally ignored: prevent secondary crash in uncaught exception handler
-            }
-            defaultHandler?.uncaughtException(thread, throwable)
-        }
-
-        val oldPolicy = android.os.StrictMode.allowThreadDiskReads()
-        try {
-            android.os.StrictMode.allowThreadDiskWrites()
-            try {
-                System.loadLibrary("sqlcipher")
-            } catch (e: Throwable) {
-                SafeLog.e("GlobalApplication", "Failed to load sqlcipher", e)
-            }
-        } finally {
-            android.os.StrictMode.setThreadPolicy(oldPolicy)
         }
 
         // Asynchronously initialize and warm up Android Keystore, MasterKey, SecureStorage, and
@@ -113,6 +150,38 @@ class GlobalApplication: Application(), YggStateReceiver.StateReceiver {
             com.example.twopchat.security.SensitiveMemoryLifecycleMonitor.registerScreenOffReceiver(this)
         } catch (e: Throwable) {
             SafeLog.w("GlobalApplication", "Failed to register sensitive memory lifecycle monitor", e)
+        }
+    }
+
+    private fun setupCrashHandler() {
+        val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+            try {
+                SafeLog.e("FATAL_CRASH", "Uncaught exception in thread ${thread.name}", throwable)
+                val sw = java.io.StringWriter()
+                throwable.printStackTrace(java.io.PrintWriter(sw))
+                com.example.twopchat.AppLog.append(
+                    applicationContext,
+                    "[FATAL_CRASH] Thread: ${thread.name}\n$sw\n"
+                )
+            } catch (_: Throwable) {
+                // intentionally ignored: prevent secondary crash in uncaught exception handler
+            }
+            defaultHandler?.uncaughtException(thread, throwable)
+        }
+    }
+
+    private fun loadSqlcipherLibrary() {
+        val oldPolicy = android.os.StrictMode.allowThreadDiskReads()
+        try {
+            android.os.StrictMode.allowThreadDiskWrites()
+            try {
+                System.loadLibrary("sqlcipher")
+            } catch (e: Throwable) {
+                SafeLog.e("GlobalApplication", "Failed to load sqlcipher", e)
+            }
+        } finally {
+            android.os.StrictMode.setThreadPolicy(oldPolicy)
         }
     }
 
@@ -247,5 +316,37 @@ private fun createNotificationChannels(context: Context) {
         val notificationManager: NotificationManager =
             context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         notificationManager.createNotificationChannel(channel)
+    }
+}
+
+object AppForegroundTracker {
+    private val startedActivities = java.util.concurrent.atomic.AtomicInteger(0)
+
+    @Volatile
+    var isForegroundOverride: Boolean? = null
+        internal set
+
+    fun onActivityStarted() {
+        startedActivities.incrementAndGet()
+    }
+
+    fun onActivityStopped() {
+        if (startedActivities.get() > 0) {
+            startedActivities.decrementAndGet()
+        }
+    }
+
+    fun isAppInForeground(): Boolean {
+        isForegroundOverride?.let { return it }
+        if (startedActivities.get() > 0) return true
+        return runCatching {
+            androidx.lifecycle.ProcessLifecycleOwner.get().lifecycle.currentState
+                .isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)
+        }.getOrDefault(false)
+    }
+
+    fun resetForTesting() {
+        startedActivities.set(0)
+        isForegroundOverride = null
     }
 }

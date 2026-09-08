@@ -188,6 +188,8 @@ dependencies {
   // Local tests: jUnit, coroutines, Android runner
   testImplementation(libs.junit)
   testImplementation(libs.kotlinx.coroutines.test)
+  testImplementation(libs.androidx.test.core)
+  testImplementation("androidx.work:work-testing:2.11.2")
   testImplementation("org.json:json:20240303")
   testImplementation("org.xerial:sqlite-jdbc:3.45.1.0")
 

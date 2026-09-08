@@ -19,6 +19,7 @@ class NetworkStateCallback(val context: Context) : ConnectivityManager.NetworkCa
         super.onAvailable(network)
         SafeLog.d(TAG, "onAvailable")
         com.example.twopchat.NativeBridge.onNetworkChanged()
+        com.example.twopchat.service.OutboxWorkScheduler.triggerImmediateDrain(context)
 
         val preferences = yggdrasilPrefs(context)
         if (preferences.getBoolean(PREF_KEY_ENABLED, false) && YggdrasilCoordinator.isRunning(context)) {

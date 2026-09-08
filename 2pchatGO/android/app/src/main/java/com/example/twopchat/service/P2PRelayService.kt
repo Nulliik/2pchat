@@ -66,6 +66,7 @@ class P2PRelayService : Service() {
                         refreshLocks()
                         P2PMessageRelay.onScreenOn(context)
                         P2PMessageRelay.triggerImmediateReconnect(context)
+                        OutboxWorkScheduler.triggerImmediateDrain(context)
                     } else {
                         P2PMessageRelay.onScreenOff()
                         releaseWifiLock()
@@ -81,6 +82,13 @@ class P2PRelayService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        createCallCount++
+        if (!com.example.twopchat.yggdrasil.AppForegroundTracker.isAppInForeground()) {
+            serviceSuppressedCount++
+            SafeLog.w(TAG, "Suppressed P2PRelayService start: process is not in foreground")
+            stopSelf()
+            return
+        }
         instance = this
         createChannel()
         val launchIntent = packageManager.getLaunchIntentForPackage(packageName) ?: Intent(this, MainActivity::class.java)
@@ -126,6 +134,13 @@ class P2PRelayService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        startCommandCallCount++
+        if (!com.example.twopchat.yggdrasil.AppForegroundTracker.isAppInForeground()) {
+            serviceSuppressedCount++
+            SafeLog.w(TAG, "Suppressed P2PRelayService onStartCommand: process is not in foreground")
+            stopSelf(startId)
+            return START_NOT_STICKY
+        }
         val appContext = applicationContext
         val action = intent?.action
         serviceScope.launch(Dispatchers.IO) {
@@ -184,6 +199,7 @@ class P2PRelayService : Service() {
                         P2PMessageRelay.resetPeerBackoffs()
                         P2PMessageRelay.triggerImmediateReconnect(applicationContext)
                         P2PMessageRelay.triggerMaintenanceWakeup("NETWORK_AVAILABLE")
+                        OutboxWorkScheduler.triggerImmediateDrain(applicationContext)
                     }
 
                     override fun onLost(network: Network) {
@@ -198,6 +214,7 @@ class P2PRelayService : Service() {
                             P2PMessageRelay.resetPeerBackoffs()
                             P2PMessageRelay.triggerImmediateReconnect(applicationContext)
                             P2PMessageRelay.triggerMaintenanceWakeup("NETWORK_VALIDATED")
+                            OutboxWorkScheduler.triggerImmediateDrain(applicationContext)
                         }
                     }
                 }
@@ -319,6 +336,24 @@ class P2PRelayService : Service() {
 
         @Volatile
         private var instance: P2PRelayService? = null
+
+        @Volatile
+        var createCallCount = 0
+            internal set
+
+        @Volatile
+        var startCommandCallCount = 0
+            internal set
+
+        @Volatile
+        var serviceSuppressedCount = 0
+            internal set
+
+        fun resetCountersForTesting() {
+            createCallCount = 0
+            startCommandCallCount = 0
+            serviceSuppressedCount = 0
+        }
 
         fun refreshWakeLock() {
             instance?.refreshLocks()

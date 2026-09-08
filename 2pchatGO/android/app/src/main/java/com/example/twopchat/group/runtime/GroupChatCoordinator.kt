@@ -8042,20 +8042,22 @@ object GroupChatCoordinator {
         )
     }
 
-    fun maybeEmitHeartbeat(groupId: String, force: Boolean = false) {
-        val storage = database ?: return
-        val group = storage.getGroup(groupId) ?: return
-        if (group.localDeviceId != group.ownerDeviceId) return
+    fun listGroups(): List<StoredGroup> = db().listGroups()
 
-        val context = applicationContext ?: return
+    fun maybeEmitHeartbeat(groupId: String, force: Boolean = false): Boolean {
+        val storage = database ?: return false
+        val group = storage.getGroup(groupId) ?: return false
+        if (group.localDeviceId != group.ownerDeviceId) return false
+
+        val context = applicationContext ?: return false
         val now = System.currentTimeMillis()
         val lastEmit = P2PPreferences.getLastHeartbeatEmitTime(context, groupId)
         if (!force && (now - lastEmit < MIN_HEARTBEAT_INTERVAL_MS)) {
-            return
+            return false
         }
 
         val bridge = P2PBridgeProvider.get(context)
-        val hbJson = bridge.createOwnerHeartbeat(groupId) ?: return
+        val hbJson = bridge.createOwnerHeartbeat(groupId) ?: return false
         P2PPreferences.setLastHeartbeatEmitTime(context, groupId, now)
 
         val hbHash = bridge.getLastHeartbeatHash(groupId)
@@ -8081,6 +8083,7 @@ object GroupChatCoordinator {
         }
         broadcastFrame(groupId, "hb-" + UUID.randomUUID().toString(), frame)
         updateSuccessionState(groupId)
+        return true
     }
 
     fun createSuccessionCertificate(groupId: String, successorFP: String, timeoutDays: Int): Boolean {

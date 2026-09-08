@@ -456,6 +456,18 @@ internal class P2POutboundMessenger(
         )
     }
 
+    fun processAllOfflineQueues(context: Context) {
+        val db = ChatDatabaseHelper.getInstance(context)
+        val peers = db.getPeersWithPendingMessages()
+        if (peers.isNotEmpty()) {
+            log(context, "Processing offline queues for ${peers.size} peer(s)", "INFO", null)
+        }
+        for (peer in peers) {
+            val endpoint = P2PPreferences.peerEndpoint(context, peer).orEmpty()
+            processOfflineQueue(context, peer, endpoint)
+        }
+    }
+
     fun processOfflineQueue(context: Context, peerName: String, endpoint: String) {
         val peerKey = normalizePeerKey(peerName)
         val fingerprint = P2PPreferences.prefs(context)

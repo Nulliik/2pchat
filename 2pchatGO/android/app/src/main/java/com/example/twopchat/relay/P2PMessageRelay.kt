@@ -2610,6 +2610,7 @@ object P2PMessageRelay {
                     shareOnionAddress(appContext, resolvedPeerName, endpoint)
                     processOfflineQueue(appContext, resolvedPeerName, endpoint)
                     GroupChatCoordinator.onPeerConnected(appContext, resolvedPeerName)
+                    com.example.twopchat.service.OutboxWorkScheduler.triggerImmediateDrain(appContext)
                     return true
                 }
 
@@ -3592,6 +3593,10 @@ object P2PMessageRelay {
 
     fun processOfflineQueue(context: Context, peerName: String, endpoint: String) {
         outboundMessenger.processOfflineQueue(context, peerName, endpoint)
+    }
+
+    fun processAllOfflineQueues(context: Context) {
+        outboundMessenger.processAllOfflineQueues(context)
     }
 
     fun loadPersistedAvatars(context: Context) {

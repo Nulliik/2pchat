@@ -94,7 +94,12 @@ object NativeBridge {
         }
     }
 
+    @Volatile
+    var isInitializeOverride: Boolean? = null
+        internal set
+
     fun initialize(): Boolean {
+        isInitializeOverride?.let { return it }
         if (!isLoaded) return false
         return try {
             // The Go manager must know the app-private directory before its

@@ -27,6 +27,17 @@ object KeystoreProvider {
     @Volatile
     private var isInitializing = false
 
+    @Volatile
+    var isPrewarmed: Boolean = false
+        internal set
+
+    fun resetForTesting() {
+        synchronized(lock) {
+            isInitializing = false
+            isPrewarmed = false
+        }
+    }
+
     /**
      * Suspendable access to the shared application [MasterKey], resolving on [Dispatchers.IO].
      */
@@ -90,6 +101,7 @@ object KeystoreProvider {
         synchronized(lock) {
             if (isInitializing || masterKeyDeferred.isCompleted) return
             isInitializing = true
+            isPrewarmed = true
         }
         val appContext = context.applicationContext
         CoroutineScope(Dispatchers.IO).launch {

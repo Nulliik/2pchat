@@ -418,6 +418,16 @@ object P2PPreferences : com.example.twopchat.security.SensitiveMemoryHolder {
         isAppLockedState = locked
     }
 
+    fun isPasscodeConfigured(context: Context): Boolean {
+        val sp = prefs(context)
+        return sp.getBoolean("settings_passcode", false) &&
+            !sp.getString("passcode_value", null).isNullOrEmpty()
+    }
+
+    fun peerEndpoint(context: Context, peerName: String): String? {
+        return prefs(context).getString(lastEndpoint(peerName), null)
+    }
+
     /** Drops account-derived caches after the backing preferences are erased. */
     fun clearInMemoryState() {
         synchronized(this) {
@@ -1308,6 +1318,18 @@ object P2PPreferences : com.example.twopchat.security.SensitiveMemoryHolder {
     fun setLastHeartbeatEmitTime(context: Context, groupId: String, timeMs: Long) {
         prefs(context).edit().putLong("heartbeat_last_emit_$groupId", timeMs).apply()
     }
+
+    const val KEY_BATTERY_OPT_BANNER_DISMISSED = "battery_opt_banner_dismissed"
+
+    fun isBatteryOptBannerDismissed(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_BATTERY_OPT_BANNER_DISMISSED, false)
+
+    fun setBatteryOptBannerDismissed(context: Context, dismissed: Boolean) {
+        prefs(context).edit().putBoolean(KEY_BATTERY_OPT_BANNER_DISMISSED, dismissed).apply()
+    }
+
+    fun getDrainStats(context: Context): com.example.twopchat.service.DrainStats =
+        com.example.twopchat.service.BackgroundDiagnostics.getStats(context)
 }
 
 internal data class AcceptedPeerIdentity(

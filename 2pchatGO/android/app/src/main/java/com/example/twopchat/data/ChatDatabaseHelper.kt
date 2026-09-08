@@ -1447,6 +1447,24 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
         return messages
     }
 
+    fun getPeersWithPendingMessages(): List<String> {
+        val peers = mutableListOf<String>()
+        val db = this.safeReadableDatabase
+        val cursor = db.rawQuery(
+            "SELECT DISTINCT $KEY_PEER_NAME FROM $TABLE_MESSAGES WHERE $KEY_STATUS = ?",
+            arrayOf("PENDING"),
+        )
+        cursor.use {
+            while (it.moveToNext()) {
+                val peer = it.getString(0)
+                if (!peer.isNullOrBlank()) {
+                    peers.add(peer)
+                }
+            }
+        }
+        return peers
+    }
+
     fun enqueuePendingControl(control: PendingControl) {
         val db = safeWritableDatabase
         val values = ContentValues().apply {

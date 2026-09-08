@@ -136,6 +136,11 @@ class MainActivity : ComponentActivity() {
         pauseTime = 0L
     }
 
+    override fun onStart() {
+        super.onStart()
+        com.example.twopchat.service.OutboxWorkScheduler.triggerImmediateDrain(applicationContext)
+    }
+
     override fun onResume() {
         super.onResume()
         checkAutoLockOnResume()
@@ -242,6 +247,8 @@ class MainActivity : ComponentActivity() {
                         Intent(appContext, P2PRelayService::class.java),
                     )
                 }
+                com.example.twopchat.service.OutboxWorkScheduler.schedulePeriodicDrain(appContext)
+                com.example.twopchat.service.OutboxWorkScheduler.schedulePeriodicHeartbeats(appContext)
             } catch (e: Exception) {
                 SafeLog.e("MainActivity", "Error initializing Go native core or database in background", e)
             }
