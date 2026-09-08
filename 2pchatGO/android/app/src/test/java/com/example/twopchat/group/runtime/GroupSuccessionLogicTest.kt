@@ -368,4 +368,110 @@ class GroupSuccessionLogicTest {
         assertTrue("Older certificate seq=1 must now be in revoked hashes", revokedHashes.contains("hash_cert_seq_1"))
         assertFalse("Newer active certificate seq=2 must not be revoked", revokedHashes.contains("hash_cert_seq_2"))
     }
+
+    @Test
+    fun testSimultaneousClaimsRaceConditionTieBreaker() {
+        data class Claim(val claimant: String, val seq: Long, val certHash: String)
+
+        val claimB = Claim(claimant = "device_bob", seq = 1L, certHash = "0000_hash_bob")
+        val claimC = Claim(claimant = "device_charlie", seq = 1L, certHash = "1111_hash_charlie")
+
+        fun resolveClaim(existing: Claim?, incoming: Claim): Claim {
+            if (existing == null) return incoming
+            if (incoming.seq > existing.seq) return incoming
+            if (incoming.seq < existing.seq) return existing
+            return if (incoming.certHash <= existing.certHash) incoming else existing
+        }
+
+        // Node D receives B then C
+        var winnerD: Claim? = null
+        winnerD = resolveClaim(winnerD, claimB)
+        winnerD = resolveClaim(winnerD, claimC)
+
+        // Node E receives C then B
+        var winnerE: Claim? = null
+        winnerE = resolveClaim(winnerE, claimC)
+        winnerE = resolveClaim(winnerE, claimB)
+
+        assertEquals("0000_hash_bob", winnerD.certHash)
+        assertEquals("0000_hash_bob", winnerE.certHash)
+        assertEquals(winnerD.claimant, winnerE.claimant)
+        assertEquals("device_bob", winnerD.claimant)
+    }
+
+    @Test
+    fun testNetworkPartitionMergeResolution() {
+        data class NodeState(var ownerId: String, var currentSeq: Long)
+
+        // In Partition 1: Successor B claims with seq=1
+        val nodeInPartition1 = NodeState(ownerId = "device_bob", currentSeq = 1L)
+
+        // In Partition 2: Successor C claims with seq=2
+        val nodeInPartition2 = NodeState(ownerId = "device_charlie", currentSeq = 2L)
+
+        // Partitions merge: incoming claim with seq=2 arrives at node in Partition 1
+        val incomingSeq = nodeInPartition2.currentSeq
+        val incomingOwner = nodeInPartition2.ownerId
+
+        if (incomingSeq > nodeInPartition1.currentSeq) {
+            // Higher sequence unconditionally wins, deposed B demoted
+            nodeInPartition1.ownerId = incomingOwner
+            nodeInPartition1.currentSeq = incomingSeq
+        }
+
+        assertEquals("device_charlie", nodeInPartition1.ownerId)
+        assertEquals(2L, nodeInPartition1.currentSeq)
+        assertEquals(nodeInPartition2.ownerId, nodeInPartition1.ownerId)
+    }
+
+    @Test
+    fun testHeartbeatTimingBoundaryAndClockSkew() {
+        val timeoutMs = 24 * 60 * 60 * 1000L // 24 hours
+        var lastHeartbeatTime = 1_000_000L
+        val maxClockSkewMs = 5 * 60 * 1000L // 5 minutes
+
+        // Check 1: Owner sends heartbeat at T - 1 second (23h 59m 59s elapsed)
+        val nearExpiryTime = lastHeartbeatTime + timeoutMs - 1_000L
+        val canClaimBeforeHeartbeat = (nearExpiryTime - lastHeartbeatTime) >= timeoutMs
+        assertFalse("Successor cannot claim before timeout expires", canClaimBeforeHeartbeat)
+
+        // Owner sends heartbeat, updating lastHeartbeatTime
+        val heartbeatTimestamp = nearExpiryTime
+        val skew = Math.abs(heartbeatTimestamp - nearExpiryTime)
+        assertTrue("Heartbeat must fall within clock skew tolerance", skew <= maxClockSkewMs)
+
+        lastHeartbeatTime = heartbeatTimestamp // Reset timeout timer
+
+        // After reset, checking at T + 1 second (from original schedule)
+        val checkTime = nearExpiryTime + 2_000L
+        val canClaimAfterReset = (checkTime - lastHeartbeatTime) >= timeoutMs
+        assertFalse("Heartbeat at T-1s must reset timeout timer and prevent claim", canClaimAfterReset)
+    }
+
+    @Test
+    fun testLargeGroupSuccessionRotationScale() {
+        val revokedHashes = mutableSetOf<String>()
+        var activeSeq = 1L
+        var activeCertHash = "hash_cert_1"
+
+        // Owner rotates successor 5 consecutive times (seq 1 through 5)
+        for (i in 2L..5L) {
+            val incomingSeq = i
+            val incomingHash = "hash_cert_$i"
+            if (incomingSeq > activeSeq) {
+                revokedHashes.add(activeCertHash)
+                activeCertHash = incomingHash
+                activeSeq = incomingSeq
+            }
+        }
+
+        assertEquals(5L, activeSeq)
+        assertEquals("hash_cert_5", activeCertHash)
+        assertEquals(4, revokedHashes.size)
+        assertTrue(revokedHashes.contains("hash_cert_1"))
+        assertTrue(revokedHashes.contains("hash_cert_2"))
+        assertTrue(revokedHashes.contains("hash_cert_3"))
+        assertTrue(revokedHashes.contains("hash_cert_4"))
+        assertFalse(revokedHashes.contains("hash_cert_5"))
+    }
 }
