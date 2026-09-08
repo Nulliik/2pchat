@@ -8643,6 +8643,16 @@ object GroupChatCoordinator {
         val certJson = bridge.createSuccessionCertificate(groupId, successorRealFP, successorPub, timeoutDays, nextSeq)
             ?: return false
 
+        // Automatically revoke previous certificate if rotating successor
+        val oldCertJson = chatDb.getGroupSuccessionState(groupId)?.activeCertJson
+        if (oldCertJson != null) {
+            val oldHash = bridge.getCertificateHash(oldCertJson)
+            if (!oldHash.isNullOrBlank()) {
+                chatDb.recordRevokedCertificate(oldHash, groupId)
+                bridge.revokeCertificate(oldHash)
+            }
+        }
+
         chatDb.saveGroupSuccessionState(
             groupId = groupId,
             activeCertJson = certJson,
@@ -8711,10 +8721,22 @@ object GroupChatCoordinator {
         val bridge = P2PBridgeProvider.get(context)
         val chatDb = ChatDatabaseHelper.getInstance(context)
 
+        val successionState = chatDb.getGroupSuccessionState(groupId)
+        if (successionState?.isRevoked == true) {
+            SafeLog.w(TAG, "Cannot claim succession: group succession is marked revoked for $groupId")
+            return false
+        }
+
         val certJson = bridge.getSuccessionCertificate(groupId)
-            ?: chatDb.getGroupSuccessionState(groupId)?.activeCertJson
+            ?: successionState?.activeCertJson
             ?: return false
-        val lastHbJson = chatDb.getGroupSuccessionState(groupId)?.lastHbJson ?: return false
+        val lastHbJson = successionState?.lastHbJson ?: return false
+
+        val certHash = bridge.getCertificateHash(certJson) ?: ""
+        if (certHash.isNotBlank() && chatDb.isSuccessionCertificateRevoked(certHash)) {
+            SafeLog.w(TAG, "Cannot claim succession: certificate $certHash is revoked")
+            return false
+        }
 
         val claimJson = bridge.createSuccessionClaim(certJson, lastHbJson) ?: return false
         val isValid = bridge.verifySuccessionClaim(certJson, claimJson, lastHbJson)
@@ -8832,6 +8854,13 @@ object GroupChatCoordinator {
                     SafeLog.w(TAG, "Rejecting inferior certificate on tie-break: hash $incomingHash >= $activeHash")
                     return
                 }
+            } else {
+                // Higher sequence: mark older superseded certificate as revoked
+                val oldHash = bridge.getCertificateHash(activeCertJson)
+                if (!oldHash.isNullOrBlank()) {
+                    chatDb.recordRevokedCertificate(oldHash, groupId)
+                    bridge.revokeCertificate(oldHash)
+                }
             }
         }
 
@@ -8862,6 +8891,7 @@ object GroupChatCoordinator {
         val certHash = revObj.optString("certificate_hash")
         val chatDb = ChatDatabaseHelper.getInstance(context)
         chatDb.recordRevokedCertificate(certHash, groupId)
+        bridge.revokeCertificate(certHash)
         val currentState = chatDb.getGroupSuccessionState(groupId)
         if (currentState != null) {
             chatDb.saveGroupSuccessionState(
@@ -8885,17 +8915,40 @@ object GroupChatCoordinator {
         val bridge = P2PBridgeProvider.get(context)
         val chatDb = ChatDatabaseHelper.getInstance(context)
 
+        val currentState = chatDb.getGroupSuccessionState(groupId)
+        if (currentState?.isRevoked == true) {
+            SafeLog.w(TAG, "Rejecting succession claim: succession is revoked for group $groupId")
+            return
+        }
+
         val certJson = bridge.getSuccessionCertificate(groupId)
-            ?: chatDb.getGroupSuccessionState(groupId)?.activeCertJson
+            ?: currentState?.activeCertJson
             ?: return
-        val lastHbJson = chatDb.getGroupSuccessionState(groupId)?.lastHbJson ?: return
+
+        val certHash = bridge.getCertificateHash(certJson) ?: ""
+        if (certHash.isNotBlank() && chatDb.isSuccessionCertificateRevoked(certHash)) {
+            SafeLog.w(TAG, "Rejecting succession claim: active certificate $certHash is revoked for group $groupId")
+            return
+        }
+
+        val claimObj = runCatching { JSONObject(claimJson) }.getOrNull() ?: return
+        val claimedCertHash = claimObj.optString("certificate_hash")
+        if (claimedCertHash.isNotBlank() && chatDb.isSuccessionCertificateRevoked(claimedCertHash)) {
+            SafeLog.w(TAG, "Rejecting succession claim: claimed certificate $claimedCertHash is revoked for group $groupId")
+            return
+        }
+        if (claimedCertHash.isNotBlank() && certHash.isNotBlank() && claimedCertHash != certHash) {
+            SafeLog.w(TAG, "Rejecting succession claim: claimed cert hash $claimedCertHash does not match active cert $certHash")
+            return
+        }
+
+        val lastHbJson = currentState?.lastHbJson ?: return
 
         val isValid = bridge.verifySuccessionClaim(certJson, claimJson, lastHbJson)
         if (!isValid) {
             return
         }
 
-        val claimObj = runCatching { JSONObject(claimJson) }.getOrNull() ?: return
         val claimantFP = claimObj.optString("claimant")
         applySuccessionClaim(groupId, claimantFP)
     }
@@ -8903,6 +8956,15 @@ object GroupChatCoordinator {
     private fun applySuccessionClaim(groupId: String, claimantFP: String) {
         val storage = database ?: return
         val group = storage.getGroup(groupId) ?: return
+        val context = applicationContext ?: return
+        val chatDb = ChatDatabaseHelper.getInstance(context)
+
+        val currentState = chatDb.getGroupSuccessionState(groupId)
+        if (currentState?.isRevoked == true) {
+            SafeLog.w(TAG, "Rejecting claim application: succession revoked for group $groupId")
+            return
+        }
+
         val members = storage.listMembers(groupId)
         val claimantMember = members.firstOrNull { 
             (it.transportFingerprint.isNotBlank() && it.transportFingerprint.equals(claimantFP, ignoreCase = true)) ||

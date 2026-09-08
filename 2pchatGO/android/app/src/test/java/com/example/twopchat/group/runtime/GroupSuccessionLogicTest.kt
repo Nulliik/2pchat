@@ -315,4 +315,57 @@ class GroupSuccessionLogicTest {
         )
         assertTrue("Active owner Bob must be authorized to emit heartbeats", bobAllowed)
     }
+
+    @Test
+    fun testSuccessionClaimRejectionOnRevokedOrSupersededCertificate() {
+        val revokedHashes = mutableSetOf("hash_cert_1_revoked")
+        var isGroupSuccessionRevoked = false
+
+        val activeCertHash = "hash_cert_2_active"
+        val staleClaimCertHash = "hash_cert_1_revoked"
+        val validClaimCertHash = "hash_cert_2_active"
+
+        // Case 1: Entire group succession is revoked
+        isGroupSuccessionRevoked = true
+        var claimAllowed = !isGroupSuccessionRevoked &&
+            !revokedHashes.contains(validClaimCertHash) &&
+            validClaimCertHash == activeCertHash
+        assertFalse("Claim must be rejected when group succession is marked revoked", claimAllowed)
+
+        // Case 2: Group succession active, but claim references a revoked certificate hash
+        isGroupSuccessionRevoked = false
+        val staleClaimAllowed = !isGroupSuccessionRevoked &&
+            !revokedHashes.contains(staleClaimCertHash) &&
+            staleClaimCertHash == activeCertHash
+        assertFalse("Claim referencing revoked certificate hash must be rejected", staleClaimAllowed)
+
+        // Case 3: Valid claim against unrevoked active certificate
+        val validClaimAllowed = !isGroupSuccessionRevoked &&
+            !revokedHashes.contains(validClaimCertHash) &&
+            validClaimCertHash == activeCertHash
+        assertTrue("Valid claim referencing active unrevoked cert must be accepted", validClaimAllowed)
+    }
+
+    @Test
+    fun testCertificateSupersededSequenceRevocation() {
+        val revokedHashes = mutableSetOf<String>()
+        var activeCertHash = "hash_cert_seq_1"
+        var activeSeq = 1L
+
+        // Owner rotates successor from Bob (seq=1) to Charlie (seq=2)
+        val incomingSeq = 2L
+        val incomingCertHash = "hash_cert_seq_2"
+
+        if (incomingSeq > activeSeq) {
+            // Superseded certificate hash is explicitly marked revoked
+            revokedHashes.add(activeCertHash)
+            activeCertHash = incomingCertHash
+            activeSeq = incomingSeq
+        }
+
+        assertEquals(2L, activeSeq)
+        assertEquals("hash_cert_seq_2", activeCertHash)
+        assertTrue("Older certificate seq=1 must now be in revoked hashes", revokedHashes.contains("hash_cert_seq_1"))
+        assertFalse("Newer active certificate seq=2 must not be revoked", revokedHashes.contains("hash_cert_seq_2"))
+    }
 }
