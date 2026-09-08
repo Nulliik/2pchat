@@ -6994,11 +6994,16 @@ object GroupChatCoordinator {
         } else {
             null
         }
+        val effectivePermissions = if (parsedRole == GroupRole.MEMBER && status != "RESTRICTED") {
+            (permissions and GroupPermission.knownBits) or GroupPermission.INVITE_MEMBERS.bit
+        } else {
+            permissions and GroupPermission.knownBits
+        }
         return GroupMember(
             groupId = ConversationId(groupId),
             userId = UserId(accountId),
             role = parsedRole,
-            permissions = GroupPermissionSet(permissions and GroupPermission.knownBits),
+            permissions = GroupPermissionSet(effectivePermissions),
             joinedEpoch = joinedEpoch,
             removedEpoch = removed,
         )

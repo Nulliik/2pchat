@@ -174,10 +174,12 @@ internal fun isConnectablePeerSearchResult(
 
 internal fun parsePeerSearchAddress(value: String): PeerSearchAddress? {
     val trimmed = value.trim().removePrefix("@")
+    if (trimmed.startsWith("group#", ignoreCase = true)) return null
     val separator = trimmed.lastIndexOf('#')
     if (separator <= 0 || separator == trimmed.lastIndex) return null
 
     val nickname = validatedSearchNickname(trimmed.substring(0, separator)) ?: return null
+    if (nickname.equals("group", ignoreCase = true)) return null
     val discoveryCode = trimmed.substring(separator + 1).trim()
     if (nickname.isEmpty() || discoveryCode.isEmpty()) return null
     return PeerSearchAddress(nickname, discoveryCode)
@@ -491,7 +493,29 @@ fun ContactsTab(
             val decodedLink = if (trimmed.contains("%26") || trimmed.contains("%3D")) {
                 try { java.net.URLDecoder.decode(trimmed, "UTF-8") } catch (_: Exception) { trimmed }
             } else trimmed
-            if (isContactInviteLink(decodedLink)) {
+            if (trimmed.startsWith("group#", ignoreCase = true)) {
+                val rawGroupId = trimmed.substringAfter("group#").trim()
+                if (rawGroupId.isNotBlank()) {
+                    val isJoined = com.example.twopchat.group.runtime.GroupChatCoordinator.isGroupJoined(rawGroupId)
+                    if (isJoined) {
+                        onItemClick(GroupConversation(rawGroupId))
+                    } else {
+                        searchSummary = if (appLanguage == "Русский") {
+                            "Это адрес группы. Чтобы вступить, попросите участника отправить приглашение прямо в чат или отсканируйте QR-код."
+                        } else {
+                            "This is a group address. To join, ask a member to send an invite in chat or scan the QR code."
+                        }
+                        searchResults = emptyList()
+                    }
+                } else {
+                    searchSummary = if (appLanguage == "Русский") {
+                        "Некорректный адрес группы."
+                    } else {
+                        "Invalid group address."
+                    }
+                    searchResults = emptyList()
+                }
+            } else if (isContactInviteLink(decodedLink)) {
                 try {
                     val normalizedLink = if (!decodedLink.contains("://")) {
                         "2pchat://connect?" + (if (decodedLink.startsWith("?")) decodedLink.substring(1) else decodedLink.substringAfter("?", decodedLink))
@@ -599,9 +623,12 @@ fun ContactsTab(
                                             groupInviteToken,
                                             effectiveName,
                                         )
+                                        resolveInviteStatus = ""
+                                        onItemClick(GroupConversation(requestedGroupId))
+                                    } else {
+                                        resolveInviteStatus = ""
+                                        onItemClick(Chat(effectiveName))
                                     }
-                                    resolveInviteStatus = ""
-                                    onItemClick(Chat(effectiveName))
                                 } else {
                                     resolveInviteStatus = if (appLanguage == "Русский") "Собеседник не найден. Попробуйте снова." else "Peer not found. Please try again."
                                 }

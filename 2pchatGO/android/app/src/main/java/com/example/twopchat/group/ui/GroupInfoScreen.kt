@@ -2763,20 +2763,38 @@ private fun formatMemberStatus(status: String, appLanguage: String): String {
     }
 }
 
+internal fun buildGroupInvitePayload(context: Context, groupId: String, inviteToken: String): String {
+    val prefs = P2PPreferences.prefs(context)
+    val username = prefs.getString("username_profile", "2PChat User").orEmpty()
+    val discoveryCode = P2PPreferences.getRendezvousCode(context)
+    val fingerprint = com.example.twopchat.bridge.P2PBridgeProvider.get(context).getLocalFingerprint()
+    val listenerPort = P2PMessageRelay.listenerPort(context)
+    val localIp = P2PMessageRelay.getLocalIpAddress(context)
+    val yggIp = P2PMessageRelay.getYggdrasilAddress()
+
+    return buildContactQrPayload(
+        nickname = username,
+        discoveryCode = discoveryCode,
+        fingerprint = fingerprint,
+        localIpv4 = localIp.takeUnless { it == "127.0.0.1" }.orEmpty(),
+        publicIpv4 = "",
+        ipv6 = yggIp,
+        listenerPort = listenerPort,
+    ) + "&group=" + android.net.Uri.encode(groupId) +
+        "&group_token=" + android.net.Uri.encode(inviteToken)
+}
+
 @Composable
-private fun GroupInfoDetailsCard(
-    metadata: GroupMetadata,
-    appLanguage: String = "Русский"
-) {
-    val context = LocalContext.current
-    val primaryColor = MaterialTheme.colorScheme.primary
+private fun GroupInfoDetailsCard(metadata: GroupMetadata, appLanguage: String) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     val surfaceColor = MaterialTheme.colorScheme.surface
     val onSurfaceColor = MaterialTheme.colorScheme.onSurface
     val onSurfaceVariant = MaterialTheme.colorScheme.onSurfaceVariant
+    val primaryColor = MaterialTheme.colorScheme.primary
 
-    Surface(
-        color = surfaceColor,
-        shape = RoundedCornerShape(20.dp),
+    Card(
+        colors = CardDefaults.cardColors(containerColor = surfaceColor),
+        shape = RoundedCornerShape(16.dp),
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp)
@@ -2829,9 +2847,47 @@ private fun GroupInfoDetailsCard(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
+                val hasInviteToken = metadata.inviteToken.isNotBlank()
+                if (hasInviteToken) {
+                    IconButton(
+                        onClick = {
+                            val link = buildGroupInvitePayload(context, metadata.groupId, metadata.inviteToken)
+                            val shareText = com.example.twopchat.data.Localizations.tr(
+                                appLanguage,
+                                ru = "Приглашение в группу «${metadata.title}» в 2PChat:\n\n$link",
+                                en = "Invitation to group \"${metadata.title}\" in 2PChat:\n\n$link",
+                                de = "Einladung zur Gruppe „${metadata.title}“ in 2PChat:\n\n$link",
+                                es = "Invitación al grupo \"${metadata.title}\" en 2PChat:\n\n$link",
+                                fr = "Invitation au groupe « ${metadata.title} » dans 2PChat :\n\n$link",
+                                pt = "Convite para o grupo \"${metadata.title}\" no 2PChat:\n\n$link",
+                                tr = "2PChat'teki \"${metadata.title}\" grubuna davet:\n\n$link"
+                            )
+                            val sendIntent = Intent().apply {
+                                action = Intent.ACTION_SEND
+                                putExtra(Intent.EXTRA_TEXT, shareText)
+                                type = "text/plain"
+                            }
+                            context.startActivity(Intent.createChooser(sendIntent, metadata.title))
+                        },
+                        modifier = Modifier.size(28.dp)
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_forward),
+                            contentDescription = "Share Group Invite",
+                            tint = primaryColor,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                    Spacer(Modifier.width(4.dp))
+                }
                 IconButton(
                     onClick = {
-                        com.example.twopchat.copyTextToClipboard(context, "Group ID", "group#${metadata.groupId}")
+                        val textToCopy = if (hasInviteToken) {
+                            buildGroupInvitePayload(context, metadata.groupId, metadata.inviteToken)
+                        } else {
+                            "group#${metadata.groupId}"
+                        }
+                        com.example.twopchat.copyTextToClipboard(context, "Group Invite", textToCopy)
                         android.widget.Toast.makeText(
                             context,
                             com.example.twopchat.data.Localizations.tr(

@@ -42,6 +42,13 @@ class PeerSearchTest {
     }
 
     @Test
+    fun `rejects group addresses to prevent ghost peer chats`() {
+        assertNull(parsePeerSearchAddress("group#336a5c77-b72c-4a6c-a16f-50288ff144ad"))
+        assertNull(parsePeerSearchAddress("Group#123456"))
+        assertNull(parsePeerSearchAddress("@group#abcd-efgh"))
+    }
+
+    @Test
     fun `accepts 32 code points and rejects an overlong search name`() {
         val maxName = "a".repeat(31) + "😀"
         assertEquals(

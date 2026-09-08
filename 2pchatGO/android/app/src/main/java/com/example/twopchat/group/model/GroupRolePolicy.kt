@@ -68,6 +68,7 @@ object GroupRolePolicy {
         GroupPermission.ADD_REACTIONS,
         GroupPermission.EDIT_OWN_MESSAGES,
         GroupPermission.DELETE_OWN_MESSAGES,
+        GroupPermission.INVITE_MEMBERS,
     )
 
     private val moderatorPermissions = GroupPermissionSet.of(

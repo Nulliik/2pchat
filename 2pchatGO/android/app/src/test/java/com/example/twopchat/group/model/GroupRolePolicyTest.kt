@@ -39,6 +39,7 @@ class GroupRolePolicyTest {
                 GroupPermission.RESTRICT_MEMBERS,
                 GroupPermission.BAN_MEMBERS,
                 GroupPermission.VIEW_ADMIN_LOG,
+                GroupPermission.INVITE_MEMBERS,
             ),
             GroupRole.MEMBER to setOf(
                 GroupPermission.POST_MESSAGES,
@@ -47,6 +48,7 @@ class GroupRolePolicyTest {
                 GroupPermission.ADD_REACTIONS,
                 GroupPermission.EDIT_OWN_MESSAGES,
                 GroupPermission.DELETE_OWN_MESSAGES,
+                GroupPermission.INVITE_MEMBERS,
             ),
             GroupRole.RESTRICTED to emptySet(),
             GroupRole.BANNED to emptySet(),
