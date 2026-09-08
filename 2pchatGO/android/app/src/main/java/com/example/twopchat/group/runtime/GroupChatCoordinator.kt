@@ -140,7 +140,7 @@ object GroupChatCoordinator {
     val securityEvents = _securityEvents.asSharedFlow()
     private val lastOwnerKeyRequestHandlingMs = ConcurrentHashMap<String, Long>()
     private const val INVITE_LIFETIME_MS = 7L * 24L * 60L * 60L * 1_000L
-    private const val MAX_CLOCK_SKEW_MS = 5L * 60L * 1_000L
+    internal const val MAX_CLOCK_SKEW_MS = 5L * 60L * 1_000L
     private const val SMALL_GROUP_FANOUT = 32
     private const val LARGE_GROUP_REPLICAS = 3
     private const val TIMELINE_PAGE_SIZE = 200
@@ -1066,11 +1066,20 @@ object GroupChatCoordinator {
         }
     }
 
+    private val pendingJoinGroupIds = ConcurrentHashMap.newKeySet<String>()
+
+    fun isPendingJoinRequest(groupId: String): Boolean =
+        pendingJoinGroupIds.contains(groupId)
+
     fun requestJoinFromInvite(groupId: String, inviteToken: String, ownerPeerName: String) {
         val normalizedGroupId = groupId.trim().take(128)
         val normalizedToken = inviteToken.trim().take(128)
         if (normalizedGroupId.isEmpty() || normalizedToken.isEmpty() || ownerPeerName.isBlank()) return
+        pendingJoinGroupIds.add(normalizedGroupId)
         val context = applicationContext ?: return
+        val localOnion = P2PPreferences.getTorOnionHostname(context).orEmpty()
+        val localEp = P2PPreferences.prefs(context).getString("last_endpoint_self", "").orEmpty()
+        val discoveryCode = P2PPreferences.getRendezvousCode(context)
         P2PMessageRelay.sendGroupFrame(
             context,
             ownerPeerName,
@@ -1078,7 +1087,10 @@ object GroupChatCoordinator {
                 .put("type", GroupWireProtocol.TYPE_JOIN_REQUEST)
                 .put("version", GroupWireProtocol.VERSION)
                 .put("group_id", normalizedGroupId)
-                .put("invite_token", normalizedToken),
+                .put("invite_token", normalizedToken)
+                .put("peer_onion", localOnion)
+                .put("peer_endpoint", localEp)
+                .put("peer_discovery_code", discoveryCode),
         )
     }
 
@@ -1859,6 +1871,8 @@ object GroupChatCoordinator {
                 receiveSuccessionRevocation(senderPeerName, json)
             GroupWireProtocol.TYPE_SUCCESSION_CLAIM ->
                 receiveSuccessionClaim(senderPeerName, json)
+            GroupWireProtocol.TYPE_SUCCESSION_QUERY ->
+                receiveSuccessionQuery(senderPeerName, json)
         }
     }
 
@@ -1914,14 +1928,55 @@ object GroupChatCoordinator {
         val fingerprint = P2PPreferences.getPeerFingerprint(context, senderPeerName)
             ?.takeIf(String::isNotBlank)
             ?: return
+        val candidateDeviceId = stableDeviceId(fingerprint)
+        val existing = db().getMember(groupId, candidateDeviceId)
+        if (existing != null && existing.status == "INVITED") {
+            if (group.localDeviceId == group.ownerDeviceId) {
+                val signed = createSignedGroupInvite(groupId, candidateDeviceId)
+                if (signed != null) {
+                    val frame = GroupWireProtocol.inviteToJson(signed)
+                    P2PMessageRelay.sendGroupFrame(context, senderPeerName, frame)
+                    broadcastFrame(groupId, signed.inviteId, frame)
+                }
+                return
+            }
+        }
+        val peerOnion = json.optString("peer_onion").take(256)
+        if (peerOnion.isNotBlank()) {
+            P2PPreferences.setPeerOnionAddress(context, senderPeerName, peerOnion)
+        }
+        val ep = json.optString("peer_endpoint")
+        if (ep.isNotBlank()) {
+            P2PPreferences.prefs(context).edit().putString(P2PPreferences.lastEndpoint(senderPeerName), ep).apply()
+        }
         requestSerializedControl(
             groupId,
             "invite",
             JSONObject()
-                .put("member_device_id", stableDeviceId(fingerprint))
+                .put("member_device_id", candidateDeviceId)
                 .put("fingerprint", fingerprint)
-                .put("peer_name", senderPeerName.take(160)),
+                .put("peer_name", senderPeerName.take(160))
+                .put("inviter_device_id", localMember.deviceId)
+                .put("inviter_peer_name", localMember.displayName)
+                .apply {
+                    if (peerOnion.isNotBlank()) put("peer_onion", peerOnion)
+                    if (ep.isNotBlank()) put("peer_endpoint", ep)
+                },
         )
+    }
+
+    private fun relayInviteToCandidate(
+        context: Context,
+        candidatePeerName: String,
+        candidateFingerprint: String,
+        inviteJson: JSONObject,
+    ) {
+        val session = com.example.twopchat.protocol.ProtocolVersionManager.refresh(candidateFingerprint)
+        if (session != null && (session.peerIsLegacy || !session.supports(com.example.twopchat.protocol.Capability.GROUP_INVITE_RELAY_V1))) {
+            SafeLog.w(TAG, "Candidate $candidatePeerName does not support group_invite_relay_v1, waiting for direct connection")
+            return
+        }
+        P2PMessageRelay.sendGroupFrame(context, candidatePeerName, inviteJson)
     }
 
     private suspend fun receiveInvite(senderPeerName: String, json: JSONObject) {
@@ -1936,9 +1991,32 @@ object GroupChatCoordinator {
         require(now - invite.createdAtMs <= INVITE_LIFETIME_MS) {
             "group invite has expired"
         }
-        require(transportFingerprint(senderPeerName) == invite.senderFingerprint) {
-            "group invite transport identity does not match its signed sender"
-        }
+
+        /**
+         * RELAY SECURITY MODEL:
+         *
+         * Original design: transport sender must match invite sender (owner).
+         * This blocked relay through intermediate peers (doggy -> puppy).
+         *
+         * New design: trust owner's cryptographic signature, not transport path.
+         *
+         * Rationale:
+         * 1. Owner's Ed25519 signature on invite guarantees authenticity
+         * 2. invite.members recipient entry ensures invite is for this device
+         * 3. invite.createdAtMs + inviteId prevent replay attacks
+         * 4. Relay peer cannot forge owner's signature
+         * 5. Even if relay peer modifies invite, signature verification fails
+         *
+         * Threat model:
+         * - Malicious relay peer: Cannot forge invite (no owner's private key)
+         * - Replay attack: Prevented by timestamp + inviteId tracking
+         * - MITM on relay path: Prevented by end-to-end signature verification
+         *
+         * Trade-off: We trust owner's signature over transport-level authentication.
+         * This is safe because owner is already trusted (group creator).
+         */
+        val isDirectFromOwner = transportFingerprint(senderPeerName) == invite.senderFingerprint
+
         require(invite.verifySignature()) { "group invite signature is invalid" }
         require(invite.members.map { it.deviceId }.toSet().size == invite.members.size) {
             "group invite contains duplicate device identities"
@@ -1971,7 +2049,24 @@ object GroupChatCoordinator {
         val local = localIdentity()
         val localEntry = invite.members.firstOrNull {
             it.fingerprint == local.fingerprint && it.deviceId == local.deviceId
-        } ?: throw SecurityException("group invite is not addressed to this device")
+        }
+        if (localEntry == null) {
+            val context = applicationContext ?: return
+            val currentGroup = db().getGroup(invite.groupId)
+            val currentLocal = currentGroup?.let { db().getMember(invite.groupId, local.deviceId) }
+            if (currentLocal != null && currentLocal.isParticipating()) {
+                val candidate = invite.members.firstOrNull { it.role != GroupRole.OWNER.name }
+                if (candidate != null) {
+                    val chatDb = ChatDatabaseHelper.getInstance(context)
+                    val candidatePeer = chatDb.getPeerNameByFingerprint(candidate.fingerprint)
+                        ?: candidate.peerName.takeIf { it.isNotBlank() && !it.startsWith("peer_") }
+                    if (!candidatePeer.isNullOrBlank()) {
+                        relayInviteToCandidate(context, candidatePeer, candidate.fingerprint, json)
+                    }
+                }
+            }
+            return
+        }
         require(localEntry.role != GroupRole.OWNER.name) {
             "group invite cannot assign ownership to its recipient"
         }
@@ -2018,6 +2113,9 @@ object GroupChatCoordinator {
                 "invite collides with an unrelated or stale local group"
             }
             if (rejoinAllowed) {
+                val autoAccept = pendingJoinGroupIds.remove(invite.groupId) ||
+                    isPendingJoinRequest(invite.groupId) ||
+                    !isDirectFromOwner
                 db().savePendingInvite(
                     StoredPendingInvite(
                         inviteId = invite.inviteId,
@@ -2050,6 +2148,9 @@ object GroupChatCoordinator {
                     createdAtMs = invite.createdAtMs,
                     isMe = false,
                 )
+                if (autoAccept) {
+                    acceptInviteInternal(invite.inviteId)
+                }
                 return
             }
             require(
@@ -2088,6 +2189,9 @@ object GroupChatCoordinator {
             )
             return
         }
+        val autoAccept = pendingJoinGroupIds.remove(invite.groupId) ||
+            isPendingJoinRequest(invite.groupId) ||
+            !isDirectFromOwner
         db().savePendingInvite(
             StoredPendingInvite(
                 inviteId = invite.inviteId,
@@ -2120,6 +2224,9 @@ object GroupChatCoordinator {
             createdAtMs = invite.createdAtMs,
             isMe = false,
         )
+        if (autoAccept) {
+            acceptInviteInternal(invite.inviteId)
+        }
     }
 
     private suspend fun acceptInviteInternal(inviteId: String) {
@@ -2327,9 +2434,21 @@ object GroupChatCoordinator {
     ) {
         val response = GroupControlFrames.parseInviteResponse(json)
         require(response.verify())
-        require(transportFingerprint(senderPeerName) == response.memberFingerprint)
         require(response.memberDeviceId == stableDeviceId(response.memberFingerprint))
         val group = db().getGroup(response.groupId) ?: return
+        if (group.localDeviceId != group.ownerDeviceId) {
+            // Relayed response: intermediate member forwards response to owner
+            val context = applicationContext ?: return
+            val owner = db().getMember(group.groupId, group.ownerDeviceId) ?: return
+            val ownerPeer = owner.peerName.ifBlank { owner.displayName }
+            if (ownerPeer.isNotBlank()) {
+                P2PMessageRelay.sendGroupFrame(context, ownerPeer, json)
+            }
+            return
+        }
+        val currentOwner = db().getMember(group.groupId, group.ownerDeviceId)
+            ?: throw SecurityException("group has no current owner")
+        require(group.localDeviceId == currentOwner.deviceId)
         val inviteTask = db().getOutboxTask(
             outboxTaskId(response.groupId, response.inviteId, response.memberDeviceId),
         ) ?: throw SecurityException("invite response has no matching issued invite")
@@ -2338,9 +2457,6 @@ object GroupChatCoordinator {
         )
         require(issuedInvite.verifySignature())
         require(issuedInvite.groupId == group.groupId)
-        val currentOwner = db().getMember(group.groupId, group.ownerDeviceId)
-            ?: throw SecurityException("group has no current owner")
-        require(group.localDeviceId == currentOwner.deviceId)
         require(
             issuedInvite.senderFingerprint == currentOwner.transportFingerprint &&
                 issuedInvite.ownerFingerprint == currentOwner.transportFingerprint &&
@@ -4743,7 +4859,20 @@ object GroupChatCoordinator {
         val peerName = payload.optString("peer_name").take(160)
         if (deviceId != stableDeviceId(fingerprint) || peerName.isBlank()) return
         val existing = db().getMember(groupId, deviceId)
-        if (existing != null && existing.status !in setOf("LEFT", "BANNED")) return
+        if (existing != null && existing.status !in setOf("LEFT", "BANNED", "INVITED")) return
+        if (existing != null && existing.status == "INVITED") {
+            if (group.localDeviceId == group.ownerDeviceId) {
+                enqueuePendingMemberInvites(groupId, deviceId)
+                val signed = createSignedGroupInvite(groupId, deviceId)
+                if (signed != null) {
+                    val frame = GroupWireProtocol.inviteToJson(signed)
+                    broadcastFrame(groupId, signed.inviteId, frame)
+                }
+                flushDueOutbox()
+                refreshGroup(groupId)
+            }
+            return
+        }
         val occupied = db().listMembers(groupId).count {
             it.status !in setOf("LEFT", "BANNED")
         }
@@ -4755,6 +4884,11 @@ object GroupChatCoordinator {
             ?: EpochAeadGroupCrypto.generateEpochSecret().also {
                 check(db().storeEpochKey(StoredGroupEpochKey(groupId, nextEpoch, it, suite = currentSuite)))
             }
+        val signedInvite = if (group.localDeviceId == group.ownerDeviceId) {
+            createSignedGroupInvite(groupId, deviceId)
+        } else null
+        val inviteJson = signedInvite?.let { GroupWireProtocol.inviteToJson(it) }
+
         val event = emitEvent(
             groupId,
             GroupEventKind.MEMBER_ADDED,
@@ -4768,11 +4902,17 @@ object GroupChatCoordinator {
                 put("status", "INVITED")
                 put("next_epoch", nextEpoch)
                 proposalEventId?.let { put("proposal_event_id", it) }
+                if (inviteJson != null) {
+                    put("invite_json", inviteJson.toString())
+                }
             },
             proposalEventId ?: deviceId,
         ) ?: return
         enqueueEpochKeyPackages(groupId, event.eventId, nextEpoch, newSecret)
         enqueuePendingMemberInvites(groupId, deviceId)
+        if (signedInvite != null && inviteJson != null) {
+            broadcastFrame(groupId, signedInvite.inviteId, inviteJson)
+        }
         flushDueOutbox()
         refreshGroup(groupId)
     }
@@ -4965,6 +5105,29 @@ object GroupChatCoordinator {
                     updated.displayName.isNotBlank()
                 ) {
                     memberUpdates += updated
+                    if (payload.has("invite_json")) {
+                        val inviteStr = payload.optString("invite_json")
+                        if (inviteStr.isNotBlank()) {
+                            runCatching {
+                                val rawInviteJson = JSONObject(inviteStr)
+                                val parsedInvite = GroupWireProtocol.parseInvite(rawInviteJson)
+                                if (parsedInvite.verifySignature()) {
+                                    val candidate = parsedInvite.members.firstOrNull { it.role != GroupRole.OWNER.name }
+                                    if (candidate != null) {
+                                        val context = applicationContext
+                                        if (context != null) {
+                                            val chatDb = ChatDatabaseHelper.getInstance(context)
+                                            val candidatePeer = chatDb.getPeerNameByFingerprint(candidate.fingerprint)
+                                                ?: candidate.peerName.takeIf { it.isNotBlank() && !it.startsWith("peer_") }
+                                            if (!candidatePeer.isNullOrBlank()) {
+                                                relayInviteToCandidate(context, candidatePeer, candidate.fingerprint, rawInviteJson)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 } else return
             }
             GroupEventKind.ROLE_CHANGED -> {
@@ -5385,18 +5548,101 @@ object GroupChatCoordinator {
             }
     }
 
+    fun createSignedGroupInvite(
+        groupId: String,
+        recipientDeviceId: String,
+    ): GroupInvite? {
+        val group = db().getGroup(groupId) ?: return null
+        if (group.localDeviceId != group.ownerDeviceId) return null
+        val owner = db().getMember(groupId, group.ownerDeviceId) ?: return null
+        val recipient = db().getMember(groupId, recipientDeviceId) ?: return null
+        val epochKey = db().getEpochKey(groupId, group.currentEpoch) ?: return null
+        val ownerLineage = currentOwnerLineage(group)
+        val now = System.currentTimeMillis()
+        val validityWindow = now / INVITE_LIFETIME_MS
+        val inviteId = pendingInviteId(group, recipient.deviceId, validityWindow)
+        val historyCursors = linkedMapOf(
+            owner.deviceId to (db().nextAuthorSequence(groupId, owner.deviceId) - 1L),
+            recipient.deviceId to (
+                db().nextAuthorSequence(groupId, recipient.deviceId) - 1L
+            ),
+        )
+        val groupAvatarB64 = applicationContext?.let { ctx ->
+            val avatarFile = File(ctx.filesDir, "group_avatars/${groupId}.jpg").takeIf { it.exists() }
+                ?: group.avatarUri?.let { File(it) }?.takeIf { it.exists() }
+            avatarFile?.let { file ->
+                runCatching {
+                    val bytes = file.readBytes()
+                    if (bytes.size <= GroupWireProtocol.MAX_GROUP_AVATAR_BYTES) {
+                        Base64.encodeToString(bytes, Base64.NO_WRAP)
+                    } else {
+                        null
+                    }
+                }.getOrNull()
+            }
+        }
+        val groupWallpaperB64 = applicationContext?.let { ctx ->
+            File(ctx.filesDir, "group_wallpapers/${groupId}.jpg")
+                .takeIf { it.exists() && it.length() <= GroupWireProtocol.MAX_GROUP_WALLPAPER_BYTES }
+                ?.let { file ->
+                    runCatching {
+                        Base64.encodeToString(file.readBytes(), Base64.NO_WRAP)
+                    }.getOrNull()
+                }
+        }
+        val unsigned = GroupInvite(
+            inviteId = inviteId,
+            groupId = groupId,
+            title = group.title,
+            description = group.description,
+            groupAvatarDataB64 = groupAvatarB64,
+            groupAvatarSigned = groupAvatarB64 != null,
+            groupWallpaperDataB64 = groupWallpaperB64,
+            groupWallpaperSigned = groupWallpaperB64 != null,
+            adminOnlyPosting = group.adminOnlyPosting,
+            torOnlyGroup = group.torOnlyGroup,
+            epoch = group.currentEpoch,
+            epochSecretBase64 = epochKey.keyMaterial.base64(),
+            ownerFingerprint = owner.transportFingerprint,
+            senderFingerprint = owner.transportFingerprint,
+            senderSigningKey = owner.signingKeyBase64,
+            coordinatorFingerprint = owner.transportFingerprint,
+            controlHead = group.controlHead,
+            historyCursors = historyCursors,
+            ownerTransitions = ownerLineage.certificates,
+            createdAtMs = now,
+            rosterSize = db().listMembers(groupId).count {
+                it.isParticipating() || it.deviceId == recipient.deviceId
+            },
+            members = listOf(owner, recipient).map { member ->
+                GroupInviteMember(
+                    fingerprint = member.transportFingerprint,
+                    peerName = member.displayName,
+                    deviceId = member.deviceId,
+                    signingKey = member.signingKeyBase64,
+                    role = member.role,
+                    status = member.status,
+                )
+            },
+            cryptoSuite = EpochAeadGroupCrypto.suiteId,
+            signatureBase64 = "",
+        )
+        return unsigned.copy(
+            signatureBase64 = GroupIdentitySignatures.sign(
+                unsigned.canonicalForSignature(),
+            ),
+        )
+    }
+
     private fun enqueuePendingMemberInvites(
         groupId: String,
         onlyRecipientDeviceId: String? = null,
     ) {
         val group = db().getGroup(groupId) ?: return
+        if (group.localDeviceId != group.ownerDeviceId) return
         val localMember = db().getMember(groupId, group.localDeviceId) ?: return
         if (!localMember.isParticipating()) return
-        val owner = db().getMember(groupId, group.ownerDeviceId) ?: return
-        val epochKey = db().getEpochKey(groupId, group.currentEpoch) ?: return
-        val ownerLineage = currentOwnerLineage(group)
         val now = System.currentTimeMillis()
-        val validityWindow = now / INVITE_LIFETIME_MS
         db().listMembers(groupId)
             .asSequence()
             .filter {
@@ -5410,89 +5656,21 @@ object GroupChatCoordinator {
                     (onlyRecipientDeviceId == null || it.deviceId == onlyRecipientDeviceId)
             }
             .forEach { recipient ->
-                val inviteId = pendingInviteId(group, recipient.deviceId, validityWindow)
-                val historyCursors = linkedMapOf(
-                    owner.deviceId to (db().nextAuthorSequence(groupId, owner.deviceId) - 1L),
-                    recipient.deviceId to (
-                        db().nextAuthorSequence(groupId, recipient.deviceId) - 1L
-                        ),
-                )
-                val groupAvatarB64 = applicationContext?.let { ctx ->
-                    val avatarFile = File(ctx.filesDir, "group_avatars/${groupId}.jpg").takeIf { it.exists() }
-                        ?: group.avatarUri?.let { File(it) }?.takeIf { it.exists() }
-                    avatarFile?.let { file ->
-                        runCatching {
-                            val bytes = file.readBytes()
-                            if (bytes.size <= GroupWireProtocol.MAX_GROUP_AVATAR_BYTES) {
-                                Base64.encodeToString(bytes, Base64.NO_WRAP)
-                            } else {
-                                null
-                            }
-                        }.getOrNull()
-                    }
-                }
-                val groupWallpaperB64 = applicationContext?.let { ctx ->
-                    File(ctx.filesDir, "group_wallpapers/${groupId}.jpg")
-                        .takeIf { it.exists() && it.length() <= GroupWireProtocol.MAX_GROUP_WALLPAPER_BYTES }
-                        ?.let { file ->
-                            runCatching {
-                                Base64.encodeToString(file.readBytes(), Base64.NO_WRAP)
-                            }.getOrNull()
-                        }
-                }
-                val unsigned = GroupInvite(
-                    inviteId = inviteId,
-                    groupId = groupId,
-                    title = group.title,
-                    description = group.description,
-                    groupAvatarDataB64 = groupAvatarB64,
-                    groupAvatarSigned = groupAvatarB64 != null,
-                    groupWallpaperDataB64 = groupWallpaperB64,
-                    groupWallpaperSigned = groupWallpaperB64 != null,
-                    adminOnlyPosting = group.adminOnlyPosting,
-                    epoch = group.currentEpoch,
-                    epochSecretBase64 = epochKey.keyMaterial.base64(),
-                    ownerFingerprint = owner.transportFingerprint,
-                    senderFingerprint = owner.transportFingerprint,
-                    senderSigningKey = owner.signingKeyBase64,
-                    coordinatorFingerprint = owner.transportFingerprint,
-                    controlHead = group.controlHead,
-                    historyCursors = historyCursors,
-                    ownerTransitions = ownerLineage.certificates,
-                    createdAtMs = now,
-                    rosterSize = db().listMembers(groupId).count {
-                        it.isParticipating() || it.deviceId == recipient.deviceId
-                    },
-                    members = listOf(owner, recipient).map { member ->
-                        GroupInviteMember(
-                            fingerprint = member.transportFingerprint,
-                            peerName = member.displayName,
-                            deviceId = member.deviceId,
-                            signingKey = member.signingKeyBase64,
-                            role = member.role,
-                            status = member.status,
-                        )
-                    },
-                    cryptoSuite = EpochAeadGroupCrypto.suiteId,
-                    signatureBase64 = "",
-                )
-                val signed = unsigned.copy(
-                    signatureBase64 = GroupIdentitySignatures.sign(
-                        unsigned.canonicalForSignature(),
-                    ),
-                )
+                val signed = createSignedGroupInvite(groupId, recipient.deviceId) ?: return@forEach
+                val inviteJson = GroupWireProtocol.inviteToJson(signed)
                 enqueueFrame(
                     groupId,
-                    inviteId,
+                    signed.inviteId,
                     recipient.deviceId,
-                    GroupWireProtocol.inviteToJson(signed),
+                    inviteJson,
                 )
+                broadcastFrame(groupId, signed.inviteId, inviteJson)
                 val targetPeerName = recipient.peerName.ifBlank { recipient.displayName }
                 if (targetPeerName.isNotBlank() && !targetPeerName.startsWith("peer_")) {
                     postInviteMessageToDirectChat(
                         senderPeerName = targetPeerName,
                         groupId = groupId,
-                        inviteId = inviteId,
+                        inviteId = signed.inviteId,
                         groupTitle = group.title,
                         inviterName = localMember.displayName,
                         createdAtMs = now,
@@ -8098,7 +8276,7 @@ object GroupChatCoordinator {
         return LocalIdentity(fingerprint, name.take(160), signingKey, stableDeviceId(fingerprint))
     }
 
-    private fun stableDeviceId(fingerprint: String): String =
+    internal fun stableDeviceId(fingerprint: String): String =
         sha256Hex("2pchat-group-device-v1\u0000$fingerprint")
 
     private fun outboxTaskId(groupId: String, eventId: String, recipient: String): String =
@@ -8354,6 +8532,9 @@ object GroupChatCoordinator {
             put("type", GroupWireProtocol.TYPE_OWNER_HEARTBEAT)
             put("group_id", groupId)
             put("heartbeat_json", hbJson)
+            if (cert != null && !isRevoked) {
+                put("certificate_json", cert)
+            }
         }
         broadcastFrame(groupId, "hb-" + UUID.randomUUID().toString(), frame)
         updateSuccessionState(groupId)
@@ -8506,9 +8687,17 @@ object GroupChatCoordinator {
         val hbObj = runCatching { JSONObject(hbJson) }.getOrNull() ?: return
         val chatDb = ChatDatabaseHelper.getInstance(context)
         val currentState = chatDb.getGroupSuccessionState(groupId)
+
+        val certJson = json.optString("certificate_json").takeIf { it.isNotBlank() }
+        var activeCert = currentState?.activeCertJson
+        if (certJson != null && bridge.verifySuccessionCertificate(certJson)) {
+            bridge.storeSuccessionCertificate(certJson)
+            activeCert = certJson
+        }
+
         chatDb.saveGroupSuccessionState(
             groupId = groupId,
-            activeCertJson = currentState?.activeCertJson,
+            activeCertJson = activeCert,
             lastHbJson = hbJson,
             lastHbHash = hbObj.optString("previous_event_hash"),
             isRevoked = currentState?.isRevoked ?: false,
@@ -8617,6 +8806,86 @@ object GroupChatCoordinator {
         }
         updateSuccessionState(groupId)
         scope.launch { refreshGroup(groupId) }
+    }
+
+    private val lastSuccessionQueryTime = ConcurrentHashMap<String, Long>()
+    private const val SUCCESSION_QUERY_COOLDOWN_MS = 60_000L
+
+    fun querySuccessionState(groupId: String) {
+        val storage = database ?: return
+        val group = storage.getGroup(groupId) ?: return
+        if (group.localDeviceId == group.ownerDeviceId) return
+
+        val lastTime = lastSuccessionQueryTime[groupId] ?: 0L
+        val now = System.currentTimeMillis()
+        if (now - lastTime < SUCCESSION_QUERY_COOLDOWN_MS) {
+            return
+        }
+        lastSuccessionQueryTime[groupId] = now
+
+        val owner = storage.getMember(groupId, group.ownerDeviceId) ?: return
+        val ownerPeerName = owner.peerName.ifBlank { owner.displayName }
+        if (ownerPeerName.isBlank()) return
+
+        val context = applicationContext ?: return
+        val ownerFP = owner.transportFingerprint.ifBlank { owner.accountId }
+        val session = com.example.twopchat.protocol.ProtocolVersionManager.refresh(ownerFP)
+        if (session != null && (session.peerIsLegacy || !session.supports(com.example.twopchat.protocol.Capability.GROUP_SUCCESSION_QUERY_V1))) {
+            return
+        }
+
+        val frame = JSONObject().apply {
+            put("version", GroupWireProtocol.VERSION)
+            put("type", GroupWireProtocol.TYPE_SUCCESSION_QUERY)
+            put("group_id", groupId)
+            put("requester_device_id", group.localDeviceId)
+            put("timestamp", now)
+        }
+        P2PMessageRelay.sendGroupFrame(context, ownerPeerName, frame)
+    }
+
+    private suspend fun receiveSuccessionQuery(senderPeerName: String, json: JSONObject) {
+        val groupId = json.optString("group_id").take(128)
+        if (groupId.isBlank()) return
+        val storage = database ?: return
+        val group = storage.getGroup(groupId) ?: return
+        if (group.localDeviceId != group.ownerDeviceId) return
+
+        val context = applicationContext ?: return
+        val senderFingerprint = P2PPreferences.getPeerFingerprint(context, senderPeerName) ?: transportFingerprint(senderPeerName)
+        val senderDeviceId = stableDeviceId(senderFingerprint)
+        val member = storage.getMember(groupId, senderDeviceId)
+        if (member == null || !member.isParticipating()) return
+
+        val bridge = P2PBridgeProvider.get(context)
+        val chatDb = ChatDatabaseHelper.getInstance(context)
+        val certJson = bridge.getSuccessionCertificate(groupId)
+            ?: chatDb.getGroupSuccessionState(groupId)?.activeCertJson
+            ?: return
+
+        val certHash = bridge.getCertificateHash(certJson)
+        val isRevoked = certHash?.let { bridge.isCertificateRevoked(it) || chatDb.isSuccessionCertificateRevoked(it) } ?: false
+        if (isRevoked) return
+
+        val certFrame = JSONObject().apply {
+            put("version", GroupWireProtocol.VERSION)
+            put("type", GroupWireProtocol.TYPE_SUCCESSION_CERT)
+            put("group_id", groupId)
+            put("certificate_json", certJson)
+        }
+        P2PMessageRelay.sendGroupFrame(context, senderPeerName, certFrame)
+
+        val lastHbJson = chatDb.getGroupSuccessionState(groupId)?.lastHbJson
+        if (!lastHbJson.isNullOrBlank()) {
+            val hbFrame = JSONObject().apply {
+                put("version", GroupWireProtocol.VERSION)
+                put("type", GroupWireProtocol.TYPE_OWNER_HEARTBEAT)
+                put("group_id", groupId)
+                put("heartbeat_json", lastHbJson)
+                put("certificate_json", certJson)
+            }
+            P2PMessageRelay.sendGroupFrame(context, senderPeerName, hbFrame)
+        }
     }
 
     private fun formatTime(timestampMs: Long): String =

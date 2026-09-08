@@ -100,16 +100,46 @@ class GroupSuccessionLogicTest {
         assertEquals("group_owner_heartbeat_v1", GroupWireProtocol.TYPE_OWNER_HEARTBEAT)
         assertEquals("group_succession_revocation_v1", GroupWireProtocol.TYPE_SUCCESSION_REVOCATION)
         assertEquals("group_succession_claim_v1", GroupWireProtocol.TYPE_SUCCESSION_CLAIM)
+        assertEquals("group_succession_query_v1", GroupWireProtocol.TYPE_SUCCESSION_QUERY)
 
         val certFrame = JSONObject().put("type", GroupWireProtocol.TYPE_SUCCESSION_CERT)
         val hbFrame = JSONObject().put("type", GroupWireProtocol.TYPE_OWNER_HEARTBEAT)
         val revFrame = JSONObject().put("type", GroupWireProtocol.TYPE_SUCCESSION_REVOCATION)
         val claimFrame = JSONObject().put("type", GroupWireProtocol.TYPE_SUCCESSION_CLAIM)
+        val queryFrame = JSONObject().put("type", GroupWireProtocol.TYPE_SUCCESSION_QUERY)
 
         assertTrue(GroupWireProtocol.isGroupFrame(certFrame))
         assertTrue(GroupWireProtocol.isGroupFrame(hbFrame))
         assertTrue(GroupWireProtocol.isGroupFrame(revFrame))
         assertTrue(GroupWireProtocol.isGroupFrame(claimFrame))
+        assertTrue(GroupWireProtocol.isGroupFrame(queryFrame))
+    }
+
+    @Test
+    fun testSuccessionQueryCooldownConstant() {
+        val cooldownMs = 60_000L
+        val now = 100_000_000L
+        val recentQuery = now - 30_000L
+        val oldQuery = now - 65_000L
+
+        assertTrue("Query within 60s must be throttled", now - recentQuery < cooldownMs)
+        assertFalse("Query after 60s must be allowed", now - oldQuery < cooldownMs)
+    }
+
+    @Test
+    fun testHeartbeatFrameWithCertificateJson() {
+        val hbFrame = JSONObject().apply {
+            put("version", GroupWireProtocol.VERSION)
+            put("type", GroupWireProtocol.TYPE_OWNER_HEARTBEAT)
+            put("group_id", "group_test_123")
+            put("heartbeat_json", "{\"timestamp\":12345}")
+            put("certificate_json", "{\"successor\":\"fp_doggy_456\",\"heartbeat_timeout_days\":7}")
+        }
+        assertEquals("group_owner_heartbeat_v1", hbFrame.getString("type"))
+        assertTrue(hbFrame.has("certificate_json"))
+        val certObj = JSONObject(hbFrame.getString("certificate_json"))
+        assertEquals("fp_doggy_456", certObj.getString("successor"))
+        assertEquals(7, certObj.getInt("heartbeat_timeout_days"))
     }
 
     @Test

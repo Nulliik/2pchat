@@ -14,7 +14,9 @@ object GroupWireProtocol {
     fun requiredCapabilities(json: JSONObject): Set<com.example.twopchat.protocol.Capability> {
         val caps = mutableSetOf(com.example.twopchat.protocol.Capability.GROUP_SUITE_V1)
         val type = json.optString("type")
-        if (type.startsWith("group_succession_") || type == TYPE_OWNER_HEARTBEAT) {
+        if (type == TYPE_SUCCESSION_QUERY) {
+            caps += com.example.twopchat.protocol.Capability.GROUP_SUCCESSION_QUERY_V1
+        } else if (type.startsWith("group_succession_") || type == TYPE_OWNER_HEARTBEAT) {
             caps += com.example.twopchat.protocol.Capability.GROUP_SUCCESSION_V1
         }
         if (json.optString("crypto_suite") == SUITE_V2 || json.optString("suite") == SUITE_V2) {
@@ -53,6 +55,7 @@ object GroupWireProtocol {
     const val TYPE_OWNER_HEARTBEAT = "group_owner_heartbeat_v1"
     const val TYPE_SUCCESSION_REVOCATION = "group_succession_revocation_v1"
     const val TYPE_SUCCESSION_CLAIM = "group_succession_claim_v1"
+    const val TYPE_SUCCESSION_QUERY = "group_succession_query_v1"
 
     const val MAX_WIRE_BYTES = 1536 * 1024
     const val MAX_EVENT_CIPHERTEXT_CHARS = 1024 * 1024
@@ -106,6 +109,7 @@ object GroupWireProtocol {
             TYPE_OWNER_HEARTBEAT,
             TYPE_SUCCESSION_REVOCATION,
             TYPE_SUCCESSION_CLAIM,
+            TYPE_SUCCESSION_QUERY,
         )
 
     fun parseEvent(json: JSONObject): GroupWireEvent {

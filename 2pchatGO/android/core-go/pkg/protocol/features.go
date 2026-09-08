@@ -14,6 +14,7 @@ var groupFrames = map[string]bool{
 	"group_join_request_v1": true, "group_typing_v1": true, "group_key_request_v1": true,
 	"group_succession_cert_v1": true, "group_owner_heartbeat_v1": true,
 	"group_succession_revocation_v1": true, "group_succession_claim_v1": true,
+	"group_succession_query_v1": true,
 }
 
 // CheckMessage guards wire extensions at the final send boundary, including

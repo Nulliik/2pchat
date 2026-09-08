@@ -13,6 +13,8 @@ enum class Capability(val id: String) {
     GROUP_SUITE_V2("group_suite_v2"),
     GROUP_TOMBSTONES_V1("group_tombstones_v1"),
     GROUP_SUCCESSION_V1("group_succession_v1"),
+    GROUP_SUCCESSION_QUERY_V1("group_succession_query_v1"),
+    GROUP_INVITE_RELAY_V1("group_invite_relay_v1"),
 }
 
 data class NegotiatedSession(

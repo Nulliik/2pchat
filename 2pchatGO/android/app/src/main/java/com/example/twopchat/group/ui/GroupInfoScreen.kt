@@ -162,6 +162,7 @@ fun GroupInfoScreen(
         GroupChatCoordinator.updateSuccessionState(state.metadata.groupId)
         val isOwner = state.members.firstOrNull { it.isCurrentUser }?.role == GroupRole.OWNER
         if (!isOwner) {
+            GroupChatCoordinator.querySuccessionState(state.metadata.groupId)
             runCatching { GroupChatCoordinator.runAntiEntropy() }
         }
     }

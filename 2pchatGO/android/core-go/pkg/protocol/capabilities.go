@@ -23,8 +23,13 @@ const GroupSuiteV1 = "group_suite_v1"
 const GroupSuiteV2 = "group_suite_v2"
 const GroupTombstones = "group_tombstones_v1"
 const GroupSuccession = "group_succession_v1"
+const GroupSuccessionQuery = "group_succession_query_v1"
+const GroupInviteRelay = "group_invite_relay_v1"
 
-var known = map[string]int{X3DH: 1, DoubleRatchet: 1, GroupSuiteV1: 1, GroupSuiteV2: 1, GroupTombstones: 1, GroupSuccession: 1}
+var known = map[string]int{
+	X3DH: 1, DoubleRatchet: 1, GroupSuiteV1: 1, GroupSuiteV2: 1, GroupTombstones: 1, GroupSuccession: 1,
+	GroupSuccessionQuery: 1, GroupInviteRelay: 1,
+}
 var capabilityName = regexp.MustCompile(`^[a-z][a-z0-9_]*_v[1-9][0-9]*$`)
 var ErrIncompatible = errors.New("incompatible application protocol")
 
@@ -43,7 +48,7 @@ func LocalCapabilities() Declaration {
 // Discovery and local retention policies are deliberately not session features.
 func AndroidCapabilities() Declaration {
 	d := LocalCapabilities()
-	d.Capabilities = append(d.Capabilities, GroupSuiteV1, GroupSuiteV2, GroupTombstones, GroupSuccession)
+	d.Capabilities = append(d.Capabilities, GroupSuiteV1, GroupSuiteV2, GroupTombstones, GroupSuccession, GroupSuccessionQuery, GroupInviteRelay)
 	return d
 }
 
