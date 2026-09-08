@@ -1302,6 +1302,7 @@ func Java_com_example_twopchat_NativeBridge_nativeCreateSuccessionCertificate(
 	jSuccessorFP C.jstring,
 	jSuccessorPub C.jstring,
 	jTimeoutDays C.jint,
+	jSequence C.jlong,
 ) C.jstring {
 	cGroupID := C.getJStringUTFChars(env, jGroupID)
 	if cGroupID == nil {
@@ -1328,7 +1329,12 @@ func Java_com_example_twopchat_NativeBridge_nativeCreateSuccessionCertificate(
 		return C.nullJString()
 	}
 
-	certJSON, err := bridge.GetManager().CreateSuccessionCertificate(groupID, successorFP, successorPub, uint32(jTimeoutDays))
+	seq := uint64(0)
+	if jSequence > 0 {
+		seq = uint64(jSequence)
+	}
+
+	certJSON, err := bridge.GetManager().CreateSuccessionCertificate(groupID, successorFP, successorPub, uint32(jTimeoutDays), seq)
 	if err != nil {
 		return C.nullJString()
 	}

@@ -82,6 +82,29 @@ func (n *GroupNodeModel) ApplyCertificate(cert *SuccessionCertificate) error {
 	return nil
 }
 
+// ApplyCertificateHardenedV1 models receipt and storage of a SuccessionCertificate with sequence conflict resolution.
+func (n *GroupNodeModel) ApplyCertificateHardenedV1(cert *SuccessionCertificate) error {
+	if cert == nil {
+		return fmt.Errorf("nil certificate")
+	}
+	if err := cert.Verify(); err != nil {
+		return fmt.Errorf("certificate verification failed: %w", err)
+	}
+	if cert.GroupID != n.GroupID {
+		return fmt.Errorf("group ID mismatch")
+	}
+	if n.ActiveCert != nil {
+		winner := ResolveSuccessionCertificateConflictV1(cert, n.ActiveCert)
+		if winner != cert && cert.CertificateHash() != n.ActiveCert.CertificateHash() {
+			return fmt.Errorf("stale or inferior certificate dropped")
+		}
+	}
+	n.ActiveCert = cert
+	n.IsRevoked = false
+	n.EventLog = append(n.EventLog, fmt.Sprintf("CERT_APPLIED_V1_1:%s:seq=%d:successor=%s", cert.CertificateHash()[:8], cert.Sequence, cert.Successor[:8]))
+	return nil
+}
+
 // ApplyHeartbeat models receipt of an OwnerHeartbeat.
 func (n *GroupNodeModel) ApplyHeartbeat(hb *OwnerHeartbeat) error {
 	if hb == nil {
@@ -1102,3 +1125,125 @@ func TestGroupSuccession_StateMachine_ConvergenceProperty(t *testing.T) {
 		t.Logf("State-Machine Finding: Split-brain divergence is 100%% reproducible whenever multi-certificate partition occurs")
 	}
 }
+
+// TestGroupSuccession_HardenedV1_CanonicalConvergence proves that with monotonic sequence numbers,
+// when an owner updates the designated successor (Bob seq 1 -> Charlie seq 2) during network partition,
+// partition healing deterministically converges both nodes to Charlie, completely resolving split-brain.
+func TestGroupSuccession_HardenedV1_CanonicalConvergence(t *testing.T) {
+	groupID := "test-group-hardened-v1-convergence"
+	baseTime := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC).UnixMilli()
+
+	// 1. Setup Honest Nodes
+	alice := newTestGroupNode(t, "Alice", groupID)
+	bob := newTestGroupNode(t, "Bob", groupID)
+	charlie := newTestGroupNode(t, "Charlie", groupID)
+
+	alice.CurrentOwner = alice.Fingerprint
+	bob.CurrentOwner = alice.Fingerprint
+	charlie.CurrentOwner = alice.Fingerprint
+
+	// 2. Alice emits heartbeat
+	hb1 := &OwnerHeartbeat{
+		Type:              "owner_heartbeat",
+		GroupID:           groupID,
+		Owner:             alice.Fingerprint,
+		OwnerSigningKey:   alice.PubKey,
+		Sequence:          1,
+		Timestamp:         baseTime,
+		PreviousEventHash: GenesisPreviousEventHash,
+	}
+	if err := hb1.Sign(alice.PrivKey); err != nil {
+		t.Fatalf("hb1.Sign failed: %v", err)
+	}
+
+	_ = bob.ApplyHeartbeat(hb1)
+	_ = charlie.ApplyHeartbeat(hb1)
+
+	// 3. Alice issues Certificate 1 designating Bob with Sequence = 1
+	cert1 := &SuccessionCertificate{
+		Type:                   "succession_certificate_v1",
+		GroupID:                groupID,
+		Sequence:               1,
+		CurrentOwner:           alice.Fingerprint,
+		CurrentOwnerSigningKey: alice.PubKey,
+		Successor:              bob.Fingerprint,
+		SuccessorSigningKey:    bob.PubKey,
+		HeartbeatTimeoutDays:   30,
+		IssuedAt:               baseTime,
+		ExpiresAt:              baseTime + int64(SuccessionCertValidityDuration/time.Millisecond),
+	}
+	if err := cert1.Sign(alice.PrivKey); err != nil {
+		t.Fatalf("cert1.Sign failed: %v", err)
+	}
+	_ = bob.ApplyCertificateHardenedV1(cert1)
+
+	// 4. Later Alice updates successor to Charlie with Sequence = 2
+	cert2 := &SuccessionCertificate{
+		Type:                   "succession_certificate_v1",
+		GroupID:                groupID,
+		Sequence:               2,
+		CurrentOwner:           alice.Fingerprint,
+		CurrentOwnerSigningKey: alice.PubKey,
+		Successor:              charlie.Fingerprint,
+		SuccessorSigningKey:    charlie.PubKey,
+		HeartbeatTimeoutDays:   30,
+		IssuedAt:               baseTime + 86400000,
+		ExpiresAt:              baseTime + 86400000 + int64(SuccessionCertValidityDuration/time.Millisecond),
+	}
+	if err := cert2.Sign(alice.PrivKey); err != nil {
+		t.Fatalf("cert2.Sign failed: %v", err)
+	}
+	_ = charlie.ApplyCertificateHardenedV1(cert2)
+
+	// 5. Partition: Alice disappears. Timeout elapses (31 days).
+	claimTime := baseTime + 31*24*60*60*1000
+
+	claimB, err := bob.CreateClaim(claimTime)
+	if err != nil {
+		t.Fatalf("bob.CreateClaim failed: %v", err)
+	}
+	_ = bob.ReceiveSuccessionClaim(claimB, claimTime)
+
+	claimC, err := charlie.CreateClaim(claimTime)
+	if err != nil {
+		t.Fatalf("charlie.CreateClaim failed: %v", err)
+	}
+	_ = charlie.ReceiveSuccessionClaim(claimC, claimTime)
+
+	// In partition: Bob thinks Bob is owner, Charlie thinks Charlie is owner
+	if bob.CurrentOwner != bob.Fingerprint || charlie.CurrentOwner != charlie.Fingerprint {
+		t.Fatalf("expected partition owners to be self")
+	}
+
+	// 6. Network heals: exchange certificates and claims
+	// Bob receives Cert 2 (seq = 2 > 1)
+	errBobCert2 := bob.ApplyCertificateHardenedV1(cert2)
+	if errBobCert2 != nil {
+		t.Fatalf("bob should accept higher sequence cert2: %v", errBobCert2)
+	}
+	// Bob now validates Charlie's claim against Cert 2!
+	errBobClaimC := bob.ReceiveSuccessionClaim(claimC, claimTime)
+	if errBobClaimC != nil {
+		t.Fatalf("bob should accept Charlie's claim under Cert 2: %v", errBobClaimC)
+	}
+
+	// Charlie receives Cert 1 (seq = 1 < 2)
+	errCharlieCert1 := charlie.ApplyCertificateHardenedV1(cert1)
+	if errCharlieCert1 == nil {
+		t.Fatalf("charlie should reject stale cert1 (seq 1 < seq 2)")
+	}
+
+	// 7. Verification of Convergence
+	if bob.CurrentOwner != charlie.Fingerprint {
+		t.Fatalf("Bob failed to converge to Charlie: got %s", bob.CurrentOwner)
+	}
+	if charlie.CurrentOwner != charlie.Fingerprint {
+		t.Fatalf("Charlie failed to remain owner: got %s", charlie.CurrentOwner)
+	}
+	if bob.CurrentOwner != charlie.CurrentOwner {
+		t.Fatalf("SPLIT-BRAIN PERSISTS: %s != %s", bob.CurrentOwner, charlie.CurrentOwner)
+	}
+
+	t.Logf("CONVERGENCE VERIFIED: Both nodes agreed on Charlie as owner (Sequence 2 > Sequence 1)")
+}
+

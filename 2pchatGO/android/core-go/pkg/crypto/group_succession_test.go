@@ -514,3 +514,164 @@ func TestVerifySuccessionClaim_ClaimantMismatch(t *testing.T) {
 		t.Fatalf("expected ErrSuccessionClaimantMismatch, got: %v", err)
 	}
 }
+
+func TestV1_LegacyBackwardCompatibility(t *testing.T) {
+	ownerPriv, ownerPub := genTestEd25519Key(t)
+	_, successorPub := genTestEd25519Key(t)
+	now := time.Now().UnixMilli()
+
+	// Legacy certificate with Sequence = 0 (or omitted)
+	legacyCert := &SuccessionCertificate{
+		Type:                   "succession_certificate_v1",
+		GroupID:                "group-legacy-compat",
+		CurrentOwner:           "owner-legacy",
+		CurrentOwnerSigningKey: ownerPub,
+		Successor:              "successor-legacy",
+		SuccessorSigningKey:    successorPub,
+		HeartbeatTimeoutDays:   30,
+		IssuedAt:               now,
+		ExpiresAt:              now + int64(SuccessionCertValidityDuration/time.Millisecond),
+	}
+	if err := legacyCert.Sign(ownerPriv); err != nil {
+		t.Fatalf("legacyCert.Sign failed: %v", err)
+	}
+	if err := legacyCert.Verify(); err != nil {
+		t.Fatalf("legacyCert.Verify failed: %v", err)
+	}
+	if legacyCert.Sequence != 0 {
+		t.Fatalf("expected legacy sequence to be 0, got: %d", legacyCert.Sequence)
+	}
+
+	jsonStr, err := legacyCert.ToJSON()
+	if err != nil {
+		t.Fatalf("legacyCert.ToJSON failed: %v", err)
+	}
+
+	// Deserialization must yield Sequence = 0 and valid verification
+	parsed, err := ParseSuccessionCertificate(jsonStr)
+	if err != nil {
+		t.Fatalf("ParseSuccessionCertificate failed: %v", err)
+	}
+	if parsed.Sequence != 0 {
+		t.Fatalf("expected parsed legacy sequence 0, got: %d", parsed.Sequence)
+	}
+	if err := parsed.Verify(); err != nil {
+		t.Fatalf("parsed.Verify failed: %v", err)
+	}
+}
+
+func TestV1_SequenceIncrementAndSuperseding(t *testing.T) {
+	ownerPriv, ownerPub := genTestEd25519Key(t)
+	_, bobPub := genTestEd25519Key(t)
+	_, charliePub := genTestEd25519Key(t)
+	now := time.Now().UnixMilli()
+
+	legacyCert := &SuccessionCertificate{
+		Type:                   "succession_certificate_v1",
+		GroupID:                "group-seq-supersede",
+		Sequence:               0, // legacy
+		CurrentOwner:           "owner-1",
+		CurrentOwnerSigningKey: ownerPub,
+		Successor:              "bob",
+		SuccessorSigningKey:    bobPub,
+		HeartbeatTimeoutDays:   30,
+		IssuedAt:               now,
+		ExpiresAt:              now + 100000,
+	}
+	_ = legacyCert.Sign(ownerPriv)
+
+	certSeq1 := &SuccessionCertificate{
+		Type:                   "succession_certificate_v1",
+		GroupID:                "group-seq-supersede",
+		Sequence:               1,
+		CurrentOwner:           "owner-1",
+		CurrentOwnerSigningKey: ownerPub,
+		Successor:              "bob",
+		SuccessorSigningKey:    bobPub,
+		HeartbeatTimeoutDays:   30,
+		IssuedAt:               now + 1000,
+		ExpiresAt:              now + 100000,
+	}
+	_ = certSeq1.Sign(ownerPriv)
+
+	certSeq2 := &SuccessionCertificate{
+		Type:                   "succession_certificate_v1",
+		GroupID:                "group-seq-supersede",
+		Sequence:               2,
+		CurrentOwner:           "owner-1",
+		CurrentOwnerSigningKey: ownerPub,
+		Successor:              "charlie",
+		SuccessorSigningKey:    charliePub,
+		HeartbeatTimeoutDays:   30,
+		IssuedAt:               now + 2000,
+		ExpiresAt:              now + 100000,
+	}
+	_ = certSeq2.Sign(ownerPriv)
+
+	// Seq 1 supersedes legacy Seq 0
+	if ResolveSuccessionCertificateConflictV1(legacyCert, certSeq1) != certSeq1 {
+		t.Fatalf("expected certSeq1 to supersede legacyCert")
+	}
+	if ResolveSuccessionCertificateConflictV1(certSeq1, legacyCert) != certSeq1 {
+		t.Fatalf("expected certSeq1 to supersede legacyCert (commutative)")
+	}
+
+	// Seq 2 supersedes Seq 1
+	if ResolveSuccessionCertificateConflictV1(certSeq1, certSeq2) != certSeq2 {
+		t.Fatalf("expected certSeq2 to supersede certSeq1")
+	}
+	if ResolveSuccessionCertificateConflictV1(certSeq2, certSeq1) != certSeq2 {
+		t.Fatalf("expected certSeq2 to supersede certSeq1 (commutative)")
+	}
+}
+
+func TestV1_TieBreakerDeterministic(t *testing.T) {
+	ownerPriv, ownerPub := genTestEd25519Key(t)
+	_, bobPub := genTestEd25519Key(t)
+	_, charliePub := genTestEd25519Key(t)
+	now := time.Now().UnixMilli()
+
+	certA := &SuccessionCertificate{
+		Type:                   "succession_certificate_v1",
+		GroupID:                "group-tie-breaker",
+		Sequence:               2,
+		CurrentOwner:           "owner-1",
+		CurrentOwnerSigningKey: ownerPub,
+		Successor:              "bob",
+		SuccessorSigningKey:    bobPub,
+		HeartbeatTimeoutDays:   30,
+		IssuedAt:               now + 5000, // Later timestamp
+		ExpiresAt:              now + 100000,
+	}
+	_ = certA.Sign(ownerPriv)
+
+	certB := &SuccessionCertificate{
+		Type:                   "succession_certificate_v1",
+		GroupID:                "group-tie-breaker",
+		Sequence:               2,
+		CurrentOwner:           "owner-1",
+		CurrentOwnerSigningKey: ownerPub,
+		Successor:              "charlie",
+		SuccessorSigningKey:    charliePub,
+		HeartbeatTimeoutDays:   30,
+		IssuedAt:               now, // Earlier timestamp
+		ExpiresAt:              now + 100000,
+	}
+	_ = certB.Sign(ownerPriv)
+
+	winner := ResolveSuccessionCertificateConflictV1(certA, certB)
+	winnerRev := ResolveSuccessionCertificateConflictV1(certB, certA)
+
+	if winner != winnerRev {
+		t.Fatalf("tie-breaker must be commutative: %v != %v", winner.Successor, winnerRev.Successor)
+	}
+
+	expectedWinner := certA
+	if certB.CertificateHash() < certA.CertificateHash() {
+		expectedWinner = certB
+	}
+	if winner != expectedWinner {
+		t.Fatalf("expected winner to be cert with min(hash), got: %v", winner.Successor)
+	}
+}
+

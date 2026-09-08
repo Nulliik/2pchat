@@ -909,10 +909,10 @@ object NativeBridge {
         }
     }
 
-    fun createSuccessionCertificate(groupId: String, successorFP: String, successorPub: String, timeoutDays: Int): String? {
+    fun createSuccessionCertificate(groupId: String, successorFP: String, successorPub: String, timeoutDays: Int, sequence: Long = 1L): String? {
         if (!isLoaded) return null
         return try {
-            nativeCreateSuccessionCertificate(groupId, successorFP, successorPub, timeoutDays)
+            nativeCreateSuccessionCertificate(groupId, successorFP, successorPub, timeoutDays, sequence)
         } catch (e: Throwable) {
             SafeLog.e(TAG, "nativeCreateSuccessionCertificate failed", e)
             null
@@ -1135,7 +1135,7 @@ object NativeBridge {
     private external fun nativeGetDiscoverySeqCounter(): Long
     private external fun nativeSetDiscoveryStrictSignatures(strict: Boolean)
     private external fun nativeGetDeterministicTorOnionKey(index: Int): String?
-    private external fun nativeCreateSuccessionCertificate(groupId: String, successorFP: String, successorPub: String, timeoutDays: Int): String?
+    private external fun nativeCreateSuccessionCertificate(groupId: String, successorFP: String, successorPub: String, timeoutDays: Int, sequence: Long): String?
     private external fun nativeVerifySuccessionCertificate(certJson: String): Boolean
     private external fun nativeStoreSuccessionCertificate(certJson: String): Boolean
     private external fun nativeGetSuccessionCertificate(groupId: String): String?

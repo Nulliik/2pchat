@@ -71,7 +71,7 @@ interface IP2PBridge {
     fun getDiscoverySeqCounter(): Long = 0L
     fun setDiscoveryStrictSignatures(strict: Boolean) {}
     fun getDeterministicTorOnionKey(index: Int): com.example.twopchat.NativeBridge.DeterministicTorOnionKey? = null
-    fun createSuccessionCertificate(groupId: String, successorFP: String, successorPub: String, timeoutDays: Int): String? = null
+    fun createSuccessionCertificate(groupId: String, successorFP: String, successorPub: String, timeoutDays: Int, sequence: Long = 1L): String? = null
     fun verifySuccessionCertificate(certJson: String): Boolean = false
     fun storeSuccessionCertificate(certJson: String): Boolean = false
     fun getSuccessionCertificate(groupId: String): String? = null

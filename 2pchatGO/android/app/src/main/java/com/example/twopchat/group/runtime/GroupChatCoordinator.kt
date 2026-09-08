@@ -8630,13 +8630,19 @@ object GroupChatCoordinator {
         val successorRealFP = successorMember.transportFingerprint.ifBlank { successorMember.deviceId }
 
         val context = applicationContext ?: return false
+        val chatDb = ChatDatabaseHelper.getInstance(context)
+        val currentSeq = chatDb.getGroupSuccessionState(groupId)?.activeCertJson?.let {
+            runCatching { JSONObject(it).optLong("sequence", 0L) }.getOrDefault(0L)
+        } ?: 0L
+        require(currentSeq < Long.MAX_VALUE - 1) { "Sequence overflow" }
+        val nextSeq = currentSeq + 1L
+
         P2PPreferences.setLastSuccessionTimeoutDays(context, groupId, timeoutDays)
         P2PPreferences.setLastSuccessorFingerprint(context, groupId, successorRealFP)
         val bridge = P2PBridgeProvider.get(context)
-        val certJson = bridge.createSuccessionCertificate(groupId, successorRealFP, successorPub, timeoutDays)
+        val certJson = bridge.createSuccessionCertificate(groupId, successorRealFP, successorPub, timeoutDays, nextSeq)
             ?: return false
 
-        val chatDb = ChatDatabaseHelper.getInstance(context)
         chatDb.saveGroupSuccessionState(
             groupId = groupId,
             activeCertJson = certJson,
@@ -8753,6 +8759,18 @@ object GroupChatCoordinator {
         if (!bridge.verifyOwnerHeartbeat(hbJson)) return
 
         val hbObj = runCatching { JSONObject(hbJson) }.getOrNull() ?: return
+        val hbOwner = hbObj.optString("owner")
+        val members = storage.listMembers(groupId)
+        val currentOwnerMember = members.firstOrNull { it.deviceId == group.ownerDeviceId && it.role == "OWNER" }
+        val ownerMatches = currentOwnerMember != null && (
+            currentOwnerMember.transportFingerprint.equals(hbOwner, ignoreCase = true) ||
+            currentOwnerMember.deviceId.equals(hbOwner, ignoreCase = true)
+        )
+        if (!ownerMatches) {
+            SafeLog.w(TAG, "Rejecting heartbeat from deposed owner $hbOwner (active owner is ${group.ownerDeviceId})")
+            return
+        }
+
         val chatDb = ChatDatabaseHelper.getInstance(context)
         val currentState = chatDb.getGroupSuccessionState(groupId)
 
@@ -8783,10 +8801,42 @@ object GroupChatCoordinator {
         val context = applicationContext ?: return
         val bridge = P2PBridgeProvider.get(context)
         if (!bridge.verifySuccessionCertificate(certJson)) return
-        bridge.storeSuccessionCertificate(certJson)
 
+        val certObj = runCatching { JSONObject(certJson) }.getOrNull() ?: return
+        val certOwnerFP = certObj.optString("current_owner")
+        val members = storage.listMembers(groupId)
+        val currentOwnerMember = members.firstOrNull { it.deviceId == group.ownerDeviceId && it.role == "OWNER" }
+        val ownerMatches = currentOwnerMember != null && (
+            currentOwnerMember.transportFingerprint.equals(certOwnerFP, ignoreCase = true) ||
+            currentOwnerMember.deviceId.equals(certOwnerFP, ignoreCase = true)
+        )
+        if (!ownerMatches) {
+            SafeLog.w(TAG, "Rejecting succession certificate: signer $certOwnerFP is not the active owner (${group.ownerDeviceId})")
+            return
+        }
+
+        val incomingSeq = certObj.optLong("sequence", 0L)
         val chatDb = ChatDatabaseHelper.getInstance(context)
         val currentState = chatDb.getGroupSuccessionState(groupId)
+        val activeCertJson = currentState?.activeCertJson
+        if (activeCertJson != null) {
+            val activeObj = runCatching { JSONObject(activeCertJson) }.getOrNull()
+            val activeSeq = activeObj?.optLong("sequence", 0L) ?: 0L
+            if (incomingSeq < activeSeq) {
+                SafeLog.w(TAG, "Rejecting stale certificate: incoming seq $incomingSeq < active seq $activeSeq")
+                return
+            } else if (incomingSeq == activeSeq) {
+                val incomingHash = bridge.getCertificateHash(certJson) ?: ""
+                val activeHash = bridge.getCertificateHash(activeCertJson) ?: ""
+                if (incomingHash >= activeHash && incomingHash != activeHash) {
+                    SafeLog.w(TAG, "Rejecting inferior certificate on tie-break: hash $incomingHash >= $activeHash")
+                    return
+                }
+            }
+        }
+
+        bridge.storeSuccessionCertificate(certJson)
+
         chatDb.saveGroupSuccessionState(
             groupId = groupId,
             activeCertJson = certJson,
@@ -8854,26 +8904,16 @@ object GroupChatCoordinator {
         val storage = database ?: return
         val group = storage.getGroup(groupId) ?: return
         val members = storage.listMembers(groupId)
-        val claimantMember = members.firstOrNull { it.transportFingerprint.equals(claimantFP, ignoreCase = true) }
-            ?: return
-        val oldOwnerMember = members.firstOrNull { it.deviceId == group.ownerDeviceId }
+        val claimantMember = members.firstOrNull { 
+            (it.transportFingerprint.isNotBlank() && it.transportFingerprint.equals(claimantFP, ignoreCase = true)) ||
+            it.deviceId.equals(claimantFP, ignoreCase = true)
+        } ?: return
 
-        storage.safeWritableDatabase.execSQL(
-            "UPDATE groups SET owner_device_id = ?, updated_at_ms = ? WHERE group_id = ?",
-            arrayOf<Any>(claimantMember.deviceId, System.currentTimeMillis(), groupId)
-        )
-        storage.safeWritableDatabase.execSQL(
-            "UPDATE group_members SET role = 'OWNER' WHERE group_id = ? AND device_id = ?",
-            arrayOf<Any>(groupId, claimantMember.deviceId)
-        )
-        if (oldOwnerMember != null && oldOwnerMember.deviceId != claimantMember.deviceId) {
-            storage.safeWritableDatabase.execSQL(
-                "UPDATE group_members SET role = 'MEMBER' WHERE group_id = ? AND device_id = ?",
-                arrayOf<Any>(groupId, oldOwnerMember.deviceId)
-            )
+        val applied = storage.applySuccessionTransition(groupId, claimantMember.deviceId)
+        if (applied) {
+            updateSuccessionState(groupId)
+            scope.launch { refreshGroup(groupId) }
         }
-        updateSuccessionState(groupId)
-        scope.launch { refreshGroup(groupId) }
     }
 
     private val lastSuccessionQueryTime = ConcurrentHashMap<String, Long>()

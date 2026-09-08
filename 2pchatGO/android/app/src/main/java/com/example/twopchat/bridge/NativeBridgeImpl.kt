@@ -1023,8 +1023,8 @@ class NativeBridgeImpl(
     override fun getDeterministicTorOnionKey(index: Int): NativeBridge.DeterministicTorOnionKey? =
         NativeBridge.getDeterministicTorOnionKey(index)
 
-    override fun createSuccessionCertificate(groupId: String, successorFP: String, successorPub: String, timeoutDays: Int): String? =
-        NativeBridge.createSuccessionCertificate(groupId, successorFP, successorPub, timeoutDays)
+    override fun createSuccessionCertificate(groupId: String, successorFP: String, successorPub: String, timeoutDays: Int, sequence: Long): String? =
+        NativeBridge.createSuccessionCertificate(groupId, successorFP, successorPub, timeoutDays, sequence)
 
     override fun verifySuccessionCertificate(certJson: String): Boolean =
         NativeBridge.verifySuccessionCertificate(certJson)

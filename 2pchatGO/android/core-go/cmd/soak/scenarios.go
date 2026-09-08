@@ -150,12 +150,13 @@ func (s *SuccessionScenario) Run(ctx context.Context, nodes []*Node, cfg Config)
 	successor := nodes[1]
 	groupID := "soak-succession-group-1"
 
-	// 1. Issue succession certificate
+	// 1. Issue succession certificate (sequence 1)
 	certJSON, err := owner.Manager.CreateSuccessionCertificate(
 		groupID,
 		successor.Fingerprint(),
 		successor.GetSigningPublicKey(),
 		30,
+		1,
 	)
 	if err != nil {
 		log.Printf("[succession] failed to create certificate: %v", err)

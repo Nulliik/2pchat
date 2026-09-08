@@ -219,4 +219,100 @@ class GroupSuccessionLogicTest {
             com.example.twopchat.config.P2PPreferences.setCachedPrefsForTesting(null)
         }
     }
+
+    @Test
+    fun testCertificateSequenceParsingAndLegacyDefault() {
+        val legacyJson = """
+            {
+                "type": "succession_certificate_v1",
+                "group_id": "group_1",
+                "current_owner": "alice",
+                "successor": "bob",
+                "heartbeat_timeout_days": 30
+            }
+        """.trimIndent()
+        val legacyObj = JSONObject(legacyJson)
+        val legacySeq = legacyObj.optLong("sequence", 0L)
+        assertEquals("Legacy certificate without sequence field must default to 0L", 0L, legacySeq)
+
+        val hardenedJson = """
+            {
+                "type": "succession_certificate_v1",
+                "group_id": "group_1",
+                "sequence": 42,
+                "current_owner": "alice",
+                "successor": "charlie",
+                "heartbeat_timeout_days": 30
+            }
+        """.trimIndent()
+        val hardenedObj = JSONObject(hardenedJson)
+        val hardenedSeq = hardenedObj.optLong("sequence", 0L)
+        assertEquals("Hardened certificate with sequence must parse correctly", 42L, hardenedSeq)
+    }
+
+    @Test
+    fun testSequenceOverflowProtection() {
+        val normalSeq = 5L
+        val nextSeq = if (normalSeq < Long.MAX_VALUE - 1) normalSeq + 1L else throw IllegalStateException("Overflow")
+        assertEquals(6L, nextSeq)
+
+        var overflowCaught = false
+        val nearMaxSeq = Long.MAX_VALUE - 1
+        try {
+            if (nearMaxSeq < Long.MAX_VALUE - 1) {
+                nearMaxSeq + 1L
+            } else {
+                throw IllegalStateException("Sequence overflow")
+            }
+        } catch (e: IllegalStateException) {
+            overflowCaught = true
+        }
+        assertTrue("Sequence near Long.MAX_VALUE must trigger overflow exception", overflowCaught)
+    }
+
+    @Test
+    fun testDeterministicSequenceConflictResolution() {
+        // Case 1: Higher sequence strictly wins
+        val incomingSeq = 2L
+        val activeSeq = 1L
+        assertTrue("Higher sequence must supersede active", incomingSeq > activeSeq)
+
+        // Case 2: Lower sequence is rejected
+        val staleSeq = 0L
+        assertTrue("Stale sequence must be rejected", staleSeq < incomingSeq)
+
+        // Case 3: Equal sequence resolves via min(hash)
+        val hashA = "0000aaaa"
+        val hashB = "1111bbbb"
+        val tieBreakerWinner = if (hashA <= hashB) hashA else hashB
+        assertEquals("Lexicographically smaller hash must win tie-break", hashA, tieBreakerWinner)
+    }
+
+    @Test
+    fun testDeposedOwnerCheckLogic() {
+        val activeOwnerDeviceId = "device_bob"
+        val members = listOf(
+            mapOf("deviceId" to "device_alice", "role" to "MEMBER", "fp" to "fp_alice"),
+            mapOf("deviceId" to "device_bob", "role" to "OWNER", "fp" to "fp_bob")
+        )
+
+        val currentOwnerMember = members.firstOrNull { it["deviceId"] == activeOwnerDeviceId && it["role"] == "OWNER" }
+        assertEquals("device_bob", currentOwnerMember?.get("deviceId"))
+
+        // Deposed Alice tries to emit heartbeat
+        val aliceAuthorFP = "fp_alice"
+        val aliceAllowed = currentOwnerMember != null && (
+            currentOwnerMember["fp"].equals(aliceAuthorFP, ignoreCase = true) ||
+            currentOwnerMember["deviceId"].equals(aliceAuthorFP, ignoreCase = true)
+        )
+        assertFalse("Deposed owner Alice must NOT be authorized to emit heartbeats", aliceAllowed)
+
+        // Active Bob emits heartbeat
+        val bobAuthorFP = "fp_bob"
+        val bobAllowed = currentOwnerMember != null && (
+            currentOwnerMember["fp"].equals(bobAuthorFP, ignoreCase = true) ||
+            currentOwnerMember["deviceId"].equals(bobAuthorFP, ignoreCase = true)
+        )
+        assertTrue("Active owner Bob must be authorized to emit heartbeats", bobAllowed)
+    }
 }

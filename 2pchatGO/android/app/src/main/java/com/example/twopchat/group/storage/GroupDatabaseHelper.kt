@@ -2464,6 +2464,93 @@ class GroupDatabaseHelper(
         }
     }
 
+    fun applySuccessionTransition(
+        groupId: String,
+        newOwnerDeviceId: String,
+        updatedAtMs: Long = System.currentTimeMillis(),
+    ): Boolean {
+        require(groupId.isNotBlank())
+        require(newOwnerDeviceId.isNotBlank())
+        val db = safeWritableDatabase
+        db.beginTransaction()
+        try {
+            // Verify group exists
+            val groupExists = db.query(
+                TABLE_GROUPS,
+                arrayOf("group_id"),
+                "group_id = ?",
+                arrayOf(groupId),
+                null, null, null, "1",
+            ).use { it.moveToFirst() }
+            if (!groupExists) {
+                SafeLog.w("GroupDatabaseHelper", "applySuccessionTransition failed: group $groupId not found")
+                return false
+            }
+
+            // Verify new owner is an active member
+            val isMember = db.query(
+                TABLE_MEMBERS,
+                arrayOf("device_id"),
+                "group_id = ? AND device_id = ? AND status IN (?, ?)",
+                arrayOf(groupId, newOwnerDeviceId, "ACTIVE", "RESTRICTED"),
+                null, null, null, "1",
+            ).use { it.moveToFirst() }
+            if (!isMember) {
+                SafeLog.w("GroupDatabaseHelper", "applySuccessionTransition failed: new owner $newOwnerDeviceId is not a member of $groupId")
+                return false
+            }
+
+            // 1. Update group owner
+            val groupValues = ContentValues().apply {
+                put("owner_device_id", newOwnerDeviceId)
+                put("updated_at_ms", updatedAtMs)
+            }
+            db.update(TABLE_GROUPS, groupValues, "group_id = ?", arrayOf(groupId))
+
+            // 2. Demote existing owner(s) to MEMBER
+            val demoteValues = ContentValues().apply {
+                put("role", "MEMBER")
+                put("updated_at_ms", updatedAtMs)
+            }
+            db.update(TABLE_MEMBERS, demoteValues, "group_id = ? AND role = ?", arrayOf(groupId, "OWNER"))
+
+            // 3. Promote new owner to OWNER
+            val promoteValues = ContentValues().apply {
+                put("role", "OWNER")
+                put("updated_at_ms", updatedAtMs)
+            }
+            db.update(TABLE_MEMBERS, promoteValues, "group_id = ? AND device_id = ?", arrayOf(groupId, newOwnerDeviceId))
+
+            // 4. Invariant assertion: Exactly 1 owner
+            val ownerCount = db.rawQuery(
+                "SELECT COUNT(*) FROM $TABLE_MEMBERS WHERE group_id = ? AND role = 'OWNER'",
+                arrayOf(groupId),
+            ).use { cursor ->
+                if (cursor.moveToFirst()) cursor.getInt(0) else 0
+            }
+
+            if (ownerCount != 1) {
+                val owners = db.rawQuery(
+                    "SELECT device_id FROM $TABLE_MEMBERS WHERE group_id = ? AND role = 'OWNER'",
+                    arrayOf(groupId),
+                ).use { cursor ->
+                    val list = mutableListOf<String>()
+                    while (cursor.moveToNext()) {
+                        list.add(cursor.getString(0))
+                    }
+                    list
+                }
+                SafeLog.e("GroupDatabaseHelper", "Single owner invariant violated: groupId=$groupId, ownerCount=$ownerCount, owners=$owners")
+                throw IllegalStateException("Single owner invariant violated: $ownerCount owners found ($owners)")
+            }
+
+            db.setTransactionSuccessful()
+            return true
+        } finally {
+            db.endTransaction()
+        }
+    }
+
     fun setPinnedEvent(
         groupId: String,
         eventId: String?,

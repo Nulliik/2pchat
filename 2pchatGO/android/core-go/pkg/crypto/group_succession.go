@@ -22,6 +22,7 @@ const (
 	GenesisPreviousEventHash = ""
 
 	DomainSuccessionCert       = "2pchat-group-succession-cert-v1\n"
+	DomainSuccessionCertV1_1   = "2pchat-group-succession-cert-v1.1\n"
 	DomainSuccessionCertV2     = "2pchat-group-succession-cert-v2\n"
 	DomainOwnerHeartbeat       = "2pchat-group-owner-heartbeat-v1\n"
 	DomainSuccessionRevocation = "2pchat-group-succession-revocation-v1\n"
@@ -77,10 +78,11 @@ var (
 )
 
 // SuccessionCertificate represents a cryptographically bound delegation from the current owner
-// to a designated successor with an agreed-upon heartbeat timeout.
+// to a designated successor with an agreed-upon heartbeat timeout and monotonic sequence.
 type SuccessionCertificate struct {
 	Type                   string `json:"type"` // "succession_certificate_v1"
 	GroupID                string `json:"group_id"`
+	Sequence               uint64 `json:"sequence,omitempty"`
 	CurrentOwner           string `json:"current_owner"`             // hex fingerprint
 	CurrentOwnerSigningKey string `json:"current_owner_signing_key"` // base64 Ed25519 public key
 	Successor              string `json:"successor"`                // hex fingerprint
@@ -92,10 +94,19 @@ type SuccessionCertificate struct {
 }
 
 // CanonicalForSignature produces a deterministic Netstring byte representation for signing.
+// Backward compatibility: If Sequence == 0, uses DomainSuccessionCert without sequence.
+// If Sequence > 0, uses DomainSuccessionCertV1_1 and includes Sequence.
 func (c *SuccessionCertificate) CanonicalForSignature() string {
 	var buf []byte
-	buf = append(buf, []byte(DomainSuccessionCert)...)
+	if c.Sequence == 0 {
+		buf = append(buf, []byte(DomainSuccessionCert)...)
+	} else {
+		buf = append(buf, []byte(DomainSuccessionCertV1_1)...)
+	}
 	appendCanonical(&buf, c.GroupID)
+	if c.Sequence > 0 {
+		buf = append(buf, []byte(strconv.FormatUint(c.Sequence, 10)+"\n")...)
+	}
 	appendCanonical(&buf, c.CurrentOwner)
 	appendCanonical(&buf, c.CurrentOwnerSigningKey)
 	appendCanonical(&buf, c.Successor)
@@ -109,9 +120,39 @@ func (c *SuccessionCertificate) CanonicalForSignature() string {
 // CertificateHash computes the unique SHA-256 digest of the signed certificate.
 func (c *SuccessionCertificate) CertificateHash() string {
 	canonical := c.CanonicalForSignature()
-	raw := "2pchat-group-succession-cert-hash-v1\x00" + canonical + "\x00" + c.Signature
+	var raw string
+	if c.Sequence == 0 {
+		raw = "2pchat-group-succession-cert-hash-v1\x00" + canonical + "\x00" + c.Signature
+	} else {
+		raw = "2pchat-group-succession-cert-hash-v1.1\x00" + canonical + "\x00" + c.Signature
+	}
 	h := sha256.Sum256([]byte(raw))
 	return hex.EncodeToString(h[:])
+}
+
+// ResolveSuccessionCertificateConflictV1 deterministically chooses the canonical winning certificate
+// between two valid V1/V1.1 succession certificates for the same group.
+// Hierarchy:
+// 1. Monotonic Sequence: higher Sequence strictly wins (Sequence > 0 supersedes Sequence == 0 legacy).
+// 2. Deterministic Tie-Breaker: min(certA.CertificateHash(), certB.CertificateHash()) in lexicographical order.
+// ZERO dependency on wall-clock IssuedAt timestamp.
+func ResolveSuccessionCertificateConflictV1(certA, certB *SuccessionCertificate) *SuccessionCertificate {
+	if certA == nil {
+		return certB
+	}
+	if certB == nil {
+		return certA
+	}
+	if certA.Sequence > certB.Sequence {
+		return certA
+	}
+	if certB.Sequence > certA.Sequence {
+		return certB
+	}
+	if certA.CertificateHash() <= certB.CertificateHash() {
+		return certA
+	}
+	return certB
 }
 
 // Sign signs the canonical certificate with the current owner's Ed25519 private key.

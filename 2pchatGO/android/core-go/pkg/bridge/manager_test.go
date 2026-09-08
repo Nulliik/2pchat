@@ -421,8 +421,8 @@ func TestManagerSuccessionFlow(t *testing.T) {
 		hookMu.Unlock()
 	})
 
-	// 2. Create Succession Certificate (30 days)
-	certJSON, err := ownerMgr.CreateSuccessionCertificate(groupID, successorFP, successorPub, 30)
+	// 2. Create Succession Certificate (30 days, sequence 1)
+	certJSON, err := ownerMgr.CreateSuccessionCertificate(groupID, successorFP, successorPub, 30, 1)
 	if err != nil {
 		t.Fatalf("CreateSuccessionCertificate failed: %v", err)
 	}

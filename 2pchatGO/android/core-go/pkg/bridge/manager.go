@@ -1565,16 +1565,17 @@ func (m *SessionManager) getNextHeartbeatSeq(groupID string) uint64 {
 	return newSeq
 }
 
-// StoreSuccessionCertificate stores an active certificate, resolving multiple certificates by IssuedAt.
+// StoreSuccessionCertificate stores an active certificate, resolving multiple certificates by monotonic sequence and deterministic min(hash) tie-breaking.
 func (m *SessionManager) StoreSuccessionCertificate(cert *crypto.SuccessionCertificate) {
 	if cert == nil || cert.GroupID == "" {
 		return
 	}
 	if existingVal, ok := m.activeCertificates.Load(cert.GroupID); ok {
 		if existing, ok := existingVal.(*crypto.SuccessionCertificate); ok && existing != nil {
-			if cert.IssuedAt >= existing.IssuedAt {
+			winner := crypto.ResolveSuccessionCertificateConflictV1(cert, existing)
+			if winner == cert && existing.CertificateHash() != cert.CertificateHash() {
 				m.revokedCertificates.Store(existing.CertificateHash(), true)
-			} else {
+			} else if winner == existing && existing.CertificateHash() != cert.CertificateHash() {
 				return
 			}
 		}
@@ -1626,8 +1627,8 @@ func (m *SessionManager) StoreHeartbeatHash(groupID string, hash string) {
 	}
 }
 
-// CreateSuccessionCertificate generates and signs a succession certificate using local owner identity.
-func (m *SessionManager) CreateSuccessionCertificate(groupID, successorFP, successorPub string, timeoutDays uint32) (string, error) {
+// CreateSuccessionCertificate generates and signs a succession certificate using local owner identity with given sequence.
+func (m *SessionManager) CreateSuccessionCertificate(groupID, successorFP, successorPub string, timeoutDays uint32, sequence uint64) (string, error) {
 	m.mu.RLock()
 	id := m.identity
 	m.mu.RUnlock()
@@ -1643,6 +1644,7 @@ func (m *SessionManager) CreateSuccessionCertificate(groupID, successorFP, succe
 	cert := &crypto.SuccessionCertificate{
 		Type:                   "succession_certificate_v1",
 		GroupID:                groupID,
+		Sequence:               sequence,
 		CurrentOwner:           ownerFP,
 		CurrentOwnerSigningKey: ownerPub,
 		Successor:              successorFP,
