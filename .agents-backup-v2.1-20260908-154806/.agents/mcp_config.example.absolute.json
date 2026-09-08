@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "2pchat-engineering": {
+      "command": "python3",
+      "args": [
+        "/ABSOLUTE/PATH/TO/2PChat/.agents/mcp/server.py"
+      ],
+      "cwd": "/ABSOLUTE/PATH/TO/2PChat",
+      "env": {
+        "TWO_P_CHAT_REPO": "/ABSOLUTE/PATH/TO/2PChat"
+      }
+    }
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "2pchat-engineering": {
+      "command": "python3",
+      "args": [
+        "${workspaceFolder}/.agents/mcp/server.py"
+      ],
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "TWO_P_CHAT_REPO": "${workspaceFolder}"
+      }
+    }
+  }
+}
