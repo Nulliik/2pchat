@@ -1,0 +1,693 @@
+package session
+
+import (
+	"fmt"
+	"net"
+	"strconv"
+	"sync"
+	"testing"
+	"time"
+	"twopchat/core/pkg/crypto"
+)
+
+func TestSessionOverTCP(t *testing.T) {
+	aliceId, _ := crypto.GenerateIdentityKeyPair()
+	bobId, _ := crypto.GenerateIdentityKeyPair()
+
+	bobPrekeyPriv, bobPrekeyPub, _ := crypto.GenerateX25519Keypair()
+	alicePrekeyPriv, alicePrekeyPub, _ := crypto.GenerateX25519Keypair()
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("Failed to start listener: %v", err)
+	}
+	defer listener.Close()
+
+	port := listener.Addr().(*net.TCPAddr).Port
+
+	var bobSession *Session
+	var bobErr error
+	var wg sync.WaitGroup
+	wg.Add(1)
+
+	go func() {
+		defer wg.Done()
+		conn, err := listener.Accept()
+		if err != nil {
+			bobErr = err
+			return
+		}
+		bobSession, bobErr = NewSession(
+			conn,
+			false, // responder
+			bobId,
+			bobPrekeyPriv,
+			bobPrekeyPub,
+			"",
+			5*time.Second,
+		)
+	}()
+
+	clientConn, err := net.Dial("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
+	if err != nil {
+		t.Fatalf("Failed to dial listener: %v", err)
+	}
+
+	aliceSession, err := NewSession(
+		clientConn,
+		true, // initiator
+		aliceId,
+		alicePrekeyPriv,
+		alicePrekeyPub,
+		crypto.Fingerprint(bobId.Public.Bytes()),
+		5*time.Second,
+	)
+	if err != nil {
+		t.Fatalf("Alice session creation failed: %v", err)
+	}
+	defer aliceSession.Close()
+
+	wg.Wait()
+	if bobErr != nil {
+		t.Fatalf("Bob session creation failed: %v", bobErr)
+	}
+	defer bobSession.Close()
+
+	// Step 1: Alice sends reliable chat to Bob
+	msgID, err := aliceSession.SendChat("Hello Bob from Go TCP Session!", "Alice")
+	if err != nil {
+		t.Fatalf("Alice SendChat failed: %v", err)
+	}
+	if msgID == "" {
+		t.Fatal("Expected non-empty msgID")
+	}
+
+	select {
+	case msg := <-bobSession.Messages():
+		if msg["type"] != string(TypeChat) {
+			t.Fatalf("Expected type chat, got: %v", msg["type"])
+		}
+		if msg["body"] != "Hello Bob from Go TCP Session!" {
+			t.Fatalf("Body mismatch: %v", msg["body"])
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("Timeout waiting for message on Bob")
+	}
+
+	// Step 2: Bob replies back to Alice
+	replyID, err := bobSession.SendChat("Hi Alice! Got your message over encrypted Go TCP.", "Bob")
+	if err != nil {
+		t.Fatalf("Bob SendChat failed: %v", err)
+	}
+	if replyID == "" {
+		t.Fatal("Expected non-empty replyID")
+	}
+
+	select {
+	case msg := <-aliceSession.Messages():
+		if msg["type"] != string(TypeChat) {
+			t.Fatalf("Expected type chat, got: %v", msg["type"])
+		}
+		if msg["body"] != "Hi Alice! Got your message over encrypted Go TCP." {
+			t.Fatalf("Body mismatch: %v", msg["body"])
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("Timeout waiting for message on Alice")
+	}
+}
+
+func TestManagerConnectionAndMessaging(t *testing.T) {
+	aliceId, _ := crypto.GenerateIdentityKeyPair()
+	bobId, _ := crypto.GenerateIdentityKeyPair()
+
+	alicePrekeyPriv, alicePrekeyPub, _ := crypto.GenerateX25519Keypair()
+	bobPrekeyPriv, bobPrekeyPub, _ := crypto.GenerateX25519Keypair()
+
+	var aliceReceivedMsg string
+	var bobReceivedMsg string
+	var bobConnectedEndpoint string
+
+	var mu sync.Mutex
+	aliceConnected := make(chan bool, 1)
+	bobConnected := make(chan bool, 1)
+	bobGotMsg := make(chan bool, 1)
+	aliceGotMsg := make(chan bool, 1)
+
+	aliceMgr := NewManager(
+		aliceId,
+		alicePrekeyPriv,
+		alicePrekeyPub,
+		"127.0.0.1:9050",
+		false,
+		EventCallbacks{
+			OnPeerConnected: func(peerFP, endpoint string) {
+				select {
+				case aliceConnected <- true:
+				default:
+				}
+			},
+			OnMessageReceived: func(peerFP string, payload []byte, messageID string) {
+				m, _ := DecodeMessage(payload)
+				if body, ok := m["body"].(string); ok && body != "" {
+					mu.Lock()
+					aliceReceivedMsg = body
+					mu.Unlock()
+					select {
+					case aliceGotMsg <- true:
+					default:
+					}
+				}
+			},
+		},
+	)
+	defer aliceMgr.Close()
+	aliceMgr.SetNickname("Alice")
+
+	bobMgr := NewManager(
+		bobId,
+		bobPrekeyPriv,
+		bobPrekeyPub,
+		"127.0.0.1:9050",
+		false,
+		EventCallbacks{
+			OnPeerConnected: func(peerFP, endpoint string) {
+				mu.Lock()
+				bobConnectedEndpoint = endpoint
+				mu.Unlock()
+				select {
+				case bobConnected <- true:
+				default:
+				}
+			},
+			OnMessageReceived: func(peerFP string, payload []byte, messageID string) {
+				m, _ := DecodeMessage(payload)
+				if body, ok := m["body"].(string); ok && body != "" {
+					mu.Lock()
+					bobReceivedMsg = body
+					mu.Unlock()
+					select {
+					case bobGotMsg <- true:
+					default:
+					}
+				}
+			},
+		},
+	)
+	defer bobMgr.Close()
+	bobMgr.SetNickname("Bob")
+
+	// Bob starts listening on random available port
+	if err := bobMgr.StartListener(0); err != nil {
+		t.Fatalf("Bob StartListener failed: %v", err)
+	}
+
+	bobPort := bobMgr.listener.Port()
+	bobEndpoint := fmt.Sprintf("127.0.0.1:%d", bobPort)
+	bobFP := crypto.Fingerprint(bobId.Public.Bytes())
+
+	// Alice connects to Bob
+	sess1, err := aliceMgr.ConnectPeer(bobEndpoint, bobFP)
+	if err != nil {
+		t.Fatalf("Alice ConnectPeer failed: %v", err)
+	}
+
+	// Verify ConnectPeer fast-paths and returns existing online session without redialing
+	sess2, err := aliceMgr.ConnectPeer(bobEndpoint, bobFP)
+	if err != nil {
+		t.Fatalf("Alice secondary ConnectPeer failed: %v", err)
+	}
+	if sess2 != sess1 {
+		t.Fatalf("Expected secondary ConnectPeer to return existing session %p, got %p", sess1, sess2)
+	}
+
+	select {
+	case <-aliceConnected:
+	case <-time.After(3 * time.Second):
+		t.Fatal("Timeout waiting for Alice connection event")
+	}
+
+	select {
+	case <-bobConnected:
+	case <-time.After(3 * time.Second):
+		t.Fatal("Timeout waiting for Bob connection event")
+	}
+
+	// Alice sends message to Bob
+	_, err = aliceMgr.SendMessage(bobFP, "Testing Manager P2P communication")
+	if err != nil {
+		t.Fatalf("Alice SendMessage failed: %v", err)
+	}
+
+	select {
+	case <-bobGotMsg:
+		mu.Lock()
+		if bobReceivedMsg != "Testing Manager P2P communication" {
+			t.Fatalf("Bob message content mismatch: %s", bobReceivedMsg)
+		}
+		mu.Unlock()
+	case <-time.After(3 * time.Second):
+		t.Fatal("Timeout waiting for Bob to receive message")
+	}
+
+	// Bob sends reply to Alice
+	aliceFP := crypto.Fingerprint(aliceId.Public.Bytes())
+	_, err = bobMgr.SendMessage(aliceFP, "Reply from Bob via Manager")
+	if err != nil {
+		t.Fatalf("Bob SendMessage failed: %v", err)
+	}
+
+	select {
+	case <-aliceGotMsg:
+		mu.Lock()
+		if aliceReceivedMsg != "Reply from Bob via Manager" {
+			t.Fatalf("Alice message content mismatch: %s", aliceReceivedMsg)
+		}
+		mu.Unlock()
+	case <-time.After(3 * time.Second):
+		t.Fatal("Timeout waiting for Alice to receive reply")
+	}
+
+	mu.Lock()
+	_ = bobConnectedEndpoint
+	mu.Unlock()
+}
+
+func TestSessionRapidBidirectionalExchange(t *testing.T) {
+	aliceId, _ := crypto.GenerateIdentityKeyPair()
+	bobId, _ := crypto.GenerateIdentityKeyPair()
+
+	bobPrekeyPriv, bobPrekeyPub, _ := crypto.GenerateX25519Keypair()
+	alicePrekeyPriv, alicePrekeyPub, _ := crypto.GenerateX25519Keypair()
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("Failed to start listener: %v", err)
+	}
+	defer listener.Close()
+
+	port := listener.Addr().(*net.TCPAddr).Port
+
+	var bobSession *Session
+	var wg sync.WaitGroup
+	wg.Add(1)
+
+	go func() {
+		defer wg.Done()
+		conn, err := listener.Accept()
+		if err == nil {
+			bobSession, _ = NewSession(
+				conn,
+				false,
+				bobId,
+				bobPrekeyPriv,
+				bobPrekeyPub,
+				"",
+				5*time.Second,
+			)
+		}
+	}()
+
+	clientConn, err := net.Dial("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
+	if err != nil {
+		t.Fatalf("Failed to dial listener: %v", err)
+	}
+
+	aliceSession, err := NewSession(
+		clientConn,
+		true,
+		aliceId,
+		alicePrekeyPriv,
+		alicePrekeyPub,
+		crypto.Fingerprint(bobId.Public.Bytes()),
+		5*time.Second,
+	)
+	if err != nil {
+		t.Fatalf("Alice session creation failed: %v", err)
+	}
+	defer aliceSession.Close()
+
+	wg.Wait()
+	if bobSession == nil {
+		t.Fatalf("Bob session is nil")
+	}
+	defer bobSession.Close()
+
+	// Exchange 30 messages in sequence
+	numMessages := 30
+	for i := 0; i < numMessages; i++ {
+		text := fmt.Sprintf("Ping #%d from Alice", i)
+		_, err := aliceSession.SendChat(text, "Alice")
+		if err != nil {
+			t.Fatalf("Alice SendChat %d failed: %v", i, err)
+		}
+
+		select {
+		case msg := <-bobSession.Messages():
+			if msg["body"] != text {
+				t.Fatalf("Bob received unexpected body: got %v, expected %s", msg["body"], text)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatalf("Bob timed out waiting for msg %d", i)
+		}
+
+		replyText := fmt.Sprintf("Pong #%d from Bob", i)
+		_, err = bobSession.SendChat(replyText, "Bob")
+		if err != nil {
+			t.Fatalf("Bob SendChat %d failed: %v", i, err)
+		}
+
+		select {
+		case msg := <-aliceSession.Messages():
+			if msg["body"] != replyText {
+				t.Fatalf("Alice received unexpected body: got %v, expected %s", msg["body"], replyText)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatalf("Alice timed out waiting for reply %d", i)
+		}
+	}
+}
+
+func TestAdaptiveAckTimeoutForTor(t *testing.T) {
+	if DefaultAckTimeout != 5*time.Second {
+		t.Fatalf("Expected DefaultAckTimeout 5s, got %v", DefaultAckTimeout)
+	}
+	if TorAckTimeout != 12*time.Second {
+		t.Fatalf("Expected TorAckTimeout 12s, got %v", TorAckTimeout)
+	}
+
+	s := &Session{
+		ackTimeout: DefaultAckTimeout,
+	}
+
+	if s.AckTimeout() != 5*time.Second {
+		t.Fatalf("Expected initial AckTimeout to be 5s, got %v", s.AckTimeout())
+	}
+
+	// Switch to Tor transport
+	s.SetTorTransport(true)
+	if s.AckTimeout() != TorAckTimeout {
+		t.Fatalf("Expected AckTimeout after SetTorTransport(true) to be 12s, got %v", s.AckTimeout())
+	}
+
+	// Switch back to Direct
+	s.SetTorTransport(false)
+	if s.AckTimeout() != DefaultAckTimeout {
+		t.Fatalf("Expected AckTimeout after SetTorTransport(false) to be 5s, got %v", s.AckTimeout())
+	}
+
+	// Custom timeout
+	s.SetAckTimeout(6 * time.Second)
+	if s.AckTimeout() != 6*time.Second {
+		t.Fatalf("Expected custom AckTimeout to be 6s, got %v", s.AckTimeout())
+	}
+}
+
+func TestManagerNicknameMappingAndCallbackDeadlockFreedom(t *testing.T) {
+	aliceId, _ := crypto.GenerateIdentityKeyPair()
+	bobId, _ := crypto.GenerateIdentityKeyPair()
+
+	alicePrekeyPriv, alicePrekeyPub, _ := crypto.GenerateX25519Keypair()
+	bobPrekeyPriv, bobPrekeyPub, _ := crypto.GenerateX25519Keypair()
+
+	aliceFP := crypto.Fingerprint(aliceId.Public.Bytes())
+	bobFP := crypto.Fingerprint(bobId.Public.Bytes())
+
+	var aliceMgr *Manager
+	var bobMgr *Manager
+
+	connectedCh := make(chan bool, 2)
+	messageReceivedCh := make(chan string, 2)
+
+	aliceMgr = NewManager(
+		aliceId,
+		alicePrekeyPriv,
+		alicePrekeyPub,
+		"",
+		false,
+		EventCallbacks{
+			OnPeerConnected: func(peerFP, endpoint string) {
+				// Verify deadlock safety: calling SendMessage or IsPeerOnline inside OnPeerConnected
+				// MUST NOT DEADLOCK because Manager mutex is released before calling OnPeerConnected.
+				if !aliceMgr.IsPeerOnline(peerFP) {
+					t.Errorf("Alice expected peer %s to be online during callback", peerFP)
+				}
+				// Also send a message directly from inside callback
+				_, err := aliceMgr.SendMessage("Bob", "Hello from Alice OnPeerConnected callback!")
+				if err != nil {
+					t.Errorf("Alice SendMessage from inside callback failed: %v", err)
+				}
+				connectedCh <- true
+			},
+			OnMessageReceived: func(peerFP string, payload []byte, messageID string) {
+				messageReceivedCh <- string(payload)
+			},
+		},
+	)
+	aliceMgr.SetNickname("Alice")
+
+	bobMgr = NewManager(
+		bobId,
+		bobPrekeyPriv,
+		bobPrekeyPub,
+		"",
+		false,
+		EventCallbacks{
+			OnPeerConnected: func(peerFP, endpoint string) {
+				if !bobMgr.IsPeerOnline(peerFP) {
+					t.Errorf("Bob expected peer %s to be online during callback", peerFP)
+				}
+				connectedCh <- true
+			},
+			OnMessageReceived: func(peerFP string, payload []byte, messageID string) {
+				messageReceivedCh <- string(payload)
+			},
+		},
+	)
+	bobMgr.SetNickname("Bob")
+
+	// Update nickname mappings on both sides
+	aliceMgr.UpdatePeerNameMapping(bobFP, "Bob")
+	bobMgr.UpdatePeerNameMapping(aliceFP, "Alice")
+
+	if err := bobMgr.StartListener(0); err != nil {
+		t.Fatalf("Bob failed to start listener: %v", err)
+	}
+	defer bobMgr.StopListener()
+
+	bobPort := bobMgr.Port()
+	bobEndpoint := fmt.Sprintf("127.0.0.1:%d", bobPort)
+
+	// Alice dials Bob
+	_, err := aliceMgr.ConnectPeer(bobEndpoint, bobFP)
+	if err != nil {
+		t.Fatalf("Alice ConnectPeer failed: %v", err)
+	}
+
+	// Wait for both connected callbacks
+	for i := 0; i < 2; i++ {
+		select {
+		case <-connectedCh:
+		case <-time.After(3 * time.Second):
+			t.Fatalf("Timed out waiting for OnPeerConnected callback %d", i)
+		}
+	}
+
+	// Verify Bob received the message Alice sent from inside her callback
+	select {
+	case payload := <-messageReceivedCh:
+		if payload == "" {
+			t.Fatalf("Expected non-empty message payload")
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatalf("Timed out waiting for message at Bob")
+	}
+
+	// Verify Bob can send a message back to Alice by nickname
+	msgID, err := bobMgr.SendMessage("Alice", "Hello Alice, reply from Bob!")
+	if err != nil {
+		t.Fatalf("Bob SendMessage by nickname failed: %v", err)
+	}
+	if msgID == "" {
+		t.Fatalf("Expected non-empty message ID")
+	}
+
+	select {
+	case payload := <-messageReceivedCh:
+		if payload == "" {
+			t.Fatalf("Expected non-empty reply payload at Alice")
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatalf("Timed out waiting for reply at Alice")
+	}
+}
+
+func TestPeerFingerprintMismatchRejection(t *testing.T) {
+	aliceId, _ := crypto.GenerateIdentityKeyPair()
+	bobId, _ := crypto.GenerateIdentityKeyPair()
+	eveId, _ := crypto.GenerateIdentityKeyPair()
+
+	alicePrekeyPriv, alicePrekeyPub, _ := crypto.GenerateX25519Keypair()
+	bobPrekeyPriv, bobPrekeyPub, _ := crypto.GenerateX25519Keypair()
+
+	aliceFP := aliceId.Fingerprint()
+	bobFP := bobId.Fingerprint()
+	eveFP := eveId.Fingerprint()
+
+	bobMgr := NewManager(
+		bobId,
+		bobPrekeyPriv,
+		bobPrekeyPub,
+		"",
+		false,
+		EventCallbacks{},
+	)
+	defer bobMgr.Close()
+
+	if err := bobMgr.StartListener(0); err != nil {
+		t.Fatalf("Bob failed to start listener: %v", err)
+	}
+	defer bobMgr.StopListener()
+
+	bobPort := bobMgr.Port()
+	bobEndpoint := fmt.Sprintf("127.0.0.1:%d", bobPort)
+
+	aliceMgr := NewManager(
+		aliceId,
+		alicePrekeyPriv,
+		alicePrekeyPub,
+		"",
+		false,
+		EventCallbacks{},
+	)
+	defer aliceMgr.Close()
+
+	// Alice dials Bob expecting Eve's fingerprint (simulating a mismatched contact or MITM)
+	_, err := aliceMgr.ConnectPeer(bobEndpoint, eveFP)
+	if err == nil {
+		t.Fatalf("Expected ConnectPeer to fail due to fingerprint mismatch, but it succeeded")
+	}
+
+	expectedSub := "peer fingerprint mismatch"
+	if !containsSubstring(err.Error(), expectedSub) {
+		t.Fatalf("Expected error to contain %q, got: %v", expectedSub, err)
+	}
+
+	// Verify no session was retained in Alice's manager
+	if sess := aliceMgr.GetSession(bobFP); sess != nil {
+		t.Fatalf("Alice should not have an active session for Bob after mismatch")
+	}
+
+	// Now Alice dials Bob with the correct expected fingerprint
+	sess, err := aliceMgr.ConnectPeer(bobEndpoint, bobFP)
+	if err != nil {
+		t.Fatalf("Alice ConnectPeer with valid fingerprint failed: %v", err)
+	}
+	if sess == nil {
+		t.Fatalf("Expected non-nil session for valid connection")
+	}
+	if sess.PeerFingerprint() != bobFP {
+		t.Fatalf("Expected peer fingerprint %s, got: %s", bobFP, sess.PeerFingerprint())
+	}
+	_ = aliceFP
+}
+
+func containsSubstring(s, sub string) bool {
+	return len(s) >= len(sub) && (s == sub || (len(s) > 0 && len(sub) > 0 && searchSub(s, sub)))
+}
+
+// TestManagerReconnectsAfterTransportLoss protects the user-visible failure
+// where a peer remains present in UI state but the Go registry no longer has
+// a live connection after a network/process interruption.
+func TestManagerReconnectsAfterTransportLoss(t *testing.T) {
+	newManager := func(t *testing.T) (*Manager, *crypto.IdentityKeyPair) {
+		t.Helper()
+		id, err := crypto.GenerateIdentityKeyPair()
+		if err != nil {
+			t.Fatal(err)
+		}
+		prekeyPriv, prekeyPub, err := crypto.GenerateX25519Keypair()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return NewManager(id, prekeyPriv, prekeyPub, "127.0.0.1:9050", false, EventCallbacks{}), id
+	}
+
+	alice, aliceID := newManager(t)
+	defer alice.Close()
+	bob, bobID := newManager(t)
+	defer bob.Close()
+
+	received := make(chan string, 1)
+	bob.SetCallbacks(EventCallbacks{
+		OnMessageReceived: func(_ string, payload []byte, _ string) {
+			msg, _ := DecodeMessage(payload)
+			if body, _ := msg["body"].(string); body != "" {
+				received <- body
+			}
+		},
+	})
+	if err := bob.StartListener(0); err != nil {
+		t.Fatalf("Bob StartListener failed: %v", err)
+	}
+
+	bobFP := crypto.Fingerprint(bobID.Public.Bytes())
+	aliceFP := crypto.Fingerprint(aliceID.Public.Bytes())
+	endpoint := fmt.Sprintf("127.0.0.1:%d", bob.Port())
+
+	first, err := alice.ConnectPeer(endpoint, bobFP)
+	if err != nil {
+		t.Fatalf("initial ConnectPeer failed: %v", err)
+	}
+	onlineDeadline := time.Now().Add(3 * time.Second)
+	for (!alice.IsPeerOnline(bobFP) || !bob.IsPeerOnline(aliceFP)) && time.Now().Before(onlineDeadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if !alice.IsPeerOnline(bobFP) || !bob.IsPeerOnline(aliceFP) {
+		t.Fatal("peers were not online after initial handshake")
+	}
+
+	// This models the underlying socket disappearing while the app continues
+	// to run. The manager must remove the dead session before a new dial.
+	if err := first.Close(); err != nil {
+		t.Fatalf("closing initial session: %v", err)
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for alice.IsPeerOnline(bobFP) && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if alice.IsPeerOnline(bobFP) {
+		t.Fatal("closed session remained online in the manager")
+	}
+
+	second, err := alice.ConnectPeer(endpoint, bobFP)
+	if err != nil {
+		t.Fatalf("reconnect failed: %v", err)
+	}
+	reconnectDeadline := time.Now().Add(3 * time.Second)
+	for (!alice.IsPeerOnline(bobFP) || !bob.IsPeerOnline(aliceFP)) && time.Now().Before(reconnectDeadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if second == first || !alice.IsPeerOnline(bobFP) {
+		t.Fatal("reconnect did not install a fresh online session")
+	}
+	if _, err := alice.SendMessage(bobFP, "delivered after reconnect"); err != nil {
+		t.Fatalf("send after reconnect failed: %v", err)
+	}
+	select {
+	case body := <-received:
+		if body != "delivered after reconnect" {
+			t.Fatalf("unexpected message after reconnect: %q", body)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("Bob did not receive a message after reconnect")
+	}
+}
+
+func searchSub(s, sub string) bool {
+	for i := 0; i <= len(s)-len(sub); i++ {
+		if s[i:i+len(sub)] == sub {
+			return true
+		}
+	}
+	return false
+}

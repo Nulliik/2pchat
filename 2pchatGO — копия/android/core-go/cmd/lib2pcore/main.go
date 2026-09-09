@@ -1,0 +1,1727 @@
+package main
+
+/*
+#include "jni_callbacks.h"
+*/
+import "C"
+import (
+	"context"
+	"encoding/base64"
+	"encoding/json"
+	"fmt"
+	"net"
+	"time"
+	"twopchat/core/pkg/bridge"
+	"twopchat/core/pkg/crypto"
+	"twopchat/core/pkg/session"
+	"twopchat/core/pkg/transport"
+	"unsafe"
+)
+
+func init() {
+	net.DefaultResolver = transport.FallbackResolver
+	bridge.GetManager().SetCallbacks(
+		session.EventCallbacks{
+			OnPeerConnected: func(peerFP, endpoint string) {
+				cFP := C.CString(peerFP)
+				cEndp := C.CString(endpoint)
+				defer C.free(unsafe.Pointer(cFP))
+				defer C.free(unsafe.Pointer(cEndp))
+				C.callbackOnPeerConnected(cFP, cEndp)
+			},
+			OnPeerDisconnected: func(peerFP, reason string) {
+				cFP := C.CString(peerFP)
+				cReason := C.CString(reason)
+				defer C.free(unsafe.Pointer(cFP))
+				defer C.free(unsafe.Pointer(cReason))
+				C.callbackOnPeerDisconnected(cFP, cReason)
+			},
+			OnMessageReceived: func(peerFP string, payload []byte, messageID string) {
+				cFP := C.CString(peerFP)
+				cMsgID := C.CString(messageID)
+				defer C.free(unsafe.Pointer(cFP))
+				defer C.free(unsafe.Pointer(cMsgID))
+
+				var pPtr *C.jbyte
+				if len(payload) > 0 {
+					pPtr = (*C.jbyte)(unsafe.Pointer(&payload[0]))
+				}
+				C.callbackOnMessageReceived(cFP, pPtr, C.jsize(len(payload)), cMsgID)
+			},
+			OnError: func(code int, msg string) {
+				cMsg := C.CString(msg)
+				defer C.free(unsafe.Pointer(cMsg))
+				C.callbackOnError(C.int(code), cMsg)
+			},
+			OnFileProgress: func(peerFP, messageID string, transferred, total int64, speed float64) {
+				cFP := C.CString(peerFP)
+				cMsgID := C.CString(messageID)
+				defer C.free(unsafe.Pointer(cFP))
+				defer C.free(unsafe.Pointer(cMsgID))
+				C.callbackOnFileProgress(cFP, cMsgID, C.jlong(transferred), C.jlong(total), C.jdouble(speed))
+			},
+		},
+		func(infoHashHex, endpoint, source string) {
+			cHash := C.CString(infoHashHex)
+			cEndp := C.CString(endpoint)
+			cSrc := C.CString(source)
+			defer C.free(unsafe.Pointer(cHash))
+			defer C.free(unsafe.Pointer(cEndp))
+			defer C.free(unsafe.Pointer(cSrc))
+			C.callbackOnPeerDiscovered(cHash, cEndp, cSrc)
+		},
+	)
+	bridge.GetManager().SetTrackerStatusCallback(func(trackerURL string, success bool, peerCount int, elapsed time.Duration, detail string) {
+		cURL := C.CString(trackerURL)
+		cDetail := C.CString(detail)
+		defer C.free(unsafe.Pointer(cURL))
+		defer C.free(unsafe.Pointer(cDetail))
+		var ok C.jboolean
+		if success {
+			ok = C.jboolean(C.JNI_TRUE)
+		} else {
+			ok = C.jboolean(C.JNI_FALSE)
+		}
+		C.callbackOnTrackerStatus(cURL, ok, C.jint(peerCount), C.jlong(elapsed.Milliseconds()), cDetail)
+	})
+	bridge.GetManager().SetDiscoverySeqPersistHook(func(seq uint64) {
+		C.callbackOnDiscoverySeqPersist(C.jlong(seq))
+	})
+	bridge.GetManager().SetHeartbeatPersistHook(func(groupID string, seq uint64) {
+		cGroupID := C.CString(groupID)
+		defer C.free(unsafe.Pointer(cGroupID))
+		C.callbackOnHeartbeatSeqPersist(cGroupID, C.jlong(seq))
+	})
+}
+
+func main() {}
+
+func readJByteArray(env *C.JNIEnv, arr C.jbyteArray) []byte {
+	length := int(C.getByteArrayLength(env, arr))
+	if length <= 0 {
+		return []byte{}
+	}
+	buf := make([]byte, length)
+	C.getByteArrayRegion(env, arr, 0, C.jsize(length), (*C.jbyte)(unsafe.Pointer(&buf[0])))
+	return buf
+}
+
+func createJByteArrayFromSlice(env *C.JNIEnv, data []byte) C.jbyteArray {
+	if data == nil {
+		return C.nullJByteArray()
+	}
+	if len(data) == 0 {
+		return C.createJByteArray(env, nil, 0)
+	}
+	return C.createJByteArray(env, (*C.jbyte)(unsafe.Pointer(&data[0])), C.jsize(len(data)))
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeSetStorageKey
+func Java_com_example_twopchat_NativeBridge_nativeSetStorageKey(env *C.JNIEnv, clazz C.jclass, jKey C.jbyteArray) C.jboolean {
+	keyBytes := readJByteArray(env, jKey)
+	if len(keyBytes) != 32 {
+		return C.JNI_FALSE
+	}
+	defer crypto.Zeroize(keyBytes)
+	bridge.GetManager().SetStorageKey(keyBytes)
+	return C.JNI_TRUE
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeSetStorageDir
+func Java_com_example_twopchat_NativeBridge_nativeSetStorageDir(env *C.JNIEnv, clazz C.jclass, jDir C.jstring) {
+	cStr := C.getJStringUTFChars(env, jDir)
+	if cStr == nil {
+		return
+	}
+	goStr := C.GoString(cStr)
+	C.releaseJStringUTFChars(env, jDir, cStr)
+	bridge.GetManager().SetStorageDir(goStr)
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeInit
+func Java_com_example_twopchat_NativeBridge_nativeInit(env *C.JNIEnv, clazz C.jclass) C.jboolean {
+	err := bridge.GetManager().Init()
+	if err != nil {
+		return C.JNI_FALSE
+	}
+	return C.JNI_TRUE
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeSetNickname
+func Java_com_example_twopchat_NativeBridge_nativeSetNickname(env *C.JNIEnv, clazz C.jclass, jNickname C.jstring) C.jboolean {
+	cNick := C.getJStringUTFChars(env, jNickname)
+	if cNick == nil {
+		return C.JNI_FALSE
+	}
+	nickname := C.GoString(cNick)
+	C.releaseJStringUTFChars(env, jNickname, cNick)
+	bridge.GetManager().SetNickname(nickname)
+	return C.JNI_TRUE
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeEcho
+func Java_com_example_twopchat_NativeBridge_nativeEcho(env *C.JNIEnv, clazz C.jclass, jMsg C.jstring) C.jstring {
+	cStr := C.getJStringUTFChars(env, jMsg)
+	if cStr == nil {
+		return C.nullJString()
+	}
+	goStr := C.GoString(cStr)
+	C.releaseJStringUTFChars(env, jMsg, cStr)
+
+	resp := "Echo from Go core: " + goStr
+	cResp := C.CString(resp)
+	defer C.free(unsafe.Pointer(cResp))
+	return C.createJString(env, cResp)
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeGetLocalIdentityJSON
+func Java_com_example_twopchat_NativeBridge_nativeGetLocalIdentityJSON(env *C.JNIEnv, clazz C.jclass) C.jstring {
+	jsonStr, err := bridge.GetManager().GetLocalIdentityJSON()
+	if err != nil {
+		return C.nullJString()
+	}
+	cResp := C.CString(jsonStr)
+	defer C.free(unsafe.Pointer(cResp))
+	return C.createJString(env, cResp)
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeGetLocalSeedMnemonic
+func Java_com_example_twopchat_NativeBridge_nativeGetLocalSeedMnemonic(env *C.JNIEnv, clazz C.jclass) C.jstring {
+	mnemonic, err := bridge.GetManager().GetLocalSeedMnemonic()
+	if err != nil {
+		return C.nullJString()
+	}
+	cResp := C.CString(mnemonic)
+	defer C.free(unsafe.Pointer(cResp))
+	return C.createJString(env, cResp)
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeRestoreFromMnemonic
+func Java_com_example_twopchat_NativeBridge_nativeRestoreFromMnemonic(
+	env *C.JNIEnv,
+	clazz C.jclass,
+	jNickname C.jstring,
+	jMnemonic C.jstring,
+	jAboutMe C.jstring,
+) C.jboolean {
+	var nickname, mnemonic, aboutMe string
+
+	cNick := C.getJStringUTFChars(env, jNickname)
+	if cNick != nil {
+		nickname = C.GoString(cNick)
+		C.releaseJStringUTFChars(env, jNickname, cNick)
+	}
+
+	cMnemonic := C.getJStringUTFChars(env, jMnemonic)
+	if cMnemonic != nil {
+		mnemonic = C.GoString(cMnemonic)
+		C.releaseJStringUTFChars(env, jMnemonic, cMnemonic)
+	}
+
+	cAbout := C.getJStringUTFChars(env, jAboutMe)
+	if cAbout != nil {
+		aboutMe = C.GoString(cAbout)
+		C.releaseJStringUTFChars(env, jAboutMe, cAbout)
+	}
+
+	err := bridge.GetManager().RestoreFromMnemonic(nickname, mnemonic, aboutMe)
+	if err != nil {
+		return C.JNI_FALSE
+	}
+	return C.JNI_TRUE
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeGetFingerprint
+func Java_com_example_twopchat_NativeBridge_nativeGetFingerprint(env *C.JNIEnv, clazz C.jclass, jPub C.jbyteArray) C.jstring {
+	length := int(C.getByteArrayLength(env, jPub))
+	if length != crypto.KeySize {
+		return C.nullJString()
+	}
+	buf := make([]byte, length)
+	C.getByteArrayRegion(env, jPub, 0, C.jsize(length), (*C.jbyte)(unsafe.Pointer(&buf[0])))
+
+	fp := crypto.Fingerprint(buf)
+	cFp := C.CString(fp)
+	defer C.free(unsafe.Pointer(cFp))
+	return C.createJString(env, cFp)
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeGetSafetyNumber
+func Java_com_example_twopchat_NativeBridge_nativeGetSafetyNumber(
+	env *C.JNIEnv,
+	clazz C.jclass,
+	jMyPub C.jbyteArray,
+	jTheirPub C.jbyteArray,
+	jMyVerify C.jbyteArray,
+	jTheirVerify C.jbyteArray,
+) C.jstring {
+	myPubLen := int(C.getByteArrayLength(env, jMyPub))
+	theirPubLen := int(C.getByteArrayLength(env, jTheirPub))
+	if myPubLen != crypto.KeySize || theirPubLen != crypto.KeySize {
+		return C.nullJString()
+	}
+
+	myPub := make([]byte, myPubLen)
+	theirPub := make([]byte, theirPubLen)
+	C.getByteArrayRegion(env, jMyPub, 0, C.jsize(myPubLen), (*C.jbyte)(unsafe.Pointer(&myPub[0])))
+	C.getByteArrayRegion(env, jTheirPub, 0, C.jsize(theirPubLen), (*C.jbyte)(unsafe.Pointer(&theirPub[0])))
+
+	var myVerify, theirVerify []byte
+	myVerifyLen := int(C.getByteArrayLength(env, jMyVerify))
+	theirVerifyLen := int(C.getByteArrayLength(env, jTheirVerify))
+	if myVerifyLen == crypto.KeySize && theirVerifyLen == crypto.KeySize {
+		myVerify = make([]byte, myVerifyLen)
+		theirVerify = make([]byte, theirVerifyLen)
+		C.getByteArrayRegion(env, jMyVerify, 0, C.jsize(myVerifyLen), (*C.jbyte)(unsafe.Pointer(&myVerify[0])))
+		C.getByteArrayRegion(env, jTheirVerify, 0, C.jsize(theirVerifyLen), (*C.jbyte)(unsafe.Pointer(&theirVerify[0])))
+	}
+
+	safetyNum, err := crypto.SafetyNumber(myPub, theirPub, myVerify, theirVerify)
+	if err != nil {
+		return C.nullJString()
+	}
+
+	cNum := C.CString(safetyNum)
+	defer C.free(unsafe.Pointer(cNum))
+	return C.createJString(env, cNum)
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeStartListener
+func Java_com_example_twopchat_NativeBridge_nativeStartListener(
+	env *C.JNIEnv,
+	clazz C.jclass,
+	jPort C.jint,
+) C.jboolean {
+	err := bridge.GetManager().StartListener(int(jPort))
+	if err != nil {
+		return C.JNI_FALSE
+	}
+	return C.JNI_TRUE
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeStopListener
+func Java_com_example_twopchat_NativeBridge_nativeStopListener(
+	env *C.JNIEnv,
+	clazz C.jclass,
+) C.jboolean {
+	err := bridge.GetManager().StopListener()
+	if err != nil {
+		return C.JNI_FALSE
+	}
+	return C.JNI_TRUE
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeApplyPolicy
+func Java_com_example_twopchat_NativeBridge_nativeApplyPolicy(
+	env *C.JNIEnv,
+	clazz C.jclass,
+	jPolicyFlags C.jint,
+) C.jboolean {
+	flags := int(jPolicyFlags)
+	if err := transport.ValidateFlags(flags); err != nil {
+		fmt.Printf("nativeApplyPolicy rejected invalid policy flags 0x%x: %v\n", flags, err)
+		return C.JNI_FALSE
+	}
+	policy := transport.PolicyFromFlags(flags)
+	bridge.GetManager().ApplyPolicy(policy)
+	return C.JNI_TRUE
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeSetPeerPolicy
+func Java_com_example_twopchat_NativeBridge_nativeSetPeerPolicy(
+	env *C.JNIEnv,
+	clazz C.jclass,
+	jPeerFP C.jstring,
+	jPolicyFlags C.jint,
+) C.jboolean {
+	cFP := C.getJStringUTFChars(env, jPeerFP)
+	if cFP == nil {
+		return C.JNI_FALSE
+	}
+	peerFP := C.GoString(cFP)
+	C.releaseJStringUTFChars(env, jPeerFP, cFP)
+
+	flags := int(jPolicyFlags)
+	if flags != 0 {
+		if err := transport.ValidateFlags(flags); err != nil {
+			fmt.Printf("nativeSetPeerPolicy rejected invalid flags 0x%x: %v\n", flags, err)
+			return C.JNI_FALSE
+		}
+	}
+	_ = bridge.GetManager().SetPeerPolicy(peerFP, flags)
+	return C.JNI_TRUE
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeConnectPeer
+func Java_com_example_twopchat_NativeBridge_nativeConnectPeer(
+	env *C.JNIEnv,
+	clazz C.jclass,
+	jEndpoint C.jstring,
+	jExpectedFP C.jstring,
+	jPolicyFlags C.jint,
+) C.jboolean {
+	cEndpoint := C.getJStringUTFChars(env, jEndpoint)
+	if cEndpoint == nil {
+		return C.JNI_FALSE
+	}
+	endpoint := C.GoString(cEndpoint)
+	C.releaseJStringUTFChars(env, jEndpoint, cEndpoint)
+
+	var expectedFP string
+	cFP := C.getJStringUTFChars(env, jExpectedFP)
+	if cFP != nil {
+		expectedFP = C.GoString(cFP)
+		C.releaseJStringUTFChars(env, jExpectedFP, cFP)
+	}
+
+	flags := int(jPolicyFlags)
+	if flags != 0 {
+		if err := transport.ValidateFlags(flags); err != nil {
+			fmt.Printf("nativeConnectPeer rejected invalid flags 0x%x: %v\n", flags, err)
+			return C.JNI_FALSE
+		}
+	}
+
+	var err error
+	if flags != 0 {
+		err = bridge.GetManager().ConnectPeerWithFlags(endpoint, expectedFP, flags)
+	} else {
+		err = bridge.GetManager().ConnectPeer(endpoint, expectedFP)
+	}
+	if err != nil {
+		fmt.Printf("P2P connect rejected for %s (expected fingerprint %q, flags %d): %v\n", endpoint, expectedFP, flags, err)
+		return C.JNI_FALSE
+	}
+	return C.JNI_TRUE
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeUpdatePeerNameMapping
+func Java_com_example_twopchat_NativeBridge_nativeUpdatePeerNameMapping(
+	env *C.JNIEnv,
+	clazz C.jclass,
+	jPeerFP C.jstring,
+	jNickname C.jstring,
+) C.jboolean {
+	cFP := C.getJStringUTFChars(env, jPeerFP)
+	if cFP == nil {
+		return C.JNI_FALSE
+	}
+	peerFP := C.GoString(cFP)
+	C.releaseJStringUTFChars(env, jPeerFP, cFP)
+
+	cNick := C.getJStringUTFChars(env, jNickname)
+	if cNick == nil {
+		return C.JNI_FALSE
+	}
+	nickname := C.GoString(cNick)
+	C.releaseJStringUTFChars(env, jNickname, cNick)
+
+	bridge.GetManager().UpdatePeerNameMapping(peerFP, nickname)
+	return C.JNI_TRUE
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeSendMessage
+func Java_com_example_twopchat_NativeBridge_nativeSendMessage(
+	env *C.JNIEnv,
+	clazz C.jclass,
+	jPeerFP C.jstring,
+	jText C.jstring,
+) C.jstring {
+	cFP := C.getJStringUTFChars(env, jPeerFP)
+	if cFP == nil {
+		return C.nullJString()
+	}
+	peerFP := C.GoString(cFP)
+	C.releaseJStringUTFChars(env, jPeerFP, cFP)
+
+	cText := C.getJStringUTFChars(env, jText)
+	if cText == nil {
+		return C.nullJString()
+	}
+	text := C.GoString(cText)
+	C.releaseJStringUTFChars(env, jText, cText)
+
+	msgID, err := bridge.GetManager().SendMessage(peerFP, text)
+	if err != nil {
+		return C.nullJString()
+	}
+
+	cID := C.CString(msgID)
+	defer C.free(unsafe.Pointer(cID))
+	return C.createJString(env, cID)
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeSendMessageBinary
+func Java_com_example_twopchat_NativeBridge_nativeSendMessageBinary(
+	env *C.JNIEnv,
+	clazz C.jclass,
+	jPeerFP C.jstring,
+	jBuf C.jobject,
+	jOffset C.jint,
+	jLength C.jint,
+) C.jstring {
+	cFP := C.getJStringUTFChars(env, jPeerFP)
+	if cFP == nil {
+		return C.nullJString()
+	}
+	peerFP := C.GoString(cFP)
+	C.releaseJStringUTFChars(env, jPeerFP, cFP)
+
+	addr := C.getDirectBufferAddress(env, jBuf)
+	if addr == nil || jLength <= 0 {
+		return C.nullJString()
+	}
+	payloadBytes := C.GoBytes(unsafe.Pointer(uintptr(addr)+uintptr(jOffset)), jLength)
+	msgID, err := bridge.GetManager().SendMessageBinary(peerFP, payloadBytes)
+	if err != nil {
+		return C.nullJString()
+	}
+
+	cID := C.CString(msgID)
+	defer C.free(unsafe.Pointer(cID))
+	return C.createJString(env, cID)
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeSendRawBytes
+func Java_com_example_twopchat_NativeBridge_nativeSendRawBytes(
+	env *C.JNIEnv,
+	clazz C.jclass,
+	jPeerFP C.jstring,
+	jPayload C.jbyteArray,
+) C.jstring {
+	cFP := C.getJStringUTFChars(env, jPeerFP)
+	if cFP == nil {
+		return C.nullJString()
+	}
+	peerFP := C.GoString(cFP)
+	C.releaseJStringUTFChars(env, jPeerFP, cFP)
+
+	payloadBytes := readJByteArray(env, jPayload)
+	msgID, err := bridge.GetManager().SendMessageBinary(peerFP, payloadBytes)
+	if err != nil {
+		return C.nullJString()
+	}
+
+	cID := C.CString(msgID)
+	defer C.free(unsafe.Pointer(cID))
+	return C.createJString(env, cID)
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeGetPeerProtocol
+func Java_com_example_twopchat_NativeBridge_nativeGetPeerProtocol(env *C.JNIEnv, clazz C.jclass, jPeerFP C.jstring) C.jstring {
+	if env == nil {
+		return C.nullJString()
+	}
+	cFP := C.getJStringUTFChars(env, jPeerFP)
+	if cFP == nil {
+		return C.nullJString()
+	}
+	peerFP := C.GoString(cFP)
+	C.releaseJStringUTFChars(env, jPeerFP, cFP)
+	mgr := bridge.GetManager()
+	if mgr == nil || peerFP == "" {
+		return C.nullJString()
+	}
+	result := C.CString(mgr.PeerProtocolJSON(peerFP))
+	defer C.free(unsafe.Pointer(result))
+	return C.createJString(env, result)
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeIsPeerOnline
+func Java_com_example_twopchat_NativeBridge_nativeIsPeerOnline(
+	env *C.JNIEnv,
+	clazz C.jclass,
+	jPeerFP C.jstring,
+) C.jboolean {
+	defer func() {
+		if r := recover(); r != nil {
+			// Catch any unexpected panic safely
+		}
+	}()
+
+	if env == nil {
+		return C.JNI_FALSE
+	}
+
+	mgr := bridge.GetManager()
+	if mgr == nil {
+		return C.JNI_FALSE
+	}
+
+	cFP := C.getJStringUTFChars(env, jPeerFP)
+	if cFP == nil {
+		return C.JNI_FALSE
+	}
+	peerFP := C.GoString(cFP)
+	C.releaseJStringUTFChars(env, jPeerFP, cFP)
+
+	if peerFP == "" {
+		return C.JNI_FALSE
+	}
+
+	if mgr.IsPeerOnline(peerFP) {
+		return C.JNI_TRUE
+	}
+	return C.JNI_FALSE
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeSendFile
+func Java_com_example_twopchat_NativeBridge_nativeSendFile(
+	env *C.JNIEnv,
+	clazz C.jclass,
+	jPeerFP C.jstring,
+	jFilePath C.jstring,
+	jMessageID C.jstring,
+	jFileName C.jstring,
+	jCaption C.jstring,
+	jEmoji C.jstring,
+	jAlbumID C.jstring,
+	jAlbumIndex C.jint,
+	jAlbumCount C.jint,
+) C.jstring {
+	cFP := C.getJStringUTFChars(env, jPeerFP)
+	if cFP == nil {
+		return C.nullJString()
+	}
+	peerFP := C.GoString(cFP)
+	C.releaseJStringUTFChars(env, jPeerFP, cFP)
+
+	cPath := C.getJStringUTFChars(env, jFilePath)
+	if cPath == nil {
+		return C.nullJString()
+	}
+	filePath := C.GoString(cPath)
+	C.releaseJStringUTFChars(env, jFilePath, cPath)
+
+	var messageID string
+	cMsgID := C.getJStringUTFChars(env, jMessageID)
+	if cMsgID != nil {
+		messageID = C.GoString(cMsgID)
+		C.releaseJStringUTFChars(env, jMessageID, cMsgID)
+	}
+
+	var fileName string
+	cName := C.getJStringUTFChars(env, jFileName)
+	if cName != nil {
+		fileName = C.GoString(cName)
+		C.releaseJStringUTFChars(env, jFileName, cName)
+	}
+
+	var caption string
+	cCaption := C.getJStringUTFChars(env, jCaption)
+	if cCaption != nil {
+		caption = C.GoString(cCaption)
+		C.releaseJStringUTFChars(env, jCaption, cCaption)
+	}
+
+	var emoji string
+	cEmoji := C.getJStringUTFChars(env, jEmoji)
+	if cEmoji != nil {
+		emoji = C.GoString(cEmoji)
+		C.releaseJStringUTFChars(env, jEmoji, cEmoji)
+	}
+
+	var albumID string
+	cAlbumID := C.getJStringUTFChars(env, jAlbumID)
+	if cAlbumID != nil {
+		albumID = C.GoString(cAlbumID)
+		C.releaseJStringUTFChars(env, jAlbumID, cAlbumID)
+	}
+	albumIndex := int(jAlbumIndex)
+	albumCount := int(jAlbumCount)
+
+	metaID, err := bridge.GetManager().SendFile(peerFP, filePath, messageID, fileName, caption, emoji, albumID, albumIndex, albumCount)
+	if err != nil {
+		return C.nullJString()
+	}
+
+	cID := C.CString(metaID)
+	defer C.free(unsafe.Pointer(cID))
+	return C.createJString(env, cID)
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeCancelFile
+func Java_com_example_twopchat_NativeBridge_nativeCancelFile(
+	env *C.JNIEnv,
+	clazz C.jclass,
+	jMessageID C.jstring,
+) C.jboolean {
+	cMsgID := C.getJStringUTFChars(env, jMessageID)
+	if cMsgID == nil {
+		return C.JNI_FALSE
+	}
+	messageID := C.GoString(cMsgID)
+	C.releaseJStringUTFChars(env, jMessageID, cMsgID)
+
+	if bridge.GetManager().CancelFile(messageID) {
+		return C.JNI_TRUE
+	}
+	return C.JNI_FALSE
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeSetTorProxy
+func Java_com_example_twopchat_NativeBridge_nativeSetTorProxy(
+	env *C.JNIEnv,
+	clazz C.jclass,
+	jEnabled C.jboolean,
+	jProxyAddr C.jstring,
+) {
+	enabled := jEnabled == C.JNI_TRUE
+	var proxyAddr string
+	cAddr := C.getJStringUTFChars(env, jProxyAddr)
+	if cAddr != nil {
+		proxyAddr = C.GoString(cAddr)
+		C.releaseJStringUTFChars(env, jProxyAddr, cAddr)
+	}
+	bridge.GetManager().SetTorProxy(enabled, proxyAddr)
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeSetYggdrasilConfig
+func Java_com_example_twopchat_NativeBridge_nativeSetYggdrasilConfig(
+	env *C.JNIEnv,
+	clazz C.jclass,
+	jMode C.jstring,
+	jProxyAddr C.jstring,
+) {
+	var mode, proxyAddr string
+	cMode := C.getJStringUTFChars(env, jMode)
+	if cMode != nil {
+		mode = C.GoString(cMode)
+		C.releaseJStringUTFChars(env, jMode, cMode)
+	}
+	cAddr := C.getJStringUTFChars(env, jProxyAddr)
+	if cAddr != nil {
+		proxyAddr = C.GoString(cAddr)
+		C.releaseJStringUTFChars(env, jProxyAddr, cAddr)
+	}
+	bridge.GetManager().SetYggdrasilConfig(mode, proxyAddr)
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeSetOnionAddress
+func Java_com_example_twopchat_NativeBridge_nativeSetOnionAddress(
+	env *C.JNIEnv,
+	clazz C.jclass,
+	jAddr C.jstring,
+) {
+	var onionAddr string
+	cAddr := C.getJStringUTFChars(env, jAddr)
+	if cAddr != nil {
+		onionAddr = C.GoString(cAddr)
+		C.releaseJStringUTFChars(env, jAddr, cAddr)
+	}
+	bridge.GetManager().SetOnionAddress(onionAddr)
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeGetOnionAddress
+func Java_com_example_twopchat_NativeBridge_nativeGetOnionAddress(
+	env *C.JNIEnv,
+	clazz C.jclass,
+) C.jstring {
+	addr := bridge.GetManager().GetOnionAddress()
+	if addr == "" {
+		return C.nullJString()
+	}
+	cAddr := C.CString(addr)
+	defer C.free(unsafe.Pointer(cAddr))
+	return C.createJString(env, cAddr)
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeStartDiscovery
+func Java_com_example_twopchat_NativeBridge_nativeStartDiscovery(
+	env *C.JNIEnv,
+	clazz C.jclass,
+	jTrackersJSON C.jstring,
+	jInfoHashesJSON C.jstring,
+	jPort C.jint,
+) C.jboolean {
+	var trackersJSON string
+	cTrackers := C.getJStringUTFChars(env, jTrackersJSON)
+	if cTrackers != nil {
+		trackersJSON = C.GoString(cTrackers)
+		C.releaseJStringUTFChars(env, jTrackersJSON, cTrackers)
+	}
+
+	var infoHashesJSON string
+	cHashes := C.getJStringUTFChars(env, jInfoHashesJSON)
+	if cHashes != nil {
+		infoHashesJSON = C.GoString(cHashes)
+		C.releaseJStringUTFChars(env, jInfoHashesJSON, cHashes)
+	}
+
+	err := bridge.GetManager().StartDiscovery(trackersJSON, infoHashesJSON, int(jPort))
+	if err != nil {
+		return C.JNI_FALSE
+	}
+	return C.JNI_TRUE
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeUpdateTrackers
+func Java_com_example_twopchat_NativeBridge_nativeUpdateTrackers(
+	env *C.JNIEnv,
+	clazz C.jclass,
+	jTrackersJSON C.jstring,
+) C.jboolean {
+	var trackersJSON string
+	cTrackers := C.getJStringUTFChars(env, jTrackersJSON)
+	if cTrackers != nil {
+		trackersJSON = C.GoString(cTrackers)
+		C.releaseJStringUTFChars(env, jTrackersJSON, cTrackers)
+	}
+
+	err := bridge.GetManager().UpdateTrackers(trackersJSON)
+	if err != nil {
+		return C.JNI_FALSE
+	}
+	return C.JNI_TRUE
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeReloadIdentity
+func Java_com_example_twopchat_NativeBridge_nativeReloadIdentity(
+	env *C.JNIEnv,
+	clazz C.jclass,
+) C.jboolean {
+	err := bridge.GetManager().ReloadIdentity()
+	if err != nil {
+		return C.JNI_FALSE
+	}
+	return C.JNI_TRUE
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeStopDiscovery
+func Java_com_example_twopchat_NativeBridge_nativeStopDiscovery(
+	env *C.JNIEnv,
+	clazz C.jclass,
+) C.jboolean {
+	err := bridge.GetManager().StopDiscovery()
+	if err != nil {
+		return C.JNI_FALSE
+	}
+	return C.JNI_TRUE
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeAnnounceSelf
+func Java_com_example_twopchat_NativeBridge_nativeAnnounceSelf(
+	env *C.JNIEnv,
+	clazz C.jclass,
+	jInfoHashHex C.jstring,
+	jPort C.jint,
+) C.jboolean {
+	cHash := C.getJStringUTFChars(env, jInfoHashHex)
+	if cHash == nil {
+		return C.JNI_FALSE
+	}
+	infoHashHex := C.GoString(cHash)
+	C.releaseJStringUTFChars(env, jInfoHashHex, cHash)
+
+	err := bridge.GetManager().AnnounceSelf(infoHashHex, int(jPort))
+	if err != nil {
+		return C.JNI_FALSE
+	}
+	return C.JNI_TRUE
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeProbePeer
+func Java_com_example_twopchat_NativeBridge_nativeProbePeer(
+	env *C.JNIEnv,
+	clazz C.jclass,
+	jEndpointsJSON C.jstring,
+	jExpectedFP C.jstring,
+	jPolicyFlags C.jint,
+) C.jboolean {
+	cEndpoints := C.getJStringUTFChars(env, jEndpointsJSON)
+	if cEndpoints == nil {
+		return C.JNI_FALSE
+	}
+	endpointsJSON := C.GoString(cEndpoints)
+	C.releaseJStringUTFChars(env, jEndpointsJSON, cEndpoints)
+
+	var expectedFP string
+	cFP := C.getJStringUTFChars(env, jExpectedFP)
+	if cFP != nil {
+		expectedFP = C.GoString(cFP)
+		C.releaseJStringUTFChars(env, jExpectedFP, cFP)
+	}
+
+	flags := int(jPolicyFlags)
+	if flags != 0 {
+		if err := transport.ValidateFlags(flags); err != nil {
+			fmt.Printf("nativeProbePeer rejected invalid flags 0x%x: %v\n", flags, err)
+			return C.JNI_FALSE
+		}
+	}
+	var err error
+	if flags != 0 {
+		err = bridge.GetManager().ProbePeerWithFlags(endpointsJSON, expectedFP, flags)
+	} else {
+		err = bridge.GetManager().ProbePeer(endpointsJSON, expectedFP)
+	}
+	if err != nil {
+		return C.JNI_FALSE
+	}
+	return C.JNI_TRUE
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeResetStaleEndpointCooldowns
+func Java_com_example_twopchat_NativeBridge_nativeResetStaleEndpointCooldowns(
+	env *C.JNIEnv,
+	clazz C.jclass,
+) C.jboolean {
+	bridge.GetManager().ResetCooldowns()
+	return C.JNI_TRUE
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeGetLocalSigningPublicKey
+func Java_com_example_twopchat_NativeBridge_nativeGetLocalSigningPublicKey(
+	env *C.JNIEnv,
+	clazz C.jclass,
+) C.jstring {
+	pub, err := bridge.GetManager().GetLocalSigningPublicKey()
+	if err != nil {
+		return C.nullJString()
+	}
+	cPub := C.CString(pub)
+	defer C.free(unsafe.Pointer(cPub))
+	return C.createJString(env, cPub)
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeSignGroupPayload
+func Java_com_example_twopchat_NativeBridge_nativeSignGroupPayload(
+	env *C.JNIEnv,
+	clazz C.jclass,
+	jCanonicalPayload C.jstring,
+) C.jstring {
+	cPayload := C.getJStringUTFChars(env, jCanonicalPayload)
+	if cPayload == nil {
+		return C.nullJString()
+	}
+	payload := C.GoString(cPayload)
+	C.releaseJStringUTFChars(env, jCanonicalPayload, cPayload)
+
+	sig, err := bridge.GetManager().SignGroupPayload(payload)
+	if err != nil {
+		return C.nullJString()
+	}
+
+	cSig := C.CString(sig)
+	defer C.free(unsafe.Pointer(cSig))
+	return C.createJString(env, cSig)
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeVerifyGroupPayload
+func Java_com_example_twopchat_NativeBridge_nativeVerifyGroupPayload(
+	env *C.JNIEnv,
+	clazz C.jclass,
+	jVerificationKey C.jstring,
+	jCanonicalPayload C.jstring,
+	jSignature C.jstring,
+) C.jboolean {
+	cKey := C.getJStringUTFChars(env, jVerificationKey)
+	if cKey == nil {
+		return C.JNI_FALSE
+	}
+	key := C.GoString(cKey)
+	C.releaseJStringUTFChars(env, jVerificationKey, cKey)
+
+	cPayload := C.getJStringUTFChars(env, jCanonicalPayload)
+	if cPayload == nil {
+		return C.JNI_FALSE
+	}
+	payload := C.GoString(cPayload)
+	C.releaseJStringUTFChars(env, jCanonicalPayload, cPayload)
+
+	cSig := C.getJStringUTFChars(env, jSignature)
+	if cSig == nil {
+		return C.JNI_FALSE
+	}
+	sig := C.GoString(cSig)
+	C.releaseJStringUTFChars(env, jSignature, cSig)
+
+	if bridge.GetManager().VerifyGroupPayload(key, payload, sig) {
+		return C.JNI_TRUE
+	}
+	return C.JNI_FALSE
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeGroupEncrypt
+func Java_com_example_twopchat_NativeBridge_nativeGroupEncrypt(
+	env *C.JNIEnv,
+	clazz C.jclass,
+	jEpochSecret C.jbyteArray,
+	jAuthenticatedData C.jbyteArray,
+	jPlaintext C.jbyteArray,
+) C.jstring {
+	epochSecret := readJByteArray(env, jEpochSecret)
+	authenticatedData := readJByteArray(env, jAuthenticatedData)
+	plaintext := readJByteArray(env, jPlaintext)
+
+	nonceB64, ciphertextB64, err := bridge.GetManager().GroupEncrypt(epochSecret, authenticatedData, plaintext)
+	if err != nil {
+		return C.nullJString()
+	}
+
+	res := fmt.Sprintf(`{"nonce":"%s","ciphertext":"%s"}`, nonceB64, ciphertextB64)
+	cRes := C.CString(res)
+	defer C.free(unsafe.Pointer(cRes))
+	return C.createJString(env, cRes)
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeGroupDecrypt
+func Java_com_example_twopchat_NativeBridge_nativeGroupDecrypt(
+	env *C.JNIEnv,
+	clazz C.jclass,
+	jEpochSecret C.jbyteArray,
+	jAuthenticatedData C.jbyteArray,
+	jNonceBase64 C.jstring,
+	jCiphertextBase64 C.jstring,
+) C.jbyteArray {
+	epochSecret := readJByteArray(env, jEpochSecret)
+	authenticatedData := readJByteArray(env, jAuthenticatedData)
+
+	cNonce := C.getJStringUTFChars(env, jNonceBase64)
+	if cNonce == nil {
+		return C.nullJByteArray()
+	}
+	nonceB64 := C.GoString(cNonce)
+	C.releaseJStringUTFChars(env, jNonceBase64, cNonce)
+
+	cCiphertext := C.getJStringUTFChars(env, jCiphertextBase64)
+	if cCiphertext == nil {
+		return C.nullJByteArray()
+	}
+	ciphertextB64 := C.GoString(cCiphertext)
+	C.releaseJStringUTFChars(env, jCiphertextBase64, cCiphertext)
+
+	plaintext, err := bridge.GetManager().GroupDecrypt(epochSecret, authenticatedData, nonceB64, ciphertextB64)
+	if err != nil {
+		return C.nullJByteArray()
+	}
+
+	return createJByteArrayFromSlice(env, plaintext)
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeTriggerNatTraversal
+func Java_com_example_twopchat_NativeBridge_nativeTriggerNatTraversal(env *C.JNIEnv, clazz C.jclass) C.jboolean {
+	ok := bridge.GetManager().TriggerNatTraversal()
+	if ok {
+		return C.JNI_TRUE
+	}
+	return C.JNI_FALSE
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeRefreshNatDiagnostics
+func Java_com_example_twopchat_NativeBridge_nativeRefreshNatDiagnostics(env *C.JNIEnv, clazz C.jclass) C.jboolean {
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	if bridge.GetManager().RefreshNATDiagnostics(ctx) {
+		return C.JNI_TRUE
+	}
+	return C.JNI_FALSE
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeSetDiagnosticsEnabled
+func Java_com_example_twopchat_NativeBridge_nativeSetDiagnosticsEnabled(env *C.JNIEnv, clazz C.jclass, enabled C.jboolean) C.jboolean {
+	bridge.GetManager().SetDiagnosticsEnabled(enabled != C.JNI_FALSE)
+	return C.JNI_TRUE
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeGetPublicDiagnosticsJSON
+func Java_com_example_twopchat_NativeBridge_nativeGetPublicDiagnosticsJSON(env *C.JNIEnv, clazz C.jclass) C.jstring {
+	encoded := bridge.GetManager().GetPublicDiagnosticsJSON()
+	cStr := C.CString(encoded)
+	defer C.free(unsafe.Pointer(cStr))
+	return C.createJString(env, cStr)
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeGetNatDiagnosticsJSON
+func Java_com_example_twopchat_NativeBridge_nativeGetNatDiagnosticsJSON(env *C.JNIEnv, clazz C.jclass) C.jstring {
+	jsonStr := bridge.GetManager().GetNatDiagnosticsJSON()
+	cStr := C.CString(jsonStr)
+	defer C.free(unsafe.Pointer(cStr))
+	return C.createJString(env, cStr)
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeOnNetworkChanged
+func Java_com_example_twopchat_NativeBridge_nativeOnNetworkChanged(
+	env *C.JNIEnv,
+	clazz C.jclass,
+) C.jboolean {
+	err := bridge.GetManager().OnNetworkChanged()
+	if err != nil {
+		return C.JNI_FALSE
+	}
+	return C.JNI_TRUE
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeEncryptBackupPayload
+func Java_com_example_twopchat_NativeBridge_nativeEncryptBackupPayload(
+	env *C.JNIEnv,
+	clazz C.jclass,
+	jPassword C.jstring,
+	jPayload C.jbyteArray,
+) C.jbyteArray {
+	cPass := C.getJStringUTFChars(env, jPassword)
+	if cPass == nil {
+		return C.nullJByteArray()
+	}
+	password := C.GoString(cPass)
+	C.releaseJStringUTFChars(env, jPassword, cPass)
+
+	payload := readJByteArray(env, jPayload)
+	if len(payload) == 0 {
+		return C.nullJByteArray()
+	}
+
+	encrypted, err := bridge.GetManager().EncryptBackupPayload(password, payload)
+	if err != nil {
+		return C.nullJByteArray()
+	}
+
+	return createJByteArrayFromSlice(env, encrypted)
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeDecryptBackupPayload
+func Java_com_example_twopchat_NativeBridge_nativeDecryptBackupPayload(
+	env *C.JNIEnv,
+	clazz C.jclass,
+	jPassword C.jstring,
+	jEncryptedData C.jbyteArray,
+) C.jbyteArray {
+	cPass := C.getJStringUTFChars(env, jPassword)
+	if cPass == nil {
+		return C.nullJByteArray()
+	}
+	password := C.GoString(cPass)
+	C.releaseJStringUTFChars(env, jPassword, cPass)
+
+	encryptedData := readJByteArray(env, jEncryptedData)
+	if len(encryptedData) == 0 {
+		return C.nullJByteArray()
+	}
+
+	plaintext, _, err := bridge.GetManager().DecryptBackupPayload(password, encryptedData)
+	if err != nil {
+		return C.nullJByteArray()
+	}
+
+	return createJByteArrayFromSlice(env, plaintext)
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeInspectBackupFingerprint
+func Java_com_example_twopchat_NativeBridge_nativeInspectBackupFingerprint(
+	env *C.JNIEnv,
+	clazz C.jclass,
+	jEncryptedData C.jbyteArray,
+) C.jstring {
+	encryptedData := readJByteArray(env, jEncryptedData)
+	if len(encryptedData) == 0 {
+		return C.nullJString()
+	}
+
+	fp, err := bridge.GetManager().InspectBackupFingerprint(encryptedData)
+	if err != nil {
+		return C.nullJString()
+	}
+
+	cFp := C.CString(fp)
+	defer C.free(unsafe.Pointer(cFp))
+	return C.createJString(env, cFp)
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeSignBackupManifest
+func Java_com_example_twopchat_NativeBridge_nativeSignBackupManifest(
+	env *C.JNIEnv,
+	clazz C.jclass,
+	jCanonicalManifest C.jbyteArray,
+) C.jstring {
+	manifestBytes := readJByteArray(env, jCanonicalManifest)
+	if len(manifestBytes) == 0 {
+		return C.nullJString()
+	}
+
+	sigB64, pubB64, err := bridge.GetManager().SignBackupManifest(manifestBytes)
+	if err != nil {
+		return C.nullJString()
+	}
+
+	res := fmt.Sprintf(`{"signature":"%s","verify_pub":"%s"}`, sigB64, pubB64)
+	cRes := C.CString(res)
+	defer C.free(unsafe.Pointer(cRes))
+	return C.createJString(env, cRes)
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeVerifyBackupManifest
+func Java_com_example_twopchat_NativeBridge_nativeVerifyBackupManifest(
+	env *C.JNIEnv,
+	clazz C.jclass,
+	jVerifyPubBase64 C.jstring,
+	jCanonicalManifest C.jbyteArray,
+	jSignatureBase64 C.jstring,
+) C.jboolean {
+	cPub := C.getJStringUTFChars(env, jVerifyPubBase64)
+	if cPub == nil {
+		return C.JNI_FALSE
+	}
+	pubB64 := C.GoString(cPub)
+	C.releaseJStringUTFChars(env, jVerifyPubBase64, cPub)
+
+	cSig := C.getJStringUTFChars(env, jSignatureBase64)
+	if cSig == nil {
+		return C.JNI_FALSE
+	}
+	sigB64 := C.GoString(cSig)
+	C.releaseJStringUTFChars(env, jSignatureBase64, cSig)
+
+	manifestBytes := readJByteArray(env, jCanonicalManifest)
+	if len(manifestBytes) == 0 {
+		return C.JNI_FALSE
+	}
+
+	if bridge.GetManager().VerifyBackupManifest(pubB64, manifestBytes, sigB64) {
+		return C.JNI_TRUE
+	}
+	return C.JNI_FALSE
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeExportDecryptedKeyFile
+func Java_com_example_twopchat_NativeBridge_nativeExportDecryptedKeyFile(
+	env *C.JNIEnv,
+	clazz C.jclass,
+	jName C.jstring,
+) C.jbyteArray {
+	cName := C.getJStringUTFChars(env, jName)
+	if cName == nil {
+		return C.nullJByteArray()
+	}
+	name := C.GoString(cName)
+	C.releaseJStringUTFChars(env, jName, cName)
+
+	data, err := bridge.GetManager().ExportDecryptedKeyFile(name)
+	if err != nil || len(data) == 0 {
+		return C.nullJByteArray()
+	}
+	defer crypto.Zeroize(data)
+	return createJByteArrayFromSlice(env, data)
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeCreateDiscoveryRecord
+func Java_com_example_twopchat_NativeBridge_nativeCreateDiscoveryRecord(
+	env *C.JNIEnv,
+	clazz C.jclass,
+	jEndpointsJSON C.jstring,
+	jTtlSec C.jlong,
+	jPolicy C.jint,
+) C.jstring {
+	var endpointsJSON string
+	cEndpoints := C.getJStringUTFChars(env, jEndpointsJSON)
+	if cEndpoints != nil {
+		endpointsJSON = C.GoString(cEndpoints)
+		C.releaseJStringUTFChars(env, jEndpointsJSON, cEndpoints)
+	}
+
+	recordJSON, err := bridge.GetManager().CreateSignedDiscoveryRecord(endpointsJSON, int64(jTtlSec), uint32(jPolicy))
+	if err != nil {
+		return C.nullJString()
+	}
+
+	cRecord := C.CString(recordJSON)
+	defer C.free(unsafe.Pointer(cRecord))
+	return C.createJString(env, cRecord)
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeVerifyDiscoveryRecord
+func Java_com_example_twopchat_NativeBridge_nativeVerifyDiscoveryRecord(
+	env *C.JNIEnv,
+	clazz C.jclass,
+	jRecordJSON C.jstring,
+	jExpectedFingerprint C.jstring,
+	jCheckSeqGap C.jboolean,
+) C.jstring {
+	cRecord := C.getJStringUTFChars(env, jRecordJSON)
+	if cRecord == nil {
+		return C.nullJString()
+	}
+	recordJSON := C.GoString(cRecord)
+	C.releaseJStringUTFChars(env, jRecordJSON, cRecord)
+
+	var expectedFP string
+	cFP := C.getJStringUTFChars(env, jExpectedFingerprint)
+	if cFP != nil {
+		expectedFP = C.GoString(cFP)
+		C.releaseJStringUTFChars(env, jExpectedFingerprint, cFP)
+	}
+
+	endpoints, seq, err := bridge.GetManager().VerifyDiscoveryRecord(recordJSON, expectedFP, jCheckSeqGap == C.JNI_TRUE)
+	if err != nil {
+		return C.nullJString()
+	}
+
+	type verifyResult struct {
+		Endpoints []string `json:"endpoints"`
+		Seq       uint64   `json:"seq"`
+	}
+	resBytes, err := json.Marshal(verifyResult{Endpoints: endpoints, Seq: seq})
+	if err != nil {
+		return C.nullJString()
+	}
+
+	cRes := C.CString(string(resBytes))
+	defer C.free(unsafe.Pointer(cRes))
+	return C.createJString(env, cRes)
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeSetDiscoverySeqCounter
+func Java_com_example_twopchat_NativeBridge_nativeSetDiscoverySeqCounter(
+	env *C.JNIEnv,
+	clazz C.jclass,
+	jSeq C.jlong,
+) {
+	if jSeq >= 0 {
+		bridge.GetManager().SetDiscoverySeqCounter(uint64(jSeq))
+	}
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeGetDiscoverySeqCounter
+func Java_com_example_twopchat_NativeBridge_nativeGetDiscoverySeqCounter(
+	env *C.JNIEnv,
+	clazz C.jclass,
+) C.jlong {
+	return C.jlong(bridge.GetManager().GetNextDiscoverySeq())
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeSetDiscoveryStrictSignatures
+func Java_com_example_twopchat_NativeBridge_nativeSetDiscoveryStrictSignatures(
+	env *C.JNIEnv,
+	clazz C.jclass,
+	jStrict C.jboolean,
+) {
+	bridge.GetManager().SetDiscoveryStrictSignatures(jStrict == C.JNI_TRUE)
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeGetDeterministicTorOnionKey
+func Java_com_example_twopchat_NativeBridge_nativeGetDeterministicTorOnionKey(
+	env *C.JNIEnv,
+	clazz C.jclass,
+	jIndex C.jint,
+) C.jstring {
+	if jIndex < 0 {
+		return C.nullJString()
+	}
+	hostname, secretKeyBytes, err := bridge.GetManager().GetDeterministicTorOnionKey(uint32(jIndex))
+	if err != nil {
+		return C.nullJString()
+	}
+	defer crypto.Zeroize(secretKeyBytes)
+
+	type torKeyResult struct {
+		Hostname        string `json:"hostname"`
+		SecretKeyBase64 string `json:"secret_key_base64"`
+	}
+	resBytes, err := json.Marshal(torKeyResult{
+		Hostname:        hostname,
+		SecretKeyBase64: base64.StdEncoding.EncodeToString(secretKeyBytes),
+	})
+	if err != nil {
+		return C.nullJString()
+	}
+
+	cRes := C.CString(string(resBytes))
+	defer C.free(unsafe.Pointer(cRes))
+	return C.createJString(env, cRes)
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeCreateSuccessionCertificate
+func Java_com_example_twopchat_NativeBridge_nativeCreateSuccessionCertificate(
+	env *C.JNIEnv,
+	clazz C.jclass,
+	jGroupID C.jstring,
+	jSuccessorFP C.jstring,
+	jSuccessorPub C.jstring,
+	jTimeoutDays C.jint,
+	jSequence C.jlong,
+) C.jstring {
+	cGroupID := C.getJStringUTFChars(env, jGroupID)
+	if cGroupID == nil {
+		return C.nullJString()
+	}
+	groupID := C.GoString(cGroupID)
+	C.releaseJStringUTFChars(env, jGroupID, cGroupID)
+
+	cSuccessorFP := C.getJStringUTFChars(env, jSuccessorFP)
+	if cSuccessorFP == nil {
+		return C.nullJString()
+	}
+	successorFP := C.GoString(cSuccessorFP)
+	C.releaseJStringUTFChars(env, jSuccessorFP, cSuccessorFP)
+
+	cSuccessorPub := C.getJStringUTFChars(env, jSuccessorPub)
+	if cSuccessorPub == nil {
+		return C.nullJString()
+	}
+	successorPub := C.GoString(cSuccessorPub)
+	C.releaseJStringUTFChars(env, jSuccessorPub, cSuccessorPub)
+
+	if jTimeoutDays < 7 || jTimeoutDays > 180 {
+		return C.nullJString()
+	}
+
+	seq := uint64(0)
+	if jSequence > 0 {
+		seq = uint64(jSequence)
+	}
+
+	certJSON, err := bridge.GetManager().CreateSuccessionCertificate(groupID, successorFP, successorPub, uint32(jTimeoutDays), seq)
+	if err != nil {
+		return C.nullJString()
+	}
+
+	cCert := C.CString(certJSON)
+	defer C.free(unsafe.Pointer(cCert))
+	return C.createJString(env, cCert)
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeVerifySuccessionCertificate
+func Java_com_example_twopchat_NativeBridge_nativeVerifySuccessionCertificate(
+	env *C.JNIEnv,
+	clazz C.jclass,
+	jCertJSON C.jstring,
+) C.jboolean {
+	cCert := C.getJStringUTFChars(env, jCertJSON)
+	if cCert == nil {
+		return C.JNI_FALSE
+	}
+	certJSON := C.GoString(cCert)
+	C.releaseJStringUTFChars(env, jCertJSON, cCert)
+
+	if err := bridge.GetManager().VerifySuccessionCertificate(certJSON); err != nil {
+		return C.JNI_FALSE
+	}
+	return C.JNI_TRUE
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeCreateOwnerHeartbeat
+func Java_com_example_twopchat_NativeBridge_nativeCreateOwnerHeartbeat(
+	env *C.JNIEnv,
+	clazz C.jclass,
+	jGroupID C.jstring,
+) C.jstring {
+	cGroupID := C.getJStringUTFChars(env, jGroupID)
+	if cGroupID == nil {
+		return C.nullJString()
+	}
+	groupID := C.GoString(cGroupID)
+	C.releaseJStringUTFChars(env, jGroupID, cGroupID)
+
+	hbJSON, err := bridge.GetManager().CreateOwnerHeartbeat(groupID)
+	if err != nil {
+		return C.nullJString()
+	}
+
+	cHb := C.CString(hbJSON)
+	defer C.free(unsafe.Pointer(cHb))
+	return C.createJString(env, cHb)
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeVerifyOwnerHeartbeat
+func Java_com_example_twopchat_NativeBridge_nativeVerifyOwnerHeartbeat(
+	env *C.JNIEnv,
+	clazz C.jclass,
+	jHbJSON C.jstring,
+) C.jboolean {
+	cHb := C.getJStringUTFChars(env, jHbJSON)
+	if cHb == nil {
+		return C.JNI_FALSE
+	}
+	hbJSON := C.GoString(cHb)
+	C.releaseJStringUTFChars(env, jHbJSON, cHb)
+
+	if err := bridge.GetManager().VerifyOwnerHeartbeat(hbJSON); err != nil {
+		return C.JNI_FALSE
+	}
+	return C.JNI_TRUE
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeCreateSuccessionRevocation
+func Java_com_example_twopchat_NativeBridge_nativeCreateSuccessionRevocation(
+	env *C.JNIEnv,
+	clazz C.jclass,
+	jGroupID C.jstring,
+	jCertHash C.jstring,
+) C.jstring {
+	cGroupID := C.getJStringUTFChars(env, jGroupID)
+	if cGroupID == nil {
+		return C.nullJString()
+	}
+	groupID := C.GoString(cGroupID)
+	C.releaseJStringUTFChars(env, jGroupID, cGroupID)
+
+	cHash := C.getJStringUTFChars(env, jCertHash)
+	if cHash == nil {
+		return C.nullJString()
+	}
+	certHash := C.GoString(cHash)
+	C.releaseJStringUTFChars(env, jCertHash, cHash)
+
+	revJSON, err := bridge.GetManager().CreateSuccessionRevocation(groupID, certHash)
+	if err != nil {
+		return C.nullJString()
+	}
+
+	cRev := C.CString(revJSON)
+	defer C.free(unsafe.Pointer(cRev))
+	return C.createJString(env, cRev)
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeVerifySuccessionRevocation
+func Java_com_example_twopchat_NativeBridge_nativeVerifySuccessionRevocation(
+	env *C.JNIEnv,
+	clazz C.jclass,
+	jRevJSON C.jstring,
+) C.jboolean {
+	cRev := C.getJStringUTFChars(env, jRevJSON)
+	if cRev == nil {
+		return C.JNI_FALSE
+	}
+	revJSON := C.GoString(cRev)
+	C.releaseJStringUTFChars(env, jRevJSON, cRev)
+
+	if err := bridge.GetManager().VerifySuccessionRevocation(revJSON); err != nil {
+		return C.JNI_FALSE
+	}
+	return C.JNI_TRUE
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeCreateSuccessionClaim
+func Java_com_example_twopchat_NativeBridge_nativeCreateSuccessionClaim(
+	env *C.JNIEnv,
+	clazz C.jclass,
+	jCertJSON C.jstring,
+	jLastHeartbeatJSON C.jstring,
+) C.jstring {
+	cCert := C.getJStringUTFChars(env, jCertJSON)
+	if cCert == nil {
+		return C.nullJString()
+	}
+	certJSON := C.GoString(cCert)
+	C.releaseJStringUTFChars(env, jCertJSON, cCert)
+
+	cHb := C.getJStringUTFChars(env, jLastHeartbeatJSON)
+	if cHb == nil {
+		return C.nullJString()
+	}
+	lastHbJSON := C.GoString(cHb)
+	C.releaseJStringUTFChars(env, jLastHeartbeatJSON, cHb)
+
+	claimJSON, err := bridge.GetManager().CreateSuccessionClaim(certJSON, lastHbJSON)
+	if err != nil {
+		return C.nullJString()
+	}
+
+	cClaim := C.CString(claimJSON)
+	defer C.free(unsafe.Pointer(cClaim))
+	return C.createJString(env, cClaim)
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeVerifySuccessionClaim
+func Java_com_example_twopchat_NativeBridge_nativeVerifySuccessionClaim(
+	env *C.JNIEnv,
+	clazz C.jclass,
+	jCertJSON C.jstring,
+	jClaimJSON C.jstring,
+	jLastHeartbeatJSON C.jstring,
+) C.jboolean {
+	cCert := C.getJStringUTFChars(env, jCertJSON)
+	if cCert == nil {
+		return C.JNI_FALSE
+	}
+	certJSON := C.GoString(cCert)
+	C.releaseJStringUTFChars(env, jCertJSON, cCert)
+
+	cClaim := C.getJStringUTFChars(env, jClaimJSON)
+	if cClaim == nil {
+		return C.JNI_FALSE
+	}
+	claimJSON := C.GoString(cClaim)
+	C.releaseJStringUTFChars(env, jClaimJSON, cClaim)
+
+	cHb := C.getJStringUTFChars(env, jLastHeartbeatJSON)
+	if cHb == nil {
+		return C.JNI_FALSE
+	}
+	lastHbJSON := C.GoString(cHb)
+	C.releaseJStringUTFChars(env, jLastHeartbeatJSON, cHb)
+
+	if err := bridge.GetManager().VerifySuccessionClaim(certJSON, claimJSON, lastHbJSON); err != nil {
+		return C.JNI_FALSE
+	}
+	return C.JNI_TRUE
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeSetHeartbeatSeqCounter
+func Java_com_example_twopchat_NativeBridge_nativeSetHeartbeatSeqCounter(
+	env *C.JNIEnv,
+	clazz C.jclass,
+	jGroupID C.jstring,
+	jSeq C.jlong,
+) {
+	cGroupID := C.getJStringUTFChars(env, jGroupID)
+	if cGroupID == nil {
+		return
+	}
+	groupID := C.GoString(cGroupID)
+	C.releaseJStringUTFChars(env, jGroupID, cGroupID)
+
+	if jSeq >= 0 {
+		bridge.GetManager().SetHeartbeatSeqCounter(groupID, uint64(jSeq))
+	}
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeStoreSuccessionCertificate
+func Java_com_example_twopchat_NativeBridge_nativeStoreSuccessionCertificate(
+	env *C.JNIEnv,
+	clazz C.jclass,
+	jCertJSON C.jstring,
+) C.jboolean {
+	cCert := C.getJStringUTFChars(env, jCertJSON)
+	if cCert == nil {
+		return C.JNI_FALSE
+	}
+	certJSON := C.GoString(cCert)
+	C.releaseJStringUTFChars(env, jCertJSON, cCert)
+
+	cert, err := crypto.ParseSuccessionCertificate(certJSON)
+	if err != nil {
+		return C.JNI_FALSE
+	}
+	if err := cert.Verify(); err != nil {
+		return C.JNI_FALSE
+	}
+	bridge.GetManager().StoreSuccessionCertificate(cert)
+	return C.JNI_TRUE
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeGetSuccessionCertificate
+func Java_com_example_twopchat_NativeBridge_nativeGetSuccessionCertificate(
+	env *C.JNIEnv,
+	clazz C.jclass,
+	jGroupID C.jstring,
+) C.jstring {
+	cGroupID := C.getJStringUTFChars(env, jGroupID)
+	if cGroupID == nil {
+		return C.nullJString()
+	}
+	groupID := C.GoString(cGroupID)
+	C.releaseJStringUTFChars(env, jGroupID, cGroupID)
+
+	cert := bridge.GetManager().GetSuccessionCertificate(groupID)
+	if cert == nil {
+		return C.nullJString()
+	}
+	jsonStr, err := cert.ToJSON()
+	if err != nil {
+		return C.nullJString()
+	}
+	cStr := C.CString(jsonStr)
+	defer C.free(unsafe.Pointer(cStr))
+	return C.createJString(env, cStr)
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeRevokeCertificate
+func Java_com_example_twopchat_NativeBridge_nativeRevokeCertificate(
+	env *C.JNIEnv,
+	clazz C.jclass,
+	jCertHash C.jstring,
+) {
+	cCertHash := C.getJStringUTFChars(env, jCertHash)
+	if cCertHash == nil {
+		return
+	}
+	certHash := C.GoString(cCertHash)
+	C.releaseJStringUTFChars(env, jCertHash, cCertHash)
+
+	bridge.GetManager().RevokeCertificate(certHash)
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeIsCertificateRevoked
+func Java_com_example_twopchat_NativeBridge_nativeIsCertificateRevoked(
+	env *C.JNIEnv,
+	clazz C.jclass,
+	jCertHash C.jstring,
+) C.jboolean {
+	cCertHash := C.getJStringUTFChars(env, jCertHash)
+	if cCertHash == nil {
+		return C.JNI_FALSE
+	}
+	certHash := C.GoString(cCertHash)
+	C.releaseJStringUTFChars(env, jCertHash, cCertHash)
+
+	if bridge.GetManager().IsCertificateRevoked(certHash) {
+		return C.JNI_TRUE
+	}
+	return C.JNI_FALSE
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeSetLastHeartbeatHash
+func Java_com_example_twopchat_NativeBridge_nativeSetLastHeartbeatHash(
+	env *C.JNIEnv,
+	clazz C.jclass,
+	jGroupID C.jstring,
+	jHash C.jstring,
+) {
+	cGroupID := C.getJStringUTFChars(env, jGroupID)
+	if cGroupID == nil {
+		return
+	}
+	groupID := C.GoString(cGroupID)
+	C.releaseJStringUTFChars(env, jGroupID, cGroupID)
+
+	cHash := C.getJStringUTFChars(env, jHash)
+	if cHash == nil {
+		return
+	}
+	hash := C.GoString(cHash)
+	C.releaseJStringUTFChars(env, jHash, cHash)
+
+	bridge.GetManager().StoreHeartbeatHash(groupID, hash)
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeGetLastHeartbeatHash
+func Java_com_example_twopchat_NativeBridge_nativeGetLastHeartbeatHash(
+	env *C.JNIEnv,
+	clazz C.jclass,
+	jGroupID C.jstring,
+) C.jstring {
+	cGroupID := C.getJStringUTFChars(env, jGroupID)
+	if cGroupID == nil {
+		return C.nullJString()
+	}
+	groupID := C.GoString(cGroupID)
+	C.releaseJStringUTFChars(env, jGroupID, cGroupID)
+
+	hash := bridge.GetManager().GetLastHeartbeatHash(groupID)
+	cHash := C.CString(hash)
+	defer C.free(unsafe.Pointer(cHash))
+	return C.createJString(env, cHash)
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeGetCertificateHash
+func Java_com_example_twopchat_NativeBridge_nativeGetCertificateHash(
+	env *C.JNIEnv,
+	clazz C.jclass,
+	jCertJSON C.jstring,
+) C.jstring {
+	cCert := C.getJStringUTFChars(env, jCertJSON)
+	if cCert == nil {
+		return C.nullJString()
+	}
+	certJSON := C.GoString(cCert)
+	C.releaseJStringUTFChars(env, jCertJSON, cCert)
+
+	cert, err := crypto.ParseSuccessionCertificate(certJSON)
+	if err != nil {
+		return C.nullJString()
+	}
+	hash := cert.CertificateHash()
+	cHash := C.CString(hash)
+	defer C.free(unsafe.Pointer(cHash))
+	return C.createJString(env, cHash)
+}

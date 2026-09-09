@@ -1,0 +1,1569 @@
+package com.example.twopchat.tor
+
+import android.content.Context
+import android.os.Build
+import android.util.Base64
+import com.example.twopchat.logging.SafeLog
+import com.example.twopchat.AppLog
+import com.example.twopchat.NativeBridge
+import com.example.twopchat.relay.P2PMessageRelay
+import com.example.twopchat.config.P2PPreferences
+import com.example.twopchat.config.ProxyConfig
+import com.example.twopchat.security.*
+import com.example.twopchat.data.ChatDatabaseHelper
+import java.io.File
+import java.security.KeyStore
+import java.util.Locale
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
+import java.security.cert.X509Certificate
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+
+data class TorCircuitNode(
+    val role: String,
+    val countryCode: String?,
+    val flagEmoji: String,
+    val name: String? = null
+)
+
+internal class TorRunGate {
+    private var sequence = 0L
+    private var currentRun: Long? = null
+
+    @Synchronized
+    fun begin(): Long {
+        sequence += 1
+        return sequence.also { currentRun = it }
+    }
+
+    @Synchronized
+    fun invalidate() {
+        sequence += 1
+        currentRun = null
+    }
+
+    @Synchronized
+    fun isCurrent(runId: Long): Boolean = currentRun == runId
+
+    @Synchronized
+    fun finish(runId: Long): Boolean {
+        if (currentRun != runId) return false
+        currentRun = null
+        return true
+    }
+}
+
+internal enum class TorBridgeValidationError {
+    INPUT_TOO_LARGE,
+    TOO_MANY_BRIDGES,
+    LINE_TOO_LONG,
+    UNSUPPORTED_TRANSPORT,
+    INVALID_FORMAT,
+    INVALID_ENDPOINT,
+    INVALID_FINGERPRINT,
+    MISSING_OBFS4_CERT,
+    INVALID_OBFS4_IAT_MODE,
+    MISSING_SNOWFLAKE_CONFIGURATION,
+    MISSING_WEBTUNNEL_CONFIGURATION,
+}
+
+internal data class TorBridgeParseResult(
+    val bridges: List<String> = emptyList(),
+    val transports: Set<String> = emptySet(),
+    val error: TorBridgeValidationError? = null,
+)
+
+object TorManager {
+    private const val TAG = "TorManager"
+    private const val DEFAULT_SOCKS_PORT = 9050
+    private const val DEFAULT_CONTROL_PORT = 9051
+
+    @Volatile
+    var effectiveSocksPort: Int = DEFAULT_SOCKS_PORT
+        private set
+
+    @Volatile
+    var effectiveControlPort: Int = DEFAULT_CONTROL_PORT
+        private set
+
+    private const val MAX_BRIDGE_INPUT_CHARS = 32768
+    private const val MAX_BRIDGE_LINE_CHARS = 4096
+    private const val MAX_BRIDGE_LINES = 16
+    private const val OBFS4_TRANSPORT = "obfs4"
+    private const val SNOWFLAKE_TRANSPORT = "snowflake"
+    private const val WEBTUNNEL_TRANSPORT = "webtunnel"
+    private const val DIRECT_BOOTSTRAP_TIMEOUT_MS = 60000L
+    private const val BRIDGE_BOOTSTRAP_TIMEOUT_MS = 60000L
+    const val DEFAULT_HIDDEN_SERVICE_PORT = 50001
+    const val MAX_BOOTSTRAP_RETRIES = 3
+    const val BOOTSTRAP_STALL_TIMEOUT_MS = 60000L
+    const val TOTAL_BOOTSTRAP_TIMEOUT_MS = 90000L
+
+    @Volatile
+    private var bootstrapRetryCount = 0
+
+    fun resetBootstrapRetryCount() {
+        bootstrapRetryCount = 0
+    }
+
+    fun getBootstrapRetryCount(): Int = bootstrapRetryCount
+
+    private val _isTorRunning = MutableStateFlow(false)
+    val isTorRunning: StateFlow<Boolean> = _isTorRunning.asStateFlow()
+
+    private val _onionAddress = MutableStateFlow<String?>(null)
+    val onionAddress: StateFlow<String?> = _onionAddress.asStateFlow()
+
+    @Volatile
+    private var lastAppContext: Context? = null
+
+    private val _isTorConnecting = MutableStateFlow(false)
+    val isTorConnecting: StateFlow<Boolean> = _isTorConnecting.asStateFlow()
+
+    private val _isSlowBootstrap = MutableStateFlow(false)
+    val isSlowBootstrap: StateFlow<Boolean> = _isSlowBootstrap.asStateFlow()
+
+    private val _bootstrapProgress = MutableStateFlow(0)
+    val bootstrapProgress: StateFlow<Int> = _bootstrapProgress.asStateFlow()
+
+    private val _lastBootstrapFailureReason = MutableStateFlow<String?>(null)
+    val lastBootstrapFailureReason: StateFlow<String?> = _lastBootstrapFailureReason.asStateFlow()
+
+    private val _circuitStatus = MutableStateFlow("[🛡️ Вход] ➔ [🔄 Средн] ➔ [🌍 Выход]")
+    val circuitStatus: StateFlow<String> = _circuitStatus.asStateFlow()
+
+    private val defaultNodes = listOf(
+        TorCircuitNode(role = "Guard", countryCode = null, flagEmoji = "🛡️", name = "Вход"),
+        TorCircuitNode(role = "Middle", countryCode = null, flagEmoji = "⚡", name = "Средн"),
+        TorCircuitNode(role = "Exit", countryCode = null, flagEmoji = "🌍", name = "Выход")
+    )
+
+    private val _circuitNodes = MutableStateFlow<List<TorCircuitNode>>(defaultNodes)
+    val circuitNodes: StateFlow<List<TorCircuitNode>> = _circuitNodes.asStateFlow()
+
+    private val _isRotatingCircuit = MutableStateFlow(false)
+    val isRotatingCircuit: StateFlow<Boolean> = _isRotatingCircuit.asStateFlow()
+
+    private val _isRotatingBridge = MutableStateFlow(false)
+    val isRotatingBridge: StateFlow<Boolean> = _isRotatingBridge.asStateFlow()
+
+    private var torProcess: Process? = null
+    private var torJob: Job? = null
+    private val runGate = TorRunGate()
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    private val BOOTSTRAP_REGEX = Regex("""Bootstrapped\s+(\d+)%""")
+    private val FINGERPRINT_REGEX = Regex("^[A-Fa-f0-9]{40}$")
+    private val HOST_REGEX = Regex("^[A-Za-z0-9.-]+$")
+    private val IPV6_HOST_REGEX = Regex("^[A-Fa-f0-9:.]+$")
+    private val ONION_HOST_REGEX = Regex("^[a-z0-9]{16,56}\\.onion$", RegexOption.IGNORE_CASE)
+
+    fun formatControlAuthCookie(bytes: ByteArray): String =
+        bytes.joinToString("") { "%02X".format(it) }
+
+    fun shouldRotateOnBootstrapStall(progress: Int, durationMs: Long): Boolean = when (progress) {
+        in 0..74 -> durationMs >= BOOTSTRAP_STALL_TIMEOUT_MS
+        else -> false
+    }
+
+    fun countryCodeToFlagEmoji(countryCode: String?): String {
+        if (countryCode.isNullOrEmpty() || countryCode.length != 2) return "🌐"
+        val uppercase = countryCode.uppercase(Locale.US)
+        if (!uppercase.all { it in 'A'..'Z' }) return "🌐"
+        val firstChar = Character.codePointAt(uppercase, 0) - 0x41 + 0x1F1E6
+        val secondChar = Character.codePointAt(uppercase, 1) - 0x41 + 0x1F1E6
+        return String(Character.toChars(firstChar)) + String(Character.toChars(secondChar))
+    }
+
+    fun parseCircuitStatusNodes(circuitStatusLine: String): List<TorCircuitNode> {
+        val roles = listOf("Guard", "Middle", "Exit")
+        val nodes = mutableListOf<TorCircuitNode>()
+
+        val nodeMatches = Regex("""\$[A-Fa-f0-9]{40}[~=]([A-Za-z0-9]+)""").findAll(circuitStatusLine).toList()
+        if (nodeMatches.isNotEmpty()) {
+            nodeMatches.take(3).forEachIndexed { index, match ->
+                val nodeName = match.groupValues.getOrNull(1) ?: ""
+                val country = extractCountryCodeFromName(nodeName)
+                val role = roles.getOrElse(index) { "Node" }
+                nodes.add(
+                    TorCircuitNode(
+                        role = role,
+                        countryCode = country,
+                        flagEmoji = countryCodeToFlagEmoji(country),
+                        name = nodeName
+                    )
+                )
+            }
+        } else {
+            val parts = circuitStatusLine.split(" ")
+                .firstOrNull { "BUILT" in it || "\$" in it }
+                ?.split(",") ?: emptyList()
+
+            parts.take(3).forEachIndexed { index, part ->
+                val cleanName = part.substringAfter("~").substringAfter("=").trim()
+                val country = extractCountryCodeFromName(cleanName)
+                val role = roles.getOrElse(index) { "Node" }
+                nodes.add(
+                    TorCircuitNode(
+                        role = role,
+                        countryCode = country,
+                        flagEmoji = countryCodeToFlagEmoji(country),
+                        name = cleanName
+                    )
+                )
+            }
+        }
+
+        while (nodes.size < 3) {
+            val idx = nodes.size
+            val role = roles.getOrElse(idx) { "Node" }
+            nodes.add(TorCircuitNode(role = role, countryCode = null, flagEmoji = "🌐", name = role))
+        }
+
+        return nodes
+    }
+
+    private fun extractCountryCodeFromName(nodeName: String): String? {
+        if (nodeName.length >= 2) {
+            val lastTwo = nodeName.takeLast(2).uppercase(Locale.US)
+            if (lastTwo.all { it in 'A'..'Z' }) return lastTwo
+        }
+        return null
+    }
+
+    fun parseBootstrapProgress(logLine: String): Int? {
+        val match = BOOTSTRAP_REGEX.find(logLine) ?: return null
+        return match.groupValues.getOrNull(1)?.toIntOrNull()?.takeIf { it in 0..100 }
+    }
+
+    fun classifyBootstrapFailureHint(logLine: String): String? {
+        val normalized = logLine.uppercase(Locale.US)
+        return when {
+            "CLOCK" in normalized && (
+                "WRONG" in normalized || "SKEW" in normalized || "JUMPED" in normalized
+            ) -> "CLOCK_SKEW"
+            "TLS" in normalized && (
+                "ERROR" in normalized || "HANDSHAKE" in normalized || "FAILED" in normalized
+            ) -> "TLS_HANDSHAKE"
+            "NETWORK IS UNREACHABLE" in normalized -> "NETWORK_UNREACHABLE"
+            else -> null
+        }
+    }
+
+    fun isBootstrapReady(socksPortReady: Boolean, bootstrapProgress: Int): Boolean =
+        socksPortReady && bootstrapProgress >= 100
+
+    internal fun parseBridgeText(text: String): TorBridgeParseResult {
+        if (text.length > MAX_BRIDGE_INPUT_CHARS) {
+            return invalidBridgeResult(TorBridgeValidationError.INPUT_TOO_LARGE)
+        }
+        return parseBridgeLines(text.lineSequence().toList())
+    }
+
+    internal fun parseBridgeLines(lines: List<String>): TorBridgeParseResult {
+        if (lines.sumOf(String::length) > MAX_BRIDGE_INPUT_CHARS) {
+            return invalidBridgeResult(TorBridgeValidationError.INPUT_TOO_LARGE)
+        }
+
+        val inputLines = lines.flatMap { it.lineSequence().toList() }
+            .map(String::trim)
+            .filter(String::isNotEmpty)
+        if (inputLines.size > MAX_BRIDGE_LINES) {
+            return invalidBridgeResult(TorBridgeValidationError.TOO_MANY_BRIDGES)
+        }
+
+        val normalizedLines = mutableListOf<String>()
+        val transports = linkedSetOf<String>()
+
+        for (rawLine in inputLines) {
+            if (rawLine.length > MAX_BRIDGE_LINE_CHARS) {
+                return invalidBridgeResult(TorBridgeValidationError.LINE_TOO_LONG)
+            }
+            if (rawLine.any { it.isISOControl() } || '#' in rawLine) {
+                return invalidBridgeResult(TorBridgeValidationError.INVALID_FORMAT)
+            }
+
+            val withoutDirective = if (rawLine.startsWith("Bridge ", ignoreCase = true)) {
+                rawLine.substringAfter(' ').trimStart()
+            } else {
+                rawLine
+            }
+            val pieces = withoutDirective.split(Regex("\\s+"))
+            if (pieces.size < 3) {
+                return invalidBridgeResult(TorBridgeValidationError.INVALID_FORMAT)
+            }
+
+            val transport = pieces[0].lowercase(Locale.US)
+            if (transport !in setOf(OBFS4_TRANSPORT, SNOWFLAKE_TRANSPORT, WEBTUNNEL_TRANSPORT)) {
+                return invalidBridgeResult(TorBridgeValidationError.UNSUPPORTED_TRANSPORT)
+            }
+            if (!isValidBridgeEndpoint(pieces[1])) {
+                return invalidBridgeResult(TorBridgeValidationError.INVALID_ENDPOINT)
+            }
+            if (!FINGERPRINT_REGEX.matches(pieces[2])) {
+                return invalidBridgeResult(TorBridgeValidationError.INVALID_FINGERPRINT)
+            }
+
+            val parameters = pieces.drop(3)
+                .mapNotNull { token ->
+                    val separator = token.indexOf('=')
+                    if (separator <= 0 || separator == token.lastIndex) null
+                    else token.substring(0, separator).lowercase(Locale.US) to token.substring(separator + 1)
+                }
+                .toMap()
+
+            when (transport) {
+                OBFS4_TRANSPORT -> {
+                    if (parameters["cert"].isNullOrBlank()) {
+                        return invalidBridgeResult(TorBridgeValidationError.MISSING_OBFS4_CERT)
+                    }
+                    val iatMode = parameters["iat-mode"]
+                    if (iatMode != null && iatMode !in setOf("0", "1", "2")) {
+                        return invalidBridgeResult(TorBridgeValidationError.INVALID_OBFS4_IAT_MODE)
+                    }
+                }
+
+                SNOWFLAKE_TRANSPORT -> {
+                    val brokerUrl = parameters["url"]
+                    val frontDomains = parameters["fronts"] ?: parameters["front"]
+                    val iceServers = parameters["ice"]
+                    if (
+                        brokerUrl.isNullOrBlank() ||
+                        !brokerUrl.startsWith("https://", ignoreCase = true) ||
+                        frontDomains.isNullOrBlank() ||
+                        iceServers.isNullOrBlank()
+                    ) {
+                        return invalidBridgeResult(TorBridgeValidationError.MISSING_SNOWFLAKE_CONFIGURATION)
+                    }
+                }
+
+                WEBTUNNEL_TRANSPORT -> {
+                    val url = parameters["url"]
+                    if (url.isNullOrBlank() || !url.startsWith("https://", ignoreCase = true)) {
+                        return invalidBridgeResult(TorBridgeValidationError.MISSING_WEBTUNNEL_CONFIGURATION)
+                    }
+                }
+            }
+
+            transports += transport
+            normalizedLines += pieces.toMutableList().also { it[0] = transport }.joinToString(" ")
+        }
+
+        return TorBridgeParseResult(
+            bridges = normalizedLines,
+            transports = transports,
+        )
+    }
+
+    private fun invalidBridgeResult(error: TorBridgeValidationError) =
+        TorBridgeParseResult(error = error)
+
+    private fun isValidBridgeEndpoint(endpoint: String): Boolean {
+        val host: String
+        val portText: String
+        if (endpoint.startsWith('[')) {
+            val closingBracket = endpoint.indexOf(']')
+            if (closingBracket <= 1 || closingBracket + 1 >= endpoint.length || endpoint[closingBracket + 1] != ':') {
+                return false
+            }
+            host = endpoint.substring(1, closingBracket)
+            portText = endpoint.substring(closingBracket + 2)
+            if (!IPV6_HOST_REGEX.matches(host) || ':' !in host) return false
+        } else {
+            val separator = endpoint.lastIndexOf(':')
+            if (separator <= 0 || separator == endpoint.lastIndex) return false
+            host = endpoint.substring(0, separator)
+            portText = endpoint.substring(separator + 1)
+            if (!HOST_REGEX.matches(host)) return false
+        }
+        val port = portText.toIntOrNull() ?: return false
+        return port in 1..65535
+    }
+
+    fun generateTorrcContent(
+        dataDir: String,
+        socksPort: Int = DEFAULT_SOCKS_PORT,
+        controlPort: Int = DEFAULT_CONTROL_PORT,
+        bridges: List<String> = emptyList(),
+        bridgePluginPath: String? = null,
+        hiddenServiceDir: String? = "$dataDir/hs",
+        hiddenServicePort: Int = DEFAULT_HIDDEN_SERVICE_PORT,
+        hiddenServiceTargetPort: Int = DEFAULT_HIDDEN_SERVICE_PORT,
+    ): String {
+        val parsedBridges = parseBridgeLines(bridges)
+        require(parsedBridges.error == null) {
+            "Invalid Tor bridge configuration: ${parsedBridges.error?.name}"
+        }
+        val sb = StringBuilder()
+        sb.appendLine("DataDirectory $dataDir")
+        sb.appendLine("SocksPort 127.0.0.1:$socksPort IsolateDestAddr IsolateDestPort")
+        sb.appendLine("ControlPort 127.0.0.1:$controlPort")
+        sb.appendLine("CookieAuthentication 1")
+        sb.appendLine("SafeSocks 0")
+        sb.appendLine("SafeLogging 1")
+        sb.appendLine("ClientOnly 1")
+        sb.appendLine("AvoidDiskWrites 1")
+        sb.appendLine("DisableDebuggerAttachment 0")
+        if (!hiddenServiceDir.isNullOrBlank()) {
+            sb.appendLine("HiddenServiceDir $hiddenServiceDir")
+            sb.appendLine("HiddenServicePort $hiddenServicePort 127.0.0.1:$hiddenServiceTargetPort")
+            sb.appendLine("HiddenServiceVersion 3")
+        }
+
+        if (parsedBridges.bridges.isNotEmpty()) {
+            sb.appendLine("UseBridges 1")
+            require(!bridgePluginPath.isNullOrBlank()) { "Missing Lyrebird transport binary" }
+            parsedBridges.transports.forEach { transport ->
+                sb.appendLine("ClientTransportPlugin $transport exec $bridgePluginPath")
+            }
+            parsedBridges.bridges.forEach { bridgeLine ->
+                sb.appendLine("Bridge $bridgeLine")
+            }
+        }
+
+        return sb.toString().trimEnd()
+    }
+
+    fun readOnionHostname(dir: File): String? {
+        val hostnameFile = when {
+            dir.name == "hs" || dir.name.contains("hidden_service") -> File(dir, "hostname")
+            File(dir, "hostname").exists() -> File(dir, "hostname")
+            File(dir, "hidden_service_v3/hostname").exists() -> File(dir, "hidden_service_v3/hostname")
+            File(dir, "hs/hostname").exists() -> File(dir, "hs/hostname")
+            else -> File(dir, "hostname")
+        }
+        if (!hostnameFile.exists() || !hostnameFile.canRead()) return null
+        return try {
+            val content = hostnameFile.readText().trim().lowercase(Locale.US)
+            if (ONION_HOST_REGEX.matches(content)) content else null
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    fun getOnionAddress(context: Context): String? {
+        _onionAddress.value?.let { return it }
+        val appTorDir = File(context.filesDir, "app_tor")
+        val address = readOnionHostname(appTorDir) ?: P2PPreferences.getTorOnionHostname(context)
+        if (address != null) {
+            _onionAddress.value = address
+        }
+        return address
+    }
+
+    internal fun readAndPublishOnionAddress(context: Context, hiddenServiceDir: File): String? {
+        val hostname = readOnionHostname(hiddenServiceDir)
+        if (hostname != null) {
+            _onionAddress.value = hostname
+            P2PPreferences.setTorOnionHostname(context, hostname)
+            NativeBridge.setOnionAddress(hostname)
+            SafeLog.i(TAG, "[TOR] Onion service v3 active (len=${hostname.length})")
+            SafeLog.d(TAG, "[TOR] Onion service v3 active: $hostname")
+        }
+        return hostname
+    }
+
+    internal suspend fun readAndPublishOnionAddressWithRetry(
+        context: Context? = null,
+        hiddenServiceDir: File,
+        maxWaitMs: Long = 5000L,
+        pollIntervalMs: Long = 250L
+    ): String? = withContext(Dispatchers.IO) {
+        val startTime = System.nanoTime()
+        var hostname: String? = null
+        while (isActive && elapsedMillisSince(startTime) < maxWaitMs) {
+            hostname = readOnionHostname(hiddenServiceDir)
+            if (hostname != null) break
+            delay(pollIntervalMs)
+        }
+        if (hostname != null) {
+            _onionAddress.value = hostname
+            if (context != null) {
+                try {
+                    P2PPreferences.setTorOnionHostname(context, hostname)
+                } catch (e: Exception) {
+                    SafeLog.w(TAG, "Failed saving Tor onion hostname in preferences", e)
+                }
+            }
+            try {
+                NativeBridge.setOnionAddress(hostname)
+            } catch (e: Exception) {
+                SafeLog.w(TAG, "Failed setting onion address on NativeBridge", e)
+            } catch (_: Throwable) {
+                // intentionally ignored: native bridge library may not be loaded in unit tests
+            }
+            SafeLog.i(TAG, "[TOR] Onion service v3 active (with retry, len=${hostname.length})")
+            SafeLog.d(TAG, "[TOR] Onion service v3 active (with retry): $hostname")
+        } else {
+            SafeLog.w(TAG, "[TOR] Timed out waiting for Hidden Service hostname in ${hiddenServiceDir.absolutePath}")
+        }
+        hostname
+    }
+
+    internal fun writeDeterministicOnionKeys(
+        hsDir: File,
+        key: NativeBridge.DeterministicTorOnionKey
+    ): Boolean {
+        return try {
+            if (!hsDir.exists() && !hsDir.mkdirs()) {
+                SafeLog.e(TAG, "[TOR] Failed to create hidden service directory for deterministic keys")
+                return false
+            }
+            setDirectoryPermissions0700(hsDir)
+
+            val keyFile = File(hsDir, "hs_ed25519_secret_key")
+            val tempKeyFile = File(hsDir, "hs_ed25519_secret_key.tmp")
+            tempKeyFile.writeBytes(key.secretKeyBytes)
+            setFilePermissions0600(tempKeyFile)
+            if (!tempKeyFile.renameTo(keyFile)) {
+                keyFile.writeBytes(key.secretKeyBytes)
+                tempKeyFile.delete()
+            }
+            setFilePermissions0600(keyFile)
+
+            val hostnameFile = File(hsDir, "hostname")
+            val tempHostnameFile = File(hsDir, "hostname.tmp")
+            tempHostnameFile.writeText("${key.hostname}\n")
+            setFilePermissions0600(tempHostnameFile)
+            if (!tempHostnameFile.renameTo(hostnameFile)) {
+                hostnameFile.writeText("${key.hostname}\n")
+                tempHostnameFile.delete()
+            }
+            setFilePermissions0600(hostnameFile)
+
+            val pubKeyFile = File(hsDir, "hs_ed25519_public_key")
+            if (pubKeyFile.exists()) {
+                pubKeyFile.delete()
+            }
+
+            true
+        } catch (e: Exception) {
+            SafeLog.e(TAG, "[TOR] Error writing deterministic onion keys", e)
+            false
+        } finally {
+            java.util.Arrays.fill(key.secretKeyBytes, 0.toByte())
+        }
+    }
+
+    private fun setFilePermissions0600(file: File) {
+        file.setReadable(false, false)
+        file.setReadable(true, true)
+        file.setWritable(false, false)
+        file.setWritable(true, true)
+        file.setExecutable(false, false)
+        try {
+            android.system.Os.chmod(file.absolutePath, 384 /* 0600 */)
+        } catch (_: Throwable) {
+            // pure JVM tests or OS errors
+        }
+    }
+
+    private fun setDirectoryPermissions0700(dir: File) {
+        dir.setReadable(false, false)
+        dir.setReadable(true, true)
+        dir.setWritable(false, false)
+        dir.setWritable(true, true)
+        dir.setExecutable(false, false)
+        dir.setExecutable(true, true)
+        try {
+            android.system.Os.chmod(dir.absolutePath, 448 /* 0700 */)
+        } catch (_: Throwable) {
+            // pure JVM tests or OS errors
+        }
+    }
+
+    suspend fun setTorDeterministicOnionEnabled(context: Context, enabled: Boolean): Boolean =
+        setDeterministicOnionEnabled(context, enabled)
+
+    suspend fun setDeterministicOnionEnabled(context: Context, enabled: Boolean): Boolean = withContext(Dispatchers.IO) {
+        val appContext = context.applicationContext
+        val wasEnabled = P2PPreferences.isTorDeterministicOnionEnabled(appContext)
+        if (wasEnabled == enabled) return@withContext true
+
+        P2PPreferences.setTorDeterministicOnionEnabled(appContext, enabled)
+
+        val appTorDir = File(appContext.filesDir, "app_tor")
+        val hsDir = File(appTorDir, "hidden_service_v3")
+
+        if (isTorRunning.value || isTorConnecting.value) {
+            stopTor()
+            if (enabled) {
+                val index = P2PPreferences.getTorOnionIndex(appContext)
+                val key = NativeBridge.getDeterministicTorOnionKey(index)
+                if (key != null) {
+                    writeDeterministicOnionKeys(hsDir, key)
+                    P2PPreferences.setTorOnionHostname(appContext, key.hostname)
+                    _onionAddress.value = key.hostname
+                    NativeBridge.setOnionAddress(key.hostname)
+                }
+            } else {
+                if (hsDir.exists()) {
+                    hsDir.deleteRecursively()
+                }
+                P2PPreferences.setTorOnionHostname(appContext, "")
+                _onionAddress.value = null
+                NativeBridge.setOnionAddress("")
+            }
+            startTor(appContext)
+            val newHostname = readAndPublishOnionAddressWithRetry(
+                context = appContext,
+                hiddenServiceDir = hsDir,
+                maxWaitMs = 15000L,
+                pollIntervalMs = 500L,
+            )
+            if (newHostname != null) {
+                P2PMessageRelay.broadcastOnionAddressUpdate(appContext, newHostname)
+            }
+        } else {
+            if (enabled) {
+                val index = P2PPreferences.getTorOnionIndex(appContext)
+                val key = NativeBridge.getDeterministicTorOnionKey(index)
+                if (key != null) {
+                    writeDeterministicOnionKeys(hsDir, key)
+                    P2PPreferences.setTorOnionHostname(appContext, key.hostname)
+                    _onionAddress.value = key.hostname
+                    NativeBridge.setOnionAddress(key.hostname)
+                }
+            } else {
+                if (hsDir.exists()) {
+                    hsDir.deleteRecursively()
+                }
+                P2PPreferences.setTorOnionHostname(appContext, "")
+                _onionAddress.value = null
+                NativeBridge.setOnionAddress("")
+            }
+        }
+        true
+    }
+
+    suspend fun rotateOnionAddress(context: Context): String? = withContext(Dispatchers.IO) {
+        val appContext = context.applicationContext
+        SafeLog.i(TAG, "[TOR] Initiating Tor Onion Address Rotation")
+
+        val appTorDir = File(appContext.filesDir, "app_tor")
+        val hsDir = File(appTorDir, "hidden_service_v3")
+
+        val isDeterministic = P2PPreferences.isTorDeterministicOnionEnabled(appContext)
+
+        if (isDeterministic) {
+            val current = P2PPreferences.getTorOnionIndex(appContext)
+            if (current >= Int.MAX_VALUE - 1) {
+                SafeLog.e(TAG, "[TOR] Onion rotation index exhausted: $current")
+                throw IllegalStateException("Tor onion rotation index exhausted: $current")
+            }
+            val targetIndex = current + 1
+            val key = NativeBridge.getDeterministicTorOnionKey(targetIndex)
+            if (key == null) {
+                SafeLog.e(TAG, "[TOR] Failed to derive deterministic onion key for index $targetIndex")
+                return@withContext null
+            }
+
+            // 1. Stop current Tor process cleanly
+            stopTor()
+
+            // 2. Write key FIRST (atomic rotation protection)
+            val writeOk = writeDeterministicOnionKeys(hsDir, key)
+            if (!writeOk) {
+                SafeLog.e(TAG, "[TOR] Failed to write deterministic onion keys for index $targetIndex")
+                return@withContext null
+            }
+
+            // 3. Atomically commit index ONLY after key file has been written
+            P2PPreferences.setTorOnionIndex(appContext, targetIndex)
+            P2PPreferences.setTorOnionHostname(appContext, key.hostname)
+            _onionAddress.value = key.hostname
+            NativeBridge.setOnionAddress(key.hostname)
+
+            // 4. Restart Tor process
+            startTor(appContext)
+
+            // 5. Poll / verify newly published hostname
+            val newHostname = readAndPublishOnionAddressWithRetry(
+                context = appContext,
+                hiddenServiceDir = hsDir,
+                maxWaitMs = 15000L,
+                pollIntervalMs = 500L,
+            ) ?: key.hostname
+
+            SafeLog.i(TAG, "[TOR] Deterministic Onion Rotation SUCCEEDED to index $targetIndex ($newHostname)")
+            P2PMessageRelay.broadcastOnionAddressUpdate(appContext, newHostname)
+            return@withContext newHostname
+        } else {
+            // 1. Stop current Tor process cleanly
+            stopTor()
+
+            // 2. Delete old hidden_service_v3 directory and clear cached hostname
+            if (hsDir.exists()) {
+                hsDir.deleteRecursively()
+                SafeLog.i(TAG, "[TOR] Removed previous hidden_service_v3 keys and hostname")
+            }
+            P2PPreferences.setTorOnionHostname(appContext, "")
+            _onionAddress.value = null
+            NativeBridge.setOnionAddress("")
+
+            // 3. Restart Tor process
+            startTor(appContext)
+
+            // 4. Poll for the newly generated hostname
+            val newHostname = readAndPublishOnionAddressWithRetry(
+                context = appContext,
+                hiddenServiceDir = hsDir,
+                maxWaitMs = 15000L,
+                pollIntervalMs = 500L,
+            )
+
+            if (newHostname != null) {
+                SafeLog.i(TAG, "[TOR] Onion Address Rotation SUCCEEDED (len=${newHostname.length})")
+                SafeLog.d(TAG, "[TOR] Onion Address Rotation SUCCEEDED: $newHostname")
+                // 5. Broadcast signed onion update to trusted contacts
+                P2PMessageRelay.broadcastOnionAddressUpdate(appContext, newHostname)
+            } else {
+                SafeLog.e(TAG, "[TOR] Onion Address Rotation FAILED to generate hostname within timeout")
+            }
+
+            return@withContext newHostname
+        }
+    }
+
+    suspend fun waitForSocksPort(socksPort: Int = effectiveSocksPort, timeoutMs: Long = 3000): Boolean = withContext(Dispatchers.IO) {
+        val startTime = System.nanoTime()
+        while (isActive && elapsedMillisSince(startTime) < timeoutMs) {
+            try {
+                java.net.Socket().use { socket ->
+                    socket.connect(java.net.InetSocketAddress("127.0.0.1", socksPort), 400)
+                    return@withContext true
+                }
+            } catch (_: java.io.IOException) {
+                // intentionally ignored: socks port not yet ready, will retry until timeout
+            }
+            delay(150)
+        }
+        false
+    }
+
+    fun isPortFree(port: Int, host: String = "127.0.0.1"): Boolean {
+        // 1. If we can connect to the port, an active server is listening -> definitely NOT free
+        try {
+            java.net.Socket().use { socket ->
+                socket.connect(java.net.InetSocketAddress(host, port), 150)
+                return false
+            }
+        } catch (_: Exception) {
+            // intentionally ignored: not accepting connections, continue to bind check
+        }
+
+        // 2. Check if ServerSocket can bind exclusively (without SO_REUSEADDR)
+        return try {
+            java.net.ServerSocket().use { serverSocket ->
+                serverSocket.reuseAddress = false
+                serverSocket.bind(java.net.InetSocketAddress(host, port))
+                true
+            }
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    fun findFreePort(startPort: Int, maxAttempts: Int = 10, host: String = "127.0.0.1"): Int {
+        for (offset in 0 until maxAttempts) {
+            val candidate = startPort + offset
+            if (isPortFree(candidate, host)) {
+                return candidate
+            }
+        }
+        return startPort
+    }
+
+    fun shutdownStaleTorDaemon(context: Context) {
+        try {
+            val appTorDir = File(context.filesDir, "app_tor")
+            val cookieFile = File(appTorDir, "control_auth_cookie")
+            val hexAuthCookie = if (cookieFile.exists()) formatControlAuthCookie(cookieFile.readBytes()) else ""
+            val controlPort = effectiveControlPort
+            java.net.Socket().use { socket ->
+                socket.soTimeout = 1000
+                socket.connect(java.net.InetSocketAddress("127.0.0.1", controlPort), 1000)
+                val writer = socket.getOutputStream().bufferedWriter()
+                val reader = socket.getInputStream().bufferedReader()
+                if (hexAuthCookie.isNotBlank()) {
+                    writer.write("AUTHENTICATE $hexAuthCookie\r\n")
+                    writer.flush()
+                    reader.readLine()
+                } else {
+                    writer.write("AUTHENTICATE \"\"\r\n")
+                    writer.flush()
+                    reader.readLine()
+                }
+
+                // Query and kill PID if accessible
+                runCatching {
+                    writer.write("GETINFO process/pid\r\n")
+                    writer.flush()
+                    var line: String?
+                    while (reader.readLine().also { line = it } != null) {
+                        val l = line ?: break
+                        if (l.startsWith("250 OK")) break
+                        if (l.startsWith("250-process/pid=") || l.startsWith("250+process/pid=")) {
+                            val pid = l.substringAfter('=').trim().toIntOrNull()
+                            if (pid != null && pid > 0) {
+                                runCatching { android.os.Process.killProcess(pid) }
+                            }
+                        }
+                    }
+                }
+
+                // Send SIGNAL HALT for instant stop (unlike SIGNAL SHUTDOWN which waits 30s)
+                writer.write("SIGNAL HALT\r\n")
+                writer.flush()
+                val resp = reader.readLine()
+                if (resp == null || !resp.startsWith("250")) {
+                    writer.write("SIGNAL SHUTDOWN\r\n")
+                    writer.flush()
+                    reader.readLine()
+                }
+            }
+            SafeLog.i(TAG, "Sent SIGNAL HALT to stale Tor daemon on ControlPort $controlPort")
+        } catch (e: Exception) {
+            SafeLog.d(TAG, "No response from stale Tor control port $effectiveControlPort: ${e.javaClass.simpleName}")
+        }
+    }
+
+    suspend fun waitForPortsFree(
+        ports: List<Int> = listOf(effectiveSocksPort, effectiveControlPort),
+        host: String = "127.0.0.1",
+        timeoutMs: Long = 3000L,
+    ): Boolean = withContext(Dispatchers.IO) {
+        val startTime = System.nanoTime()
+        while (isActive && elapsedMillisSince(startTime) < timeoutMs) {
+            val allFree = ports.all { port -> isPortFree(port, host) }
+            if (allFree) return@withContext true
+            delay(100)
+        }
+        ports.all { port -> isPortFree(port, host) }
+    }
+
+    suspend fun renewTorIdentity(context: Context): Boolean = withContext(Dispatchers.IO) {
+        _isRotatingCircuit.value = true
+        try {
+            val appTorDir = File(context.filesDir, "app_tor")
+            val cookieFile = File(appTorDir, "control_auth_cookie")
+            if (!cookieFile.exists()) {
+                SafeLog.w(TAG, "ControlPort auth cookie not found")
+                _circuitStatus.value = "[🛡️ Вход] ➔ [🔄 Средн] ➔ [🌍 Выход (Обновлен)]"
+                return@withContext true
+            }
+            val hexAuthCookie = formatControlAuthCookie(cookieFile.readBytes())
+            val controlPort = effectiveControlPort
+            java.net.Socket().use { socket ->
+                socket.connect(java.net.InetSocketAddress("127.0.0.1", controlPort), 1000)
+                val writer = socket.getOutputStream().bufferedWriter()
+                val reader = socket.getInputStream().bufferedReader()
+
+                writer.write("AUTHENTICATE $hexAuthCookie\r\n")
+                writer.flush()
+                val authResponse = reader.readLine()
+                if (authResponse == null || !authResponse.startsWith("250")) {
+                    SafeLog.w(TAG, "ControlPort AUTHENTICATE failed: $authResponse")
+                    return@withContext false
+                }
+
+                writer.write("SIGNAL NEWNYM\r\n")
+                writer.flush()
+                val signalResponse = reader.readLine()
+                if (signalResponse == null || !signalResponse.startsWith("250")) {
+                    SafeLog.w(TAG, "ControlPort SIGNAL NEWNYM failed: $signalResponse")
+                    return@withContext false
+                }
+
+                runCatching {
+                    writer.write("GETINFO circuit-status\r\n")
+                    writer.flush()
+                    val sb = StringBuilder()
+                    var statusLine: String?
+                    while (reader.readLine().also { statusLine = it } != null) {
+                        val currentLine = statusLine ?: break
+                        if (currentLine.startsWith("250 OK")) break
+                        sb.append(currentLine).append("\n")
+                    }
+                    val parsed = parseCircuitStatusNodes(sb.toString())
+                    if (parsed.isNotEmpty()) {
+                        _circuitNodes.value = parsed
+                    }
+                }
+
+                _circuitStatus.value = "[🛡️ Вход] ➔ [🔄 Средн] ➔ [🌍 Выход (Обновлен)]"
+                SafeLog.i(TAG, "[TOR] Successfully renewed Tor identity (SIGNAL NEWNYM)")
+                return@withContext true
+            }
+        } catch (exc: Exception) {
+            SafeLog.w(TAG, "Failed to send SIGNAL NEWNYM to ControlPort (${exc.javaClass.simpleName})")
+            _circuitStatus.value = "[🛡️ Вход] ➔ [🔄 Средн] ➔ [🌍 Выход (Обновлен)]"
+            return@withContext true
+        } finally {
+            _isRotatingCircuit.value = false
+        }
+    }
+
+    fun disableTorAndFallback(context: Context) {
+        stopTor()
+        _lastBootstrapFailureReason.value = "BOOTSTRAP_RETRIES_EXHAUSTED"
+        bootstrapRetryCount = 0
+        P2PPreferences.prefs(context).edit()
+            .putBoolean(P2PPreferences.TOR_ENABLED, false)
+            .apply()
+        ProxyConfig.updateNetworkProxy(context)
+        P2PMessageRelay.refreshAnnouncement(context)
+        P2PMessageRelay.triggerImmediateReconnect(context)
+        SafeLog.i(TAG, "[TOR] Tor disabled. Successfully fell back to Direct/Yggdrasil connection.")
+    }
+
+    fun rotateBridge(context: Context) {
+        bootstrapRetryCount++
+        if (bootstrapRetryCount >= MAX_BOOTSTRAP_RETRIES) {
+            SafeLog.w(TAG, "[TOR] Failed to bootstrap after $bootstrapRetryCount attempts. Disabling Tor and falling back to Direct/Yggdrasil mode.")
+            disableTorAndFallback(context)
+            return
+        }
+
+        val customBridges = P2PPreferences.getTorBridgeLines(context)
+        val currentTransport = P2PPreferences.torTransport(context)
+        _isRotatingBridge.value = true
+        val effectiveBridges = if (customBridges.isNotEmpty()) {
+            SafeLog.i(TAG, "[TOR] Bootstrap stalled (attempt $bootstrapRetryCount/$MAX_BOOTSTRAP_RETRIES). Rotating custom bridges order...")
+            val rotated = if (customBridges.size > 1) customBridges.drop(1) + customBridges.take(1) else customBridges
+            P2PPreferences.setTorBridgeLines(context, rotated)
+            rotated
+        } else {
+            val nextTransport = TorBridgeCatalog.rotateToNextTransport(currentTransport)
+            SafeLog.w(TAG, "[TOR] Bootstrap stalled at <= 45% (attempt $bootstrapRetryCount/$MAX_BOOTSTRAP_RETRIES). Switching transport from $currentTransport to $nextTransport...")
+            P2PPreferences.setTorTransport(context, nextTransport)
+
+            val nextBridge = TorBridgeCatalog.rotateNextBridge(nextTransport)
+            val allPublic = TorBridgeCatalog.select(emptyList(), true, nextTransport)
+            val selectedBridges = listOf(nextBridge) + (allPublic - nextBridge)
+
+            val transportLabel = when (nextTransport) {
+                TorTransport.SNOWFLAKE -> "Snowflake"
+                TorTransport.WEBTUNNEL -> "WebTunnel"
+                TorTransport.OBFS4 -> "obfs4"
+                TorTransport.AUTO -> "Auto"
+            }
+            SafeLog.i(TAG, "[TOR] Trying $transportLabel bridge...")
+            selectedBridges
+        }
+        stopTor()
+        scope.launch {
+            val freed = waitForPortsFree(listOf(effectiveSocksPort, effectiveControlPort), timeoutMs = 3000L)
+            if (!freed) {
+                SafeLog.w(TAG, "[TOR] Ports $effectiveSocksPort/$effectiveControlPort not freed after stopTor() within timeout, proceeding to startTor anyway.")
+            }
+            _isRotatingBridge.value = false
+            startTor(context, effectiveBridges, isUserInitiated = false)
+        }
+    }
+
+    @Volatile
+    var startTorInvocationCount = 0
+        internal set
+
+    @Volatile
+    var startTorSuppressedCount = 0
+        internal set
+
+    fun resetCountersForTesting() {
+        startTorInvocationCount = 0
+        startTorSuppressedCount = 0
+    }
+
+    fun isAppInForeground(): Boolean =
+        com.example.twopchat.yggdrasil.AppForegroundTracker.isAppInForeground()
+
+    @Synchronized
+    fun init(context: Context) {
+        if (!isAppInForeground()) {
+            SafeLog.w(TAG, "Suppressed TorManager.init: process is in background/headless execution")
+            return
+        }
+        lastAppContext = context.applicationContext
+    }
+
+    @Synchronized
+    fun startTor(
+        context: Context,
+        bridges: List<String> = P2PPreferences.getEffectiveTorBridgeLines(context),
+        isUserInitiated: Boolean = true,
+    ) {
+        startTorInvocationCount++
+        if (isUserInitiated) {
+            bootstrapRetryCount = 0
+        }
+
+        if (!isAppInForeground()) {
+            startTorSuppressedCount++
+            SafeLog.w(TAG, "Suppressed start of Tor daemon: process is in background/headless execution")
+            return
+        }
+
+        if (_isTorRunning.value || _isTorConnecting.value) {
+            SafeLog.d(TAG, "Tor is already running or connecting")
+            return
+        }
+
+        lastAppContext = context.applicationContext
+        if (_onionAddress.value == null) {
+            _onionAddress.value = P2PPreferences.getTorOnionHostname(context)
+        }
+        val bridgeConfiguration = parseBridgeLines(bridges)
+        if (bridgeConfiguration.error != null) {
+            _isTorRunning.value = false
+            _isTorConnecting.value = false
+            _bootstrapProgress.value = 0
+            _lastBootstrapFailureReason.value = "INVALID_BRIDGE_CONFIGURATION"
+            P2PPreferences.prefs(context).edit()
+                .putBoolean(P2PPreferences.TOR_ENABLED, false)
+                .apply()
+            ProxyConfig.updateNetworkProxy(context)
+            SafeLog.w(TAG, "Rejected invalid Tor bridge configuration (${bridgeConfiguration.error.name})")
+            return
+        }
+
+        // This setting represents the embedded daemon only. Custom SOCKS5 settings
+        // remain untouched and are selected automatically whenever Tor is not ready.
+        P2PPreferences.prefs(context).edit()
+            .putBoolean(P2PPreferences.TOR_ENABLED, true)
+            .apply()
+
+        val runId = runGate.begin()
+        _isTorConnecting.value = true
+        _bootstrapProgress.value = 0
+        _lastBootstrapFailureReason.value = null
+
+        val appContext = context.applicationContext
+        val job = scope.launch(start = CoroutineStart.LAZY) {
+            runTor(appContext, bridgeConfiguration, runId)
+        }
+        torJob = job
+        job.start()
+    }
+
+    private suspend fun runTor(
+        context: Context,
+        bridgeConfiguration: TorBridgeParseResult,
+        runId: Long,
+    ) {
+        var process: Process? = null
+        var logReaderJob: Job? = null
+        val failureHint = AtomicReference<String?>(null)
+        try {
+            val appTorDir = File(context.filesDir, "app_tor")
+            if (!appTorDir.exists() && !appTorDir.mkdirs()) {
+                throw IllegalStateException("Unable to create Tor data directory")
+            }
+
+            // Cleanup legacy tor_bin files from filesDir and codeCacheDir if present
+            val legacyBinFiles = listOf(
+                File(appTorDir, "tor_bin"),
+                File(context.codeCacheDir, "tor_bin")
+            )
+            legacyBinFiles.forEach { file ->
+                if (file.exists()) {
+                    runCatching { file.delete() }
+                }
+            }
+
+            val nativeLibDir = context.applicationInfo.nativeLibraryDir
+            val torExecutable = File(nativeLibDir, "libtor.so").takeIf(File::exists)
+            if (torExecutable == null) {
+                recordFailure(runId, "MISSING_BINARY")
+                disableTorProxy(context, runId)
+                return
+            }
+
+            val bridgePlugin = if (bridgeConfiguration.bridges.isNotEmpty()) {
+                File(nativeLibDir, "liblyrebird.so").takeIf(File::exists)
+            } else {
+                null
+            }
+            if (bridgeConfiguration.bridges.isNotEmpty() && bridgePlugin == null) {
+                recordFailure(runId, "MISSING_BRIDGE_TRANSPORT_BINARY")
+                disableTorProxy(context, runId)
+                return
+            }
+
+            val hsDir = File(appTorDir, "hidden_service_v3")
+            if (!hsDir.exists() && !hsDir.mkdirs()) {
+                throw IllegalStateException("Unable to create Tor hidden service directory")
+            }
+            setDirectoryPermissions0700(hsDir)
+
+            if (P2PPreferences.isTorDeterministicOnionEnabled(context)) {
+                val keyFile = File(hsDir, "hs_ed25519_secret_key")
+                val hostnameFile = File(hsDir, "hostname")
+                if (!keyFile.exists() || keyFile.length() != 96L || !hostnameFile.exists()) {
+                    val currentIndex = P2PPreferences.getTorOnionIndex(context)
+                    val key = NativeBridge.getDeterministicTorOnionKey(currentIndex)
+                    if (key != null) {
+                        writeDeterministicOnionKeys(hsDir, key)
+                    } else {
+                        SafeLog.w(TAG, "[TOR] Deterministic onion enabled but key derivation failed; falling back to ephemeral HS")
+                    }
+                }
+            }
+
+            // Check ports and free stale instances before generating torrc
+            var socksPort = DEFAULT_SOCKS_PORT
+            var controlPort = DEFAULT_CONTROL_PORT
+
+            if (!waitForPortsFree(listOf(socksPort, controlPort), timeoutMs = 1000L)) {
+                shutdownStaleTorDaemon(context)
+                if (!waitForPortsFree(listOf(socksPort, controlPort), timeoutMs = 1500L)) {
+                    socksPort = findFreePort(DEFAULT_SOCKS_PORT, 5)
+                    controlPort = findFreePort(DEFAULT_CONTROL_PORT, 5)
+                    SafeLog.i(TAG, "Default ports busy; dynamically selected Tor ports: socks=$socksPort, control=$controlPort")
+                }
+            }
+            effectiveSocksPort = socksPort
+            effectiveControlPort = controlPort
+
+            if (!currentCoroutineContext().isActive || !runGate.isCurrent(runId)) return
+
+            val listenerPort = P2PPreferences.listenerPort(context)
+            val torrcFile = File(appTorDir, "torrc")
+            val torrcContent = generateTorrcContent(
+                dataDir = appTorDir.absolutePath,
+                socksPort = effectiveSocksPort,
+                controlPort = effectiveControlPort,
+                bridges = bridgeConfiguration.bridges,
+                bridgePluginPath = bridgePlugin?.absolutePath,
+                hiddenServiceDir = hsDir.absolutePath,
+                hiddenServicePort = listenerPort,
+                hiddenServiceTargetPort = listenerPort,
+            )
+            torrcFile.writeText(torrcContent)
+
+            // Lyrebird is a standalone Go executable, so it cannot use
+            // AndroidCAStore through the Java security APIs. Give it a PEM
+            // bundle derived from Android's system roots instead. The file is
+            // private to the app and intentionally excludes user-added CAs.
+            val systemCaBundle = writeSystemCaBundle(appTorDir)
+
+            SafeLog.i(
+                TAG,
+                "Initialized embedded Tor configuration (Bridges active: ${bridgeConfiguration.bridges.isNotEmpty()}, Ports: socks=$effectiveSocksPort, control=$effectiveControlPort)"
+            )
+
+            if (!currentCoroutineContext().isActive || !runGate.isCurrent(runId)) return
+
+            val processBuilder = ProcessBuilder(
+                torExecutable.absolutePath,
+                "-f", torrcFile.absolutePath
+            ).directory(appTorDir).redirectErrorStream(true)
+            systemCaBundle?.let { bundle ->
+                processBuilder.environment()["SSL_CERT_FILE"] = bundle.absolutePath
+            }
+            val startedProcess = processBuilder.start()
+            process = startedProcess
+            applyBackgroundPriority(startedProcess)
+            if (!attachProcess(runId, startedProcess)) {
+                terminateProcess(startedProcess)
+                return
+            }
+            SafeLog.i(TAG, "Started embedded Tor process")
+
+            logReaderJob = scope.launch {
+                try {
+                    android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND)
+                } catch (e: Exception) {
+                    SafeLog.d(TAG, "Failed setting logReaderJob thread priority: ${e.javaClass.simpleName}")
+                }
+                try {
+                    startedProcess.inputStream.bufferedReader().useLines { lines ->
+                        lines.forEach { line ->
+                            if (!runGate.isCurrent(runId)) return@forEach
+                            SafeLog.d(TAG, "[TorNative] $line")
+                            appendTorLog(context, line)
+                            parseBootstrapProgress(line)?.let { progress ->
+                                _bootstrapProgress.value = progress
+                                SafeLog.i(TAG, "Tor bootstrap progress: $progress%")
+                            }
+                            classifyBootstrapFailureHint(line)?.let { category ->
+                                if (failureHint.getAndSet(category) != category) {
+                                    SafeLog.w(TAG, "Tor bootstrap warning category: $category")
+                                }
+                            }
+                        }
+                    }
+                } catch (exc: Exception) {
+                    if (runGate.isCurrent(runId)) {
+                        SafeLog.w(TAG, "Tor log reader stopped (${exc.javaClass.simpleName})")
+                    }
+                }
+            }
+
+            val startTime = System.nanoTime()
+            var stallStartTime: Long? = null
+            var lastObservedProgress = -1
+            var slowWarningLogged = false
+            var circuitSignalSent = false
+            var portReady = false
+            var processExited = false
+
+            val bootstrapTimeoutMs = TOTAL_BOOTSTRAP_TIMEOUT_MS
+            while (currentCoroutineContext().isActive && elapsedMillisSince(startTime) < bootstrapTimeoutMs) {
+                if (!runGate.isCurrent(runId)) return
+                if (!isProcessAlive(startedProcess)) {
+                    processExited = true
+                    break
+                }
+
+                if (!portReady) {
+                    portReady = waitForSocksPort(timeoutMs = 500)
+                }
+                if (isBootstrapReady(portReady, _bootstrapProgress.value) || (portReady && _bootstrapProgress.value >= 75)) break
+
+                val currentProg = _bootstrapProgress.value
+                if (currentProg != lastObservedProgress) {
+                    lastObservedProgress = currentProg
+                    stallStartTime = if (currentProg in 0..74) System.nanoTime() else null
+                    slowWarningLogged = false
+                    circuitSignalSent = false
+                    _isSlowBootstrap.value = false
+                } else if (currentProg in 0..74 && stallStartTime != null) {
+                    val duration = elapsedMillisSince(stallStartTime)
+                    if (duration > 30000L) {
+                        _isSlowBootstrap.value = true
+                    }
+                    if (duration > 30000L && !slowWarningLogged) {
+                        SafeLog.w(TAG, "[TOR] Tor bootstrap slow at $currentProg% (${duration / 1000}s), waiting or signaling new circuit...")
+                        slowWarningLogged = true
+                    }
+                    if (duration > 30000L && !circuitSignalSent) {
+                        circuitSignalSent = true
+                        SafeLog.i(TAG, "[TOR] Bootstrap slow at $currentProg% (${duration / 1000}s). Signaling Tor for circuit renewal (SIGNAL NEWNYM)...")
+                        scope.launch { renewTorIdentity(context) }
+                    }
+                    if (shouldRotateOnBootstrapStall(currentProg, duration)) {
+                        SafeLog.w(TAG, "[TOR] Bootstrap stalled at $currentProg% for ${duration / 1000}s. Triggering automatic bridge rotation...")
+                        rotateBridge(context)
+                        return
+                    }
+                }
+
+                delay(300)
+            }
+
+            if (!currentCoroutineContext().isActive || !runGate.isCurrent(runId)) return
+
+            if (isBootstrapReady(portReady, _bootstrapProgress.value) || (portReady && _bootstrapProgress.value >= 75)) {
+                bootstrapRetryCount = 0
+                if (!markRunning(runId)) return
+                SafeLog.i(TAG, "SOCKS5 listener is ready and Tor bootstrapped to ${_bootstrapProgress.value}%")
+                readAndPublishOnionAddressWithRetry(context, hsDir)
+                val onion = getOnionAddress(context)
+                if (onion != null) {
+                    SafeLog.i(TAG, "Tor Onion service active (len=${onion.length})")
+                    SafeLog.d(TAG, "Tor Onion service active: $onion")
+                }
+                if (!enableTorProxy(context, runId)) return
+
+                while (currentCoroutineContext().isActive && runGate.isCurrent(runId) && isProcessAlive(startedProcess)) {
+                    delay(1000)
+                }
+                if (currentCoroutineContext().isActive && runGate.isCurrent(runId) && !isProcessAlive(startedProcess)) {
+                    recordFailure(runId, "PROCESS_EXITED")
+                    disableTorProxy(context, runId)
+                }
+                return
+            }
+
+            val reason = when {
+                processExited -> "PROCESS_EXITED"
+                !portReady -> "PORT_TIMEOUT"
+                failureHint.get() != null -> "BOOTSTRAP_TIMEOUT_${failureHint.get()}"
+                else -> "BOOTSTRAP_TIMEOUT_FALLBACK_DIRECT"
+            }
+            SafeLog.w(TAG, "[TOR] Tor bootstrap attempt failed or timed out after ${bootstrapTimeoutMs / 1000}s ($reason).")
+            recordFailure(runId, reason)
+
+            if (bootstrapRetryCount < MAX_BOOTSTRAP_RETRIES - 1) {
+                SafeLog.w(TAG, "[TOR] Retrying bootstrap with bridge rotation (${bootstrapRetryCount + 1}/$MAX_BOOTSTRAP_RETRIES)...")
+                rotateBridge(context)
+            } else {
+                SafeLog.w(TAG, "[TOR] Failed to bootstrap after $MAX_BOOTSTRAP_RETRIES attempts. Automatically falling back to Direct/Yggdrasil mode.")
+                disableTorAndFallback(context)
+            }
+        } catch (exc: CancellationException) {
+            SafeLog.i(TAG, "Tor run cancelled")
+            throw exc
+        } catch (exc: Exception) {
+            if (runGate.isCurrent(runId)) {
+                SafeLog.e(TAG, "Failed to start embedded Tor (${exc.javaClass.simpleName})")
+                recordFailure(runId, "START_FAILED")
+                disableTorProxy(context, runId)
+            }
+        } finally {
+            logReaderJob?.cancel()
+            terminateProcess(process)
+            finishRun(runId, process)
+        }
+    }
+
+    private fun elapsedMillisSince(startNanos: Long): Long =
+        (System.nanoTime() - startNanos) / 1_000_000L
+
+    @Volatile
+    private var lastTorLogLine: String? = null
+    @Volatile
+    private var lastTorLogTime: Long = 0L
+    @Volatile
+    private var suppressedDuplicateLogCount = 0
+
+    private fun appendTorLog(context: Context, line: String) {
+        val now = System.currentTimeMillis()
+        val boundedLine = line.take(4096)
+        if (boundedLine == lastTorLogLine && now - lastTorLogTime < 2000L) {
+            suppressedDuplicateLogCount++
+            return
+        }
+        if (suppressedDuplicateLogCount > 0) {
+            AppLog.append(context, "[TOR] (previous message repeated $suppressedDuplicateLogCount times)\n")
+            suppressedDuplicateLogCount = 0
+        }
+        lastTorLogLine = boundedLine
+        lastTorLogTime = now
+        AppLog.append(context, "[TOR] $boundedLine\n")
+    }
+
+    private fun writeSystemCaBundle(appTorDir: File): File? {
+        return try {
+            val keyStore = KeyStore.getInstance("AndroidCAStore").apply { load(null) }
+            val pem = StringBuilder()
+            val aliases = keyStore.aliases()
+            var certificateCount = 0
+            while (aliases.hasMoreElements()) {
+                val alias = aliases.nextElement()
+                if (!alias.startsWith("system:")) continue
+                val certificate = keyStore.getCertificate(alias) as? X509Certificate ?: continue
+                val encoded = Base64.encodeToString(certificate.encoded, Base64.NO_WRAP)
+                pem.appendLine("-----BEGIN CERTIFICATE-----")
+                encoded.chunked(64).forEach(pem::appendLine)
+                pem.appendLine("-----END CERTIFICATE-----")
+                certificateCount++
+            }
+            check(certificateCount > 0) { "Android system CA store is empty" }
+            File(appTorDir, "system-ca-bundle.pem").also { bundle ->
+                bundle.writeText(pem.toString())
+                bundle.setReadable(false, false)
+                bundle.setReadable(true, true)
+                SafeLog.i(TAG, "Prepared Android system CA bundle ($certificateCount roots)")
+            }
+        } catch (exception: Exception) {
+            SafeLog.w(TAG, "Could not prepare Android system CA bundle", exception)
+            null
+        }
+    }
+
+    @Synchronized
+    private fun attachProcess(runId: Long, process: Process): Boolean {
+        if (!runGate.isCurrent(runId)) return false
+        torProcess = process
+        return true
+    }
+
+    @Synchronized
+    private fun markRunning(runId: Long): Boolean {
+        if (!runGate.isCurrent(runId)) return false
+        _isTorRunning.value = true
+        _isTorConnecting.value = false
+        _isSlowBootstrap.value = false
+        return true
+    }
+
+    @Synchronized
+    private fun recordFailure(runId: Long, reason: String): Boolean {
+        if (!runGate.isCurrent(runId)) return false
+        _lastBootstrapFailureReason.value = reason
+        _isTorRunning.value = false
+        _isTorConnecting.value = false
+        _isSlowBootstrap.value = false
+        SafeLog.w(TAG, "Embedded Tor failure category: $reason")
+        return true
+    }
+
+    private fun enableTorProxy(context: Context, runId: Long): Boolean {
+        if (!runGate.isCurrent(runId)) return false
+        P2PPreferences.prefs(context).edit()
+            .putBoolean(P2PPreferences.TOR_ENABLED, true)
+            .apply()
+        if (!runGate.isCurrent(runId)) return false
+        if (!applyEffectiveProxy(context)) {
+            recordFailure(runId, "PROXY_CONFIGURATION_FAILED")
+            disableTorProxy(context, runId)
+            return false
+        }
+        return true
+    }
+
+    private fun disableTorProxy(context: Context, runId: Long) {
+        if (!runGate.isCurrent(runId)) return
+        P2PPreferences.prefs(context).edit()
+            .putBoolean(P2PPreferences.TOR_ENABLED, false)
+            .apply()
+        if (runGate.isCurrent(runId)) {
+            ProxyConfig.updateNetworkProxy(context)
+            P2PMessageRelay.refreshAnnouncement(context)
+            P2PMessageRelay.triggerImmediateReconnect(context)
+        }
+    }
+
+    private fun applyEffectiveProxy(context: Context): Boolean {
+        return try {
+            val success = ProxyConfig.updateNetworkProxy(context)
+            if (success) {
+                P2PMessageRelay.refreshAnnouncement(context)
+                P2PMessageRelay.triggerImmediateReconnect(context)
+            }
+            success
+        } catch (exception: Exception) {
+            SafeLog.e(TAG, "Unable to apply effective proxy configuration", exception)
+            false
+        }
+    }
+
+    @Synchronized
+    private fun finishRun(runId: Long, process: Process?) {
+        if (!runGate.finish(runId)) return
+        if (torProcess === process) torProcess = null
+        torJob = null
+        _isTorRunning.value = false
+        _isTorConnecting.value = false
+        _isSlowBootstrap.value = false
+        _bootstrapProgress.value = 0
+        _onionAddress.value = null
+    }
+
+    private fun isProcessAlive(process: Process): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            process.isAlive
+        } else {
+            try {
+                process.exitValue()
+                false
+            } catch (_: IllegalThreadStateException) {
+                true
+            }
+        }
+    }
+
+    private fun waitForProcess(process: Process, timeout: Long, unit: TimeUnit): Boolean {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            return process.waitFor(timeout, unit)
+        }
+        val deadline = System.currentTimeMillis() + unit.toMillis(timeout)
+        while (System.currentTimeMillis() < deadline) {
+            if (!isProcessAlive(process)) return true
+            try {
+                Thread.sleep(50)
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+                return !isProcessAlive(process)
+            }
+        }
+        return !isProcessAlive(process)
+    }
+
+    private fun destroyProcessForcibly(process: Process) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            process.destroyForcibly()
+        } else {
+            process.destroy()
+        }
+    }
+
+    private fun terminateProcess(process: Process?) {
+        if (process == null) return
+        try {
+            if (isProcessAlive(process)) {
+                process.destroy()
+                waitForProcess(process, 1000, TimeUnit.MILLISECONDS)
+                if (isProcessAlive(process)) {
+                    destroyProcessForcibly(process)
+                }
+                SafeLog.i(TAG, "Stopped embedded Tor process")
+            }
+        } catch (exc: Exception) {
+            SafeLog.e(TAG, "Error stopping embedded Tor (${exc.javaClass.simpleName})")
+        }
+    }
+
+    @Synchronized
+    fun stopTor() {
+        val job = torJob
+        val process = torProcess
+        runGate.invalidate()
+        torJob = null
+        torProcess = null
+        _isTorRunning.value = false
+        _isTorConnecting.value = false
+        _isSlowBootstrap.value = false
+        _bootstrapProgress.value = 0
+        _onionAddress.value = null
+        NativeBridge.setOnionAddress("")
+        job?.cancel()
+        terminateProcess(process)
+        lastAppContext?.let { context ->
+            scope.launch(Dispatchers.IO) {
+                ProxyConfig.updateNetworkProxy(context)
+            }
+        }
+    }
+
+    private fun applyBackgroundPriority(process: Process?) {
+        try {
+            android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND)
+        } catch (e: Exception) {
+            SafeLog.w(TAG, "Failed to set calling thread priority to BACKGROUND", e)
+        }
+        if (process == null) return
+        try {
+            val pid = getProcessPid(process)
+            if (pid > 0) {
+                android.os.Process.setThreadPriority(pid, android.os.Process.THREAD_PRIORITY_BACKGROUND)
+                SafeLog.i(TAG, "Applied THREAD_PRIORITY_BACKGROUND to Tor process (PID: $pid)")
+            }
+        } catch (e: Exception) {
+            SafeLog.w(TAG, "Could not apply background priority to Tor process", e)
+        }
+    }
+
+    private fun getProcessPid(process: Process): Int {
+        return try {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                try {
+                    val pidMethod = process.javaClass.getMethod("pid")
+                    return (pidMethod.invoke(process) as Long).toInt()
+                } catch (_: NoSuchMethodException) {
+                    // intentionally ignored: Process.pid() unavailable on this JVM runtime, fallback to reflection field
+                }
+            }
+            val pidField = process.javaClass.getDeclaredField("pid")
+            pidField.isAccessible = true
+            pidField.getInt(process)
+        } catch (_: Exception) {
+            -1
+        }
+    }
+}

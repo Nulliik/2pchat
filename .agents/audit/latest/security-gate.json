@@ -1,0 +1,50 @@
+[
+  {
+    "name": "go-build",
+    "status": "PASS",
+    "exit_code": 0,
+    "duration_sec": 2.01,
+    "stdout_tail": "",
+    "stderr_tail": ""
+  },
+  {
+    "name": "go-test",
+    "status": "PASS",
+    "exit_code": 0,
+    "duration_sec": 1.43,
+    "stdout_tail": "?   \ttwopchat/core/cmd/2pcore-cli\t[no test files]\n?   \ttwopchat/core/cmd/lib2pcore\t[no test files]\n?   \ttwopchat/core/cmd/soak\t[no test files]\nok  \ttwopchat/core/pkg/bridge\t(cached)\nok  \ttwopchat/core/pkg/crypto\t1.087s\nok  \ttwopchat/core/pkg/discovery\t(cached)\nok  \ttwopchat/core/pkg/protocol\t(cached)\nok  \ttwopchat/core/pkg/session\t(cached)\nok  \ttwopchat/core/pkg/transport\t(cached)\n",
+    "stderr_tail": ""
+  },
+  {
+    "name": "go-race",
+    "status": "PASS",
+    "exit_code": 0,
+    "duration_sec": 13.94,
+    "stdout_tail": "?   \ttwopchat/core/cmd/2pcore-cli\t[no test files]\n?   \ttwopchat/core/cmd/lib2pcore\t[no test files]\n?   \ttwopchat/core/cmd/soak\t[no test files]\nok  \ttwopchat/core/pkg/bridge\t4.039s\nok  \ttwopchat/core/pkg/crypto\t7.605s\nok  \ttwopchat/core/pkg/discovery\t3.772s\nok  \ttwopchat/core/pkg/protocol\t1.434s\nok  \ttwopchat/core/pkg/session\t3.859s\nok  \ttwopchat/core/pkg/transport\t5.066s\n",
+    "stderr_tail": ""
+  },
+  {
+    "name": "go-vet",
+    "status": "PASS",
+    "exit_code": 0,
+    "duration_sec": 0.24,
+    "stdout_tail": "",
+    "stderr_tail": ""
+  },
+  {
+    "name": "android-unit",
+    "status": "PASS",
+    "exit_code": 0,
+    "duration_sec": 14.08,
+    "stdout_tail": "\n> Task :app:buildGoCoreBinaries\nmkdir -p ../app/src/main/jniLibs/arm64-v8a\nCGO_ENABLED=1 \\\n\tCGO_CFLAGS=\"-fno-omit-frame-pointer -O2\" \\\n\tCGO_LDFLAGS=\"-Wl,-z,max-page-size=16384\" \\\n\tGOOS=android \\\n\tGOARCH=arm64 \\\n\tCC=\"/Users/kodzy/Library/Android/sdk/ndk/26.3.11579264/toolchains/llvm/prebuilt/darwin-x86_64/bin/aarch64-linux-android24-clang\" \\\n\tgo build -ldflags=\"-s -w -extldflags '-Wl,-z,max-page-size=16384'\" -buildmode=c-shared -o ../app/src/main/jniLibs/arm64-v8a/lib2pcore.so ./cmd/lib2pcore\n\u2713 Built arm64-v8a: ../app/src/main/jniLibs/arm64-v8a/lib2pcore.so\nmkdir -p ../app/src/main/jniLibs/x86_64\nCGO_ENABLED=1 \\\n\tCGO_CFLAGS=\"-fno-omit-frame-pointer -O2\" \\\n\tCGO_LDFLAGS=\"-Wl,-z,max-page-size=16384\" \\\n\tGOOS=android \\\n\tGOARCH=amd64 \\\n\tCC=\"/Users/kodzy/Library/Android/sdk/ndk/26.3.11579264/toolchains/llvm/prebuilt/darwin-x86_64/bin/x86_64-linux-android24-clang\" \\\n\tgo build -ldflags=\"-s -w -extldflags '-Wl,-z,max-page-size=16384'\" -buildmode=c-shared -o ../app/src/main/jniLibs/x86_64/lib2pcore.so ./cmd/lib2pcore\n\u2713 Built x86_64: ../app/src/main/jniLibs/x86_64/lib2pcore.so\nmkdir -p ../app/src/main/jniLibs/armeabi-v7a\nCGO_ENABLED=1 \\\n\tCGO_CFLAGS=\"-fno-omit-frame-pointer -O2\" \\\n\tCGO_LDFLAGS=\"-Wl,-z,max-page-size=16384\" \\\n\tGOOS=android \\\n\tGOARCH=arm \\\n\tGOARM=7 \\\n\tCC=\"/Users/kodzy/Library/Android/sdk/ndk/26.3.11579264/toolchains/llvm/prebuilt/darwin-x86_64/bin/armv7a-linux-androideabi24-clang\" \\\n\tgo build -ldflags=\"-s -w -extldflags '-Wl,-z,max-page-size=16384'\" -buildmode=c-shared -o ../app/src/main/jniLibs/armeabi-v7a/lib2pcore.so ./cmd/lib2pcore\n\u2713 Built armeabi-v7a: ../app/src/main/jniLibs/armeabi-v7a/lib2pcore.so\n\u2713 All Android native binaries built successfully.\n\n> Task :app:unpackBridgeTransportBinaries UP-TO-DATE\n> Task :app:preBuild\n> Task :app:preDebugBuild\n> Task :app:generateDebugBuildConfig UP-TO-DATE\n> Task :app:generateDebugResources UP-TO-DATE\n> Task :app:packageDebugResources UP-TO-DATE\n> Task :app:processDebugNavigationResources UP-TO-DATE\n> Task :app:parseDebugLocalResources UP-TO-DATE\n> Task :app:generateDebugRFile UP-TO-DATE\n> Task :app:compileDebugKotlin UP-TO-DATE\n> Task :app:javaPreCompileDebug UP-TO-DATE\n> Task :app:compileDebugJavaWithJavac UP-TO-DATE\n> Task :app:checkDebugAarMetadata UP-TO-DATE\n> Task :app:mapDebugSourceSetPaths UP-TO-DATE\n> Task :app:compileDebugNavigationResources UP-TO-DATE\n> Task :app:mergeDebugResources UP-TO-DATE\n> Task :app:createDebugCompatibleScreenManifests UP-TO-DATE\n> Task :app:extractDeepLinksDebug UP-TO-DATE\n> Task :app:processDebugMainManifest UP-TO-DATE\n> Task :app:processDebugManifest UP-TO-DATE\n> Task :app:processDebugManifestForPackage UP-TO-DATE\n> Task :app:processDebugResources UP-TO-DATE\n> Task :app:bundleDebugClassesToRuntimeJar UP-TO-DATE\n> Task :app:bundleDebugClassesToCompileJar UP-TO-DATE\n> Task :app:preDebugUnitTestBuild\n> Task :app:compileDebugUnitTestKotlin UP-TO-DATE\n> Task :app:javaPreCompileDebugUnitTest UP-TO-DATE\n> Task :app:compileDebugUnitTestJavaWithJavac NO-SOURCE\n> Task :app:processDebugJavaRes UP-TO-DATE\n> Task :app:processDebugUnitTestJavaRes UP-TO-DATE\n> Task :app:testDebugUnitTest\n\nBUILD SUCCESSFUL in 13s\n28 actionable tasks: 2 executed, 26 up-to-date\n",
+    "stderr_tail": ""
+  },
+  {
+    "name": "android-apk",
+    "status": "PASS",
+    "exit_code": 0,
+    "duration_sec": 15.97,
+    "stdout_tail": "\n> Task :app:buildGoCoreBinaries\nmkdir -p ../app/src/main/jniLibs/arm64-v8a\nCGO_ENABLED=1 \\\n\tCGO_CFLAGS=\"-fno-omit-frame-pointer -O2\" \\\n\tCGO_LDFLAGS=\"-Wl,-z,max-page-size=16384\" \\\n\tGOOS=android \\\n\tGOARCH=arm64 \\\n\tCC=\"/Users/kodzy/Library/Android/sdk/ndk/26.3.11579264/toolchains/llvm/prebuilt/darwin-x86_64/bin/aarch64-linux-android24-clang\" \\\n\tgo build -ldflags=\"-s -w -extldflags '-Wl,-z,max-page-size=16384'\" -buildmode=c-shared -o ../app/src/main/jniLibs/arm64-v8a/lib2pcore.so ./cmd/lib2pcore\n\u2713 Built arm64-v8a: ../app/src/main/jniLibs/arm64-v8a/lib2pcore.so\nmkdir -p ../app/src/main/jniLibs/x86_64\nCGO_ENABLED=1 \\\n\tCGO_CFLAGS=\"-fno-omit-frame-pointer -O2\" \\\n\tCGO_LDFLAGS=\"-Wl,-z,max-page-size=16384\" \\\n\tGOOS=android \\\n\tGOARCH=amd64 \\\n\tCC=\"/Users/kodzy/Library/Android/sdk/ndk/26.3.11579264/toolchains/llvm/prebuilt/darwin-x86_64/bin/x86_64-linux-android24-clang\" \\\n\tgo build -ldflags=\"-s -w -extldflags '-Wl,-z,max-page-size=16384'\" -buildmode=c-shared -o ../app/src/main/jniLibs/x86_64/lib2pcore.so ./cmd/lib2pcore\n\u2713 Built x86_64: ../app/src/main/jniLibs/x86_64/lib2pcore.so\nmkdir -p ../app/src/main/jniLibs/armeabi-v7a\nCGO_ENABLED=1 \\\n\tCGO_CFLAGS=\"-fno-omit-frame-pointer -O2\" \\\n\tCGO_LDFLAGS=\"-Wl,-z,max-page-size=16384\" \\\n\tGOOS=android \\\n\tGOARCH=arm \\\n\tGOARM=7 \\\n\tCC=\"/Users/kodzy/Library/Android/sdk/ndk/26.3.11579264/toolchains/llvm/prebuilt/darwin-x86_64/bin/armv7a-linux-androideabi24-clang\" \\\n\tgo build -ldflags=\"-s -w -extldflags '-Wl,-z,max-page-size=16384'\" -buildmode=c-shared -o ../app/src/main/jniLibs/armeabi-v7a/lib2pcore.so ./cmd/lib2pcore\n\u2713 Built armeabi-v7a: ../app/src/main/jniLibs/armeabi-v7a/lib2pcore.so\n\u2713 All Android native binaries built successfully.\n\n> Task :app:unpackBridgeTransportBinaries UP-TO-DATE\n> Task :app:preBuild\n> Task :app:preDebugBuild\n> Task :app:mergeDebugNativeDebugMetadata NO-SOURCE\n> Task :app:generateDebugBuildConfig UP-TO-DATE\n> Task :app:generateDebugResources UP-TO-DATE\n> Task :app:packageDebugResources UP-TO-DATE\n> Task :app:processDebugNavigationResources UP-TO-DATE\n> Task :app:parseDebugLocalResources UP-TO-DATE\n> Task :app:generateDebugRFile UP-TO-DATE\n> Task :app:compileDebugKotlin UP-TO-DATE\n> Task :app:javaPreCompileDebug UP-TO-DATE\n> Task :app:compileDebugJavaWithJavac UP-TO-DATE\n> Task :app:generateDebugAssets UP-TO-DATE\n> Task :app:mergeDebugAssets UP-TO-DATE\n> Task :app:compressDebugAssets UP-TO-DATE\n> Task :app:generateDebugGlobalSynthetics UP-TO-DATE\n> Task :app:processDebugJavaRes UP-TO-DATE\n> Task :app:mergeDebugJavaResource UP-TO-DATE\n> Task :app:checkDebugDuplicateClasses UP-TO-DATE\n> Task :app:desugarDebugFileDependencies UP-TO-DATE\n> Task :app:mergeExtDexDebug UP-TO-DATE\n> Task :app:mergeLibDexDebug UP-TO-DATE\n> Task :app:checkDebugAarMetadata UP-TO-DATE\n> Task :app:mapDebugSourceSetPaths UP-TO-DATE\n> Task :app:compileDebugNavigationResources UP-TO-DATE\n> Task :app:mergeDebugResources UP-TO-DATE\n> Task :app:createDebugCompatibleScreenManifests UP-TO-DATE\n> Task :app:extractDeepLinksDebug UP-TO-DATE\n> Task :app:processDebugMainManifest UP-TO-DATE\n> Task :app:processDebugManifest UP-TO-DATE\n> Task :app:processDebugManifestForPackage UP-TO-DATE\n> Task :app:processDebugResources UP-TO-DATE\n> Task :app:dexBuilderDebug\n> Task :app:mergeProjectDexDebug UP-TO-DATE\n> Task :app:mergeDebugJniLibFolders\n> Task :app:validateSigningDebug UP-TO-DATE\n> Task :app:writeDebugAppMetadata UP-TO-DATE\n> Task :app:writeDebugSigningConfigVersions UP-TO-DATE\n> Task :app:mergeDebugNativeLibs\n> Task :app:stripDebugDebugSymbols\n> Task :app:packageDebug\n> Task :app:createDebugApkListingFileRedirect\n> Task :app:assembleDebug\n\nBUILD SUCCESSFUL in 15s\n40 actionable tasks: 7 executed, 33 up-to-date\n",
+    "stderr_tail": ""
+  }
+]

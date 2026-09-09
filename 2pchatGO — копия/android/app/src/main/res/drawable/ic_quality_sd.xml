@@ -1,0 +1,34 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Top Bracket -->
+    <path
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2.2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M 3.8,7 C 3.8,4.8 5.4,3.5 7.8,3.5 L 16.2,3.5 C 18.6,3.5 20.2,4.8 20.2,7" />
+    <!-- Bottom Bracket -->
+    <path
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2.2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M 3.8,17 C 3.8,19.2 5.4,20.5 7.8,20.5 L 16.2,20.5 C 18.6,20.5 20.2,19.2 20.2,17" />
+    <!-- Letter S -->
+    <path
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2.2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M 11,9.3 C 10.3,8.5 9.2,8.2 8,8.2 C 6.8,8.2 5.8,9 5.8,10.1 C 5.8,12 11,11.5 11,13.8 C 11,15 9.9,15.8 8.4,15.8 C 7,15.8 6,15.2 5.5,14.3" />
+    <!-- Letter D -->
+    <path
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2.2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M 14,8.4 L 14,15.6 M 14,8.4 L 15.6,8.4 C 17.4,8.4 18.6,9.6 18.6,12 C 18.6,14.4 17.4,15.6 15.6,15.6 L 14,15.6" />
+</vector>

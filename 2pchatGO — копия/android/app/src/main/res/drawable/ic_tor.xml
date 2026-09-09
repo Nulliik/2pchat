@@ -1,0 +1,31 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Purple base circle -->
+    <path
+        android:fillColor="#7C3AED"
+        android:pathData="M12,0C5.37,0 0,5.37 0,12C0,18.63 5.37,24 12,24C18.63,24 24,18.63 24,12C24,5.37 18.63,0 12,0Z" />
+    <!-- White outer onion arc -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="1.8"
+        android:strokeLineCap="round"
+        android:pathData="M12,3.5A8.5,8.5 0 0,1 12,20.5" />
+    <!-- White middle onion arc -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="1.8"
+        android:strokeLineCap="round"
+        android:pathData="M12,7A5,5 0 0,1 12,17" />
+    <!-- White inner onion arc -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="1.8"
+        android:strokeLineCap="round"
+        android:pathData="M12,10.2A1.8,1.8 0 0,1 12,13.8" />
+</vector>
