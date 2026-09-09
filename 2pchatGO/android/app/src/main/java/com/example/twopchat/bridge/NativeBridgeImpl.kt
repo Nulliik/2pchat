@@ -10,6 +10,10 @@ import com.example.twopchat.relay.P2PMessageRelay
 import com.example.twopchat.relay.canonicalConnectionTransport
 import com.example.twopchat.relay.isExpectedPeerFingerprint
 import com.example.twopchat.relay.isValidPeerEndpointList
+import com.example.twopchat.relay.PeerEndpointStore
+import com.example.twopchat.relay.EndpointRetention
+import com.example.twopchat.relay.EndpointSource
+import com.example.twopchat.relay.EndpointKind
 import com.example.twopchat.config.P2PPreferences
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
@@ -218,6 +222,21 @@ class NativeBridgeImpl(
     }
 
     private fun setupNativeCallbacks() {
+        NativeBridge.onEndpointResultListener = result@{ peerFP, endpoint, success ->
+            val context = com.example.twopchat.yggdrasil.GlobalApplication.appContext
+            if (!success) {
+                // Offline devices and unavailable transports say nothing about
+                // a friend's address. Do not penalize them for our own outage.
+                val connectivity = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager
+                val capabilities = connectivity?.getNetworkCapabilities(connectivity.activeNetwork) ?: return@result
+                val kind = EndpointRetention.kind(endpoint)
+                if (kind != EndpointKind.LAN && !capabilities.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_VALIDATED)) return@result
+                if (kind == EndpointKind.TOR && (!com.example.twopchat.tor.TorManager.isTorRunning.value || com.example.twopchat.tor.TorManager.isTorConnecting.value)) return@result
+                if (kind == EndpointKind.YGGDRASIL && !P2PPreferences.prefs(context).getBoolean("settings_yggdrasil", false)) return@result
+            }
+            val peerName = resolvePeerName(peerFP) ?: peerFP
+            PeerEndpointStore.result(context, peerName, peerFP, endpoint, success)
+        }
         NativeBridge.onPeerConnectedListener = connected@{ peerFP, endpoint ->
             SafeLog.i(TAG, "[GoCore] Peer connected: ${SafeLog.fp(peerFP)}")
             SafeLog.d(TAG, "[GoCore] Peer connected: ${SafeLog.fp(peerFP)} @ $endpoint")
@@ -279,6 +298,7 @@ class NativeBridgeImpl(
             onlinePeers[peerFP] = false
             onlinePeers[resolvedName] = false
             lastAuthenticatedInboundAt.remove(peerFP)
+            if (!NativeBridge.isPeerOnline(peerFP)) PeerEndpointStore.disconnected(peerFP)
             activeEndpoints.remove(peerFP)
             activeTransports.remove(peerFP)
             sessionListener?.onSessionClosed(resolvedName, peerFP, reason)
@@ -498,11 +518,7 @@ class NativeBridgeImpl(
         }
         if (fingerprint.isNotBlank()) hashes.add(legacyDiscoveryInfoHash(fingerprint))
 
-        NativeBridge.startDiscovery(trackers, hashes.toList(), port)
-        if (hashes.isNotEmpty()) {
-            NativeBridge.announceSelf(hashes.first(), port)
-        }
-        return true
+        return NativeBridge.startDiscovery(trackers, hashes.toList(), port, replaceSelf = true)
     }
 
     override suspend fun sendP2pMessage(peerName: String, endpoint: String, payload: String, expectedFingerprint: String?): Boolean = withContext(Dispatchers.IO) {
@@ -531,18 +547,15 @@ class NativeBridgeImpl(
         }
 
         if (fullEndpoint.isNotBlank()) {
-            val candidateList = fullEndpoint.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+            val candidateList = retainedCandidates(peerName, resolvedFP, fullEndpoint, includeReserve = true)
+            if (candidateList.isEmpty()) return@withContext false
             val hasDirect = candidateList.any { !it.contains(".onion", ignoreCase = true) }
 
             // Always enqueue the message first so it is never dropped during background connection/handshake
             val targetKey = resolvedFP ?: peerName
             enqueuePending(targetKey, PendingMessage(payload, System.currentTimeMillis()))
 
-            if (candidateList.size > 1) {
-                NativeBridge.probePeer(candidateList, resolvedFP.orEmpty())
-            } else {
-                NativeBridge.connectPeer(fullEndpoint, resolvedFP.orEmpty())
-            }
+            dialRetainedCandidates(peerName, resolvedFP, candidateList, includeReserve = true)
 
             // If a direct LAN/Wi-Fi endpoint is available, do a short non-blocking event-driven wait (up to 800ms)
             if (hasDirect) {
@@ -670,13 +683,10 @@ class NativeBridgeImpl(
         }
 
         if (!isLive && fullEndpoint.isNotBlank()) {
-            val candidateList = fullEndpoint.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+            val candidateList = retainedCandidates(peerName, resolvedFP, fullEndpoint, includeReserve = true)
+            if (candidateList.isEmpty()) return@withContext false
             val hasOnion = candidateList.any { it.contains(".onion") }
-            if (candidateList.size > 1) {
-                NativeBridge.probePeer(candidateList, resolvedFP.orEmpty())
-            } else {
-                NativeBridge.connectPeer(fullEndpoint, resolvedFP.orEmpty())
-            }
+            dialRetainedCandidates(peerName, resolvedFP, candidateList, includeReserve = true)
 
             val waitBudgetMs = if (hasOnion) CONNECT_WAIT_FILE_ONION_MS else CONNECT_WAIT_FILE_MS
             awaitPeerOnline(resolvedFP ?: target, waitBudgetMs)
@@ -709,7 +719,34 @@ class NativeBridgeImpl(
         return NativeBridge.cancelFile(targetFP, messageId)
     }
 
-    override fun reconnectPeerSession(peerName: String, endpoint: String, fingerprint: String?): Boolean {
+    override fun reconnectPeerSession(peerName: String, endpoint: String, fingerprint: String?): Boolean =
+        scheduleReconnect(peerName, endpoint, fingerprint, includeReserve = true)
+
+    override fun reconnectPeerSessionInBackground(peerName: String, endpoint: String, fingerprint: String?): Boolean =
+        scheduleReconnect(peerName, endpoint, fingerprint, includeReserve = false)
+
+    private fun scheduleReconnect(peerName: String, endpoint: String, fingerprint: String?, includeReserve: Boolean): Boolean {
+        if (endpoint.isBlank()) return false
+        bridgeScope.launch(Dispatchers.IO) { reconnectWithRetainedRoutes(peerName, endpoint, fingerprint, includeReserve) }
+        return true
+    }
+
+    private fun retainedCandidates(peerName: String, fingerprint: String?, fallback: String, includeReserve: Boolean): List<String> {
+        if (fingerprint.isNullOrBlank()) return fallback.split(',').mapNotNull(EndpointRetention::normalize).distinct().take(16)
+        val context = com.example.twopchat.yggdrasil.GlobalApplication.appContext
+        return PeerEndpointStore.candidates(context, peerName, fingerprint, includeReserve, legacyEndpoints = fallback.split(','))
+    }
+
+    private fun dialRetainedCandidates(peerName: String, fingerprint: String?, candidates: List<String>, includeReserve: Boolean, policyFlags: Int = 0): Boolean {
+        val context = com.example.twopchat.yggdrasil.GlobalApplication.appContext
+        val fresh = if (fingerprint.isNullOrBlank()) candidates else
+            PeerEndpointStore.candidates(context, peerName, fingerprint, includeReserve = false).filter { it in candidates }
+        val reserve = if (includeReserve) candidates.filter { it !in fresh } else emptyList()
+        if (fresh.isEmpty() && reserve.isEmpty()) return false
+        return NativeBridge.probePeer(fresh, fingerprint.orEmpty(), policyFlags, reserve)
+    }
+
+    private fun reconnectWithRetainedRoutes(peerName: String, endpoint: String, fingerprint: String?, includeReserve: Boolean): Boolean {
         if (endpoint.isBlank()) return false
         if (!fingerprint.isNullOrBlank()) {
             peerNameMap[fingerprint] = peerName
@@ -751,7 +788,7 @@ class NativeBridgeImpl(
             }
         }
 
-        val rawCandidates = endpoint.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+        val rawCandidates = retainedCandidates(peerName, fingerprint, endpoint, includeReserve)
         val candidateList = rawCandidates.filter { candidate ->
             if (pref == P2PPreferences.PeerTransportPreference.TOR_ONLY) {
                 candidate.contains(".onion", ignoreCase = true)
@@ -783,11 +820,7 @@ class NativeBridgeImpl(
             NativeBridge.setPeerPolicy(fingerprint, policyFlags)
         }
 
-        return if (candidateList.size > 1) {
-            NativeBridge.probePeer(candidateList, fingerprint.orEmpty(), policyFlags)
-        } else {
-            NativeBridge.connectPeer(candidateList.first(), fingerprint.orEmpty(), policyFlags)
-        }
+        return dialRetainedCandidates(peerName, fingerprint, candidateList, includeReserve, policyFlags)
     }
 
     private fun sendAuthenticatedRouteUpdate(peerFingerprint: String) {
@@ -855,6 +888,9 @@ class NativeBridgeImpl(
         if (peerName != peerFingerprint && !isExpectedPeerFingerprint(knownFingerprint, peerFingerprint)) {
             SafeLog.w(TAG, "Ignored endpoint_update with unexpected fingerprint")
             return
+        }
+        bridgeScope.launch(Dispatchers.IO) {
+            PeerEndpointStore.observe(context, peerName, peerFingerprint, endpoints.split(','), EndpointSource.AUTHENTICATED)
         }
         val editor = P2PPreferences.prefs(context).edit()
             .putString(P2PPreferences.lastEndpoint(peerName), endpoints)

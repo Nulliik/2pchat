@@ -22,6 +22,16 @@ func init() {
 	net.DefaultResolver = transport.FallbackResolver
 	bridge.GetManager().SetCallbacks(
 		session.EventCallbacks{
+			OnEndpointResult: func(peerFP, endpoint string, success bool) {
+				cFP, cEndpoint := C.CString(peerFP), C.CString(endpoint)
+				defer C.free(unsafe.Pointer(cFP))
+				defer C.free(unsafe.Pointer(cEndpoint))
+				var ok C.jboolean
+				if success {
+					ok = 1
+				}
+				C.callbackOnEndpointResult(cFP, cEndpoint, ok)
+			},
 			OnPeerConnected: func(peerFP, endpoint string) {
 				cFP := C.CString(peerFP)
 				cEndp := C.CString(endpoint)

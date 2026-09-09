@@ -58,6 +58,7 @@ internal class RelayMaintenanceCoordinator(
         sessionJob = scope.launch {
             var lastWakeLockRefreshAt = System.currentTimeMillis()
             var lastMediaMaintenanceAt = 0L
+            var lastEndpointMaintenanceAt = 0L
             while (isActive && isRunning()) {
                 try {
                     val now = System.currentTimeMillis()
@@ -92,6 +93,10 @@ internal class RelayMaintenanceCoordinator(
                         }
                     }
 
+                    if (now - lastEndpointMaintenanceAt >= 60 * 60_000L) {
+                        PeerEndpointStore.maintain(appContext, now)
+                        lastEndpointMaintenanceAt = now
+                    }
                     val prefs = P2PPreferences.prefs(appContext)
                     val oneOnOneChats = prefs.getStringSet("active_chats", emptySet()).orEmpty()
                         .filterNot { it == "Saved Messages" || isPlaceholderPeerName(it) }
@@ -153,13 +158,8 @@ internal class RelayMaintenanceCoordinator(
                             reconnectDelayMs.remove(peerName)
                             continue
                         }
-                        val endpoint = resolvePeerEndpoint(
-                            peerName = peerName,
-                            liveEndpoint = peerEndpoints[peerName],
-                            persistedEndpoint = prefs.getString("last_endpoint_$peerName", null),
-                            onionEndpoint = P2PPreferences.getPeerOnionAddress(appContext, peerName)
-                                ?: try { com.example.twopchat.data.ChatDatabaseHelper.getInstance(appContext).getPeerOnionAddress(peerName) } catch (_: Throwable) { null },
-                        ) ?: continue
+                        val endpoint = PeerEndpointStore.candidates(appContext, peerName, fingerprint, includeReserve = false, now = now)
+                            .joinToString(",").takeIf { it.isNotBlank() } ?: continue
 
                         // If Tor is actively bootstrapping or restarting and only onion route exists, defer to prevent SOCKS race
                         if (isTorConnecting && endpoint.contains(".onion", ignoreCase = true) && !endpoint.split(",").any { !it.contains(".onion", ignoreCase = true) }) {
@@ -169,10 +169,10 @@ internal class RelayMaintenanceCoordinator(
                         val currentDelay = reconnectDelayMs[peerName] ?: 5_000L
                         if (now - (lastReconnectAttemptAt[peerName] ?: 0L) < currentDelay) continue
                         lastReconnectAttemptAt[peerName] = now
-                        reconnectDelayMs[peerName] = (currentDelay * 2).coerceAtMost(20_000L)
+                        reconnectDelayMs[peerName] = (currentDelay * 2).coerceAtMost(6 * 60 * 60_000L)
                         val anonymizedPeer = (peerName ?: "").take(2) + "***"
                         log(appContext, "Background reconnection for $anonymizedPeer", "DEBUG", null)
-                        bridge.reconnectPeerSession(peerName, endpoint, fingerprint)
+                        bridge.reconnectPeerSessionInBackground(peerName, endpoint, fingerprint)
                     }
                 } catch (error: Exception) {
                     if (error is CancellationException) throw error
@@ -209,7 +209,7 @@ internal class RelayMaintenanceCoordinator(
 
         announceJob = scope.launch {
             var lastAddresses = emptyList<String>()
-            var lastAnnounceTime = 0L
+            var lastIdentity: List<String>? = null
             while (isActive && isRunning()) {
                 try {
                     val prefs = P2PPreferences.prefs(appContext)
@@ -230,8 +230,10 @@ internal class RelayMaintenanceCoordinator(
                             if (yggReady) yggAddr.takeIf { it.isNotBlank() }?.let(::add)
                         }.distinct().sorted()
                         val now = System.currentTimeMillis()
-                        val networkChanged = addresses != lastAddresses && lastAddresses.isNotEmpty()
-                        if (lastAnnounceTime == 0L || networkChanged || now - lastAnnounceTime >= 60_000L) {
+                        val networkChanged = addresses != lastAddresses && lastIdentity != null
+                        val identity = listOf(username, fingerprint, port.toString(), P2PPreferences.getRendezvousCode(appContext).orEmpty())
+                        // Go owns periodic tracker refreshes. This loop only observes configuration.
+                        if (identity != lastIdentity || networkChanged) {
                             log(appContext, "Announcing self on tracker. Network changed: $networkChanged, count: ${addresses.size}", "INFO", null)
                             val success = bridge.announceSelf(
                                 nickname = username,
@@ -242,9 +244,10 @@ internal class RelayMaintenanceCoordinator(
                             log(appContext, "Announce self status: $success", "INFO", null)
                             if (success) {
                                 lastAddresses = addresses
-                                lastAnnounceTime = now
+                                lastIdentity = identity
                             }
                             if (networkChanged) {
+                                com.example.twopchat.NativeBridge.onNetworkChanged()
                                 reconnectDelayMs.clear()
                             }
                         }

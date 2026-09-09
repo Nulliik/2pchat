@@ -46,6 +46,8 @@ interface IP2PBridge {
     suspend fun awaitPeerOnline(peerFP: String, timeoutMs: Long): Boolean = false
     fun cancelFile(peerName: String, messageId: String, expectedFingerprint: String? = null): Boolean
     fun reconnectPeerSession(peerName: String, endpoint: String, fingerprint: String?): Boolean
+    fun reconnectPeerSessionInBackground(peerName: String, endpoint: String, fingerprint: String?): Boolean =
+        reconnectPeerSession(peerName, endpoint, fingerprint)
     fun closePeerSession(peerName: String, expectedFingerprint: String?): Boolean
     fun isPeerOnline(peerName: String, expectedFingerprint: String?): Boolean
     fun shutdownAllSessions(): Boolean

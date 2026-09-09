@@ -21,6 +21,7 @@ object NativeBridge {
 
     // Callbacks invoked by background Go goroutines via JNI
     var onPeerConnectedListener: ((peerFP: String, endpoint: String) -> Unit)? = null
+    var onEndpointResultListener: ((peerFP: String, endpoint: String, success: Boolean) -> Unit)? = null
     var onPeerDisconnectedListener: ((peerFP: String, reason: String) -> Unit)? = null
     var onMessageReceivedListener: ((peerFP: String, payload: ByteArray, messageID: String) -> Unit)? = null
     var onErrorListener: ((code: Int, message: String) -> Unit)? = null
@@ -395,11 +396,14 @@ object NativeBridge {
         trackers: List<String> = emptyList(),
         infoHashes: List<String> = emptyList(),
         listenPort: Int = 50001,
+        replaceSelf: Boolean = false,
     ): Boolean {
         if (!isLoaded) return false
         return try {
             val trackersJson = JSONArray(trackers).toString()
-            val hashesJson = JSONArray(infoHashes).toString()
+            val hashesJson = if (replaceSelf) {
+                org.json.JSONObject().put("self", JSONArray(infoHashes)).toString()
+            } else JSONArray(infoHashes).toString()
             nativeStartDiscovery(trackersJson, hashesJson, listenPort)
         } catch (e: Throwable) {
             SafeLog.e(TAG, "nativeStartDiscovery failed", e)
@@ -459,10 +463,11 @@ object NativeBridge {
         }
     }
 
-    fun probePeer(endpoints: List<String>, expectedFingerprint: String = "", policyFlags: Int = 0): Boolean {
+    fun probePeer(endpoints: List<String>, expectedFingerprint: String = "", policyFlags: Int = 0, reserveEndpoints: List<String> = emptyList()): Boolean {
         if (!isLoaded) return false
         return try {
-            val endpointsJson = JSONArray(endpoints).toString()
+            val endpointsJson = if (reserveEndpoints.isEmpty()) JSONArray(endpoints).toString() else
+                org.json.JSONObject().put("fresh", JSONArray(endpoints)).put("reserve", JSONArray(reserveEndpoints)).toString()
             nativeProbePeer(endpointsJson, expectedFingerprint, policyFlags)
         } catch (e: Throwable) {
             SafeLog.e(TAG, "nativeProbePeer failed", e)
@@ -539,6 +544,17 @@ object NativeBridge {
     private val bridgeScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Default + kotlinx.coroutines.SupervisorJob())
 
     // --- JNI Callbacks from Go to Kotlin ---
+
+    @JvmStatic
+    fun onEndpointResult(peerFP: String, endpoint: String, success: Boolean) {
+        bridgeScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                onEndpointResultListener?.invoke(peerFP, endpoint, success)
+            } catch (e: Exception) {
+                SafeLog.e(TAG, "Error persisting endpoint result", e)
+            }
+        }
+    }
 
     @JvmStatic
     fun onPeerConnected(peerFP: String, endpoint: String) {

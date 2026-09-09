@@ -34,11 +34,13 @@ var (
 
 // Session represents an active, authenticated, and encrypted P2P connection over net.Conn.
 type Session struct {
-	conn            net.Conn
-	initiator       bool
-	localIdentity   *crypto.IdentityKeyPair
-	localPrekeyPriv *crypto.X25519PrivateKey
-	localPrekeyPub  *crypto.X25519PublicKey
+	// Set by Manager after outbound authentication, before session registration.
+	verifiedDialEndpoint string
+	conn                 net.Conn
+	initiator            bool
+	localIdentity        *crypto.IdentityKeyPair
+	localPrekeyPriv      *crypto.X25519PrivateKey
+	localPrekeyPub       *crypto.X25519PublicKey
 
 	peerFingerprint string
 	peerIdentityPub *crypto.X25519PublicKey

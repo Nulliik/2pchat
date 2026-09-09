@@ -33,7 +33,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
 
     companion object {
         private const val DATABASE_NAME = "twopchat.db"
-        internal const val DATABASE_VERSION = 19
+        internal const val DATABASE_VERSION = 20
         private const val TABLE_MESSAGES = "messages"
         private const val TABLE_PENDING_CONTROLS = "pending_controls"
         private const val TABLE_PEERS = "peers"
@@ -283,6 +283,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
         createMediaAccessLogTable(db)
         createDiscoverySequencesTable(db)
         createGroupSuccessionTables(db)
+        createEndpointTables(db)
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -438,6 +439,34 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
         if (oldVersion < 19) {
             createGroupSuccessionTables(db)
         }
+        if (oldVersion < 20) {
+            createEndpointTables(db)
+        }
+    }
+
+    private fun createEndpointTables(db: SQLiteDatabase) {
+        db.execSQL("""CREATE TABLE IF NOT EXISTS peer_endpoint_records(
+            fingerprint TEXT NOT NULL, endpoint TEXT NOT NULL, source TEXT NOT NULL,
+            first_seen INTEGER NOT NULL, last_seen INTEGER NOT NULL,
+            last_success INTEGER NOT NULL DEFAULT 0, success_days INTEGER NOT NULL DEFAULT 0,
+            last_failure INTEGER NOT NULL DEFAULT 0, failures INTEGER NOT NULL DEFAULT 0,
+            retry_after INTEGER NOT NULL DEFAULT 0, advertised_expires INTEGER NOT NULL DEFAULT 0,
+            saved_contact INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY(fingerprint, endpoint))""")
+        db.execSQL("""CREATE TABLE IF NOT EXISTS peer_endpoint_imports(
+            fingerprint TEXT PRIMARY KEY NOT NULL)""")
+    }
+
+    // Route metadata shares the existing SQLCipher database and its backup /
+    // restore lifetime. Schema v20 adds tables only; v19 data is left intact.
+    internal fun <T> endpointTransaction(block: (SQLiteDatabase) -> T): T {
+        val db = safeWritableDatabase
+        db.beginTransaction()
+        return try {
+            val result = block(db)
+            db.setTransactionSuccessful()
+            result
+        } finally { db.endTransaction() }
     }
 
     private fun serializeReactions(reactions: Map<String, List<String>>): String {

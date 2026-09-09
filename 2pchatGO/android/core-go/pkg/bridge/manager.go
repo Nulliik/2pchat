@@ -364,10 +364,27 @@ func (m *SessionManager) StartDiscovery(trackersJSON, infoHashesJSON string, por
 	}
 
 	if infoHashesJSON != "" {
-		var hashes []string
-		if err := json.Unmarshal([]byte(infoHashesJSON), &hashes); err == nil {
+		// Array remains the lookup API for existing callers. Android publication
+		// uses an object so replacing self hashes cannot erase peer lookups.
+		if strings.HasPrefix(strings.TrimSpace(infoHashesJSON), "{") {
+			var config struct {
+				Self []string `json:"self"`
+			}
+			if err := json.Unmarshal([]byte(infoHashesJSON), &config); err != nil {
+				return err
+			}
+			if err := svc.SetSelfInfoHashes(config.Self, port); err != nil {
+				return err
+			}
+		} else {
+			var hashes []string
+			if err := json.Unmarshal([]byte(infoHashesJSON), &hashes); err != nil {
+				return err
+			}
 			for _, h := range hashes {
-				_ = svc.RegisterInfoHash(h)
+				if err := svc.RegisterInfoHash(h); err != nil {
+					return err
+				}
 			}
 		}
 	}
@@ -507,8 +524,8 @@ func (m *SessionManager) ProbePeerWithFlags(endpointsJSON, expectedFingerprint s
 		return err
 	}
 
-	var endpoints []string
-	if err := json.Unmarshal([]byte(endpointsJSON), &endpoints); err != nil {
+	fresh, reserve, err := decodeEndpointGroups(endpointsJSON)
+	if err != nil {
 		return fmt.Errorf("invalid endpoints JSON: %w", err)
 	}
 
@@ -522,8 +539,10 @@ func (m *SessionManager) ProbePeerWithFlags(endpointsJSON, expectedFingerprint s
 
 	contactPolicy := transport.PolicyFromFlags(policyFlags)
 	go func() {
-		endpointStr := strings.Join(endpoints, ",")
-		_, err := nm.ConnectPeerWithPolicy(endpointStr, expectedFingerprint, contactPolicy)
+		err := connectEndpointGroups(fresh, reserve, func(endpointStr string) error {
+			_, connectErr := nm.ConnectPeerWithPolicy(endpointStr, expectedFingerprint, contactPolicy)
+			return connectErr
+		})
 		if err != nil {
 			callbacks, _ := m.callbackSnapshot()
 			if callbacks.OnError != nil {

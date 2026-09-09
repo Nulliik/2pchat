@@ -4,6 +4,7 @@
 static JavaVM *g_jvm = NULL;
 static jclass g_nativeBridgeClass = NULL;
 static jmethodID g_midOnPeerConnected = NULL;
+static jmethodID g_midOnEndpointResult = NULL;
 static jmethodID g_midOnPeerDisconnected = NULL;
 static jmethodID g_midOnMessageReceived = NULL;
 static jmethodID g_midOnError = NULL;
@@ -29,6 +30,7 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *reserved) {
     if (localClass != NULL) {
         g_nativeBridgeClass = (jclass)(*env)->NewGlobalRef(env, localClass);
         g_midOnPeerConnected = (*env)->GetStaticMethodID(env, g_nativeBridgeClass, "onPeerConnected", "(Ljava/lang/String;Ljava/lang/String;)V");
+        g_midOnEndpointResult = (*env)->GetStaticMethodID(env, g_nativeBridgeClass, "onEndpointResult", "(Ljava/lang/String;Ljava/lang/String;Z)V");
         g_midOnPeerDisconnected = (*env)->GetStaticMethodID(env, g_nativeBridgeClass, "onPeerDisconnected", "(Ljava/lang/String;Ljava/lang/String;)V");
         g_midOnMessageReceived = (*env)->GetStaticMethodID(env, g_nativeBridgeClass, "onMessageReceived", "(Ljava/lang/String;[BLjava/lang/String;)V");
         g_midOnError = (*env)->GetStaticMethodID(env, g_nativeBridgeClass, "onError", "(ILjava/lang/String;)V");
@@ -112,6 +114,23 @@ static void releaseJNIEnv(int attached) {
 static void checkAndClearException(JNIEnv *env) {
     if (env != NULL && (*env)->ExceptionCheck(env)) {
         (*env)->ExceptionClear(env);
+    }
+}
+
+void callbackOnEndpointResult(const char *peerFP, const char *endpoint, jboolean success) {
+    if (g_nativeBridgeClass == NULL || g_midOnEndpointResult == NULL) return;
+    int attached = 0;
+    JNIEnv *env = getJNIEnv(&attached);
+    if (env != NULL) {
+        jstring jFP = (*env)->NewStringUTF(env, peerFP ? peerFP : "");
+        jstring jEndpoint = (*env)->NewStringUTF(env, endpoint ? endpoint : "");
+        if (jFP != NULL && jEndpoint != NULL) {
+            (*env)->CallStaticVoidMethod(env, g_nativeBridgeClass, g_midOnEndpointResult, jFP, jEndpoint, success);
+        }
+        checkAndClearException(env);
+        if (jFP != NULL) (*env)->DeleteLocalRef(env, jFP);
+        if (jEndpoint != NULL) (*env)->DeleteLocalRef(env, jEndpoint);
+        releaseJNIEnv(attached);
     }
 }
 

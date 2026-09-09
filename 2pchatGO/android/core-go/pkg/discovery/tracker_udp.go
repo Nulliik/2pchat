@@ -70,10 +70,11 @@ func (p PeerEndpoint) String() string {
 
 // AnnounceResult contains the list of discovered peers and tracker interval.
 type AnnounceResult struct {
-	Interval int
-	Leechers int
-	Seeders  int
-	Peers    []PeerEndpoint
+	MinInterval int
+	Interval    int
+	Leechers    int
+	Seeders     int
+	Peers       []PeerEndpoint
 }
 
 // UDPTrackerClient implements the BitTorrent BEP 15 UDP Tracker Protocol.

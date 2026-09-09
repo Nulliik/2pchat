@@ -148,7 +148,7 @@ func parseHTTPAnnounceResponse(data []byte, yggdrasilTracker bool) (*AnnounceRes
 	}
 
 	res := &AnnounceResult{
-		Interval: 60,
+		Interval: 0,
 	}
 
 	// Look for interval (e.g. 8:intervali1800e)
@@ -157,6 +157,15 @@ func parseHTTPAnnounceResponse(data []byte, yggdrasilTracker bool) (*AnnounceRes
 		if end := bytes.IndexByte(data[start:], 'e'); end != -1 {
 			if interval, err := strconv.Atoi(string(data[start : start+end])); err == nil {
 				res.Interval = interval
+			}
+		}
+	}
+
+	if idx := bytes.Index(data, []byte("12:min intervali")); idx != -1 {
+		start := idx + len("12:min intervali")
+		if end := bytes.IndexByte(data[start:], 'e'); end != -1 {
+			if interval, err := strconv.Atoi(string(data[start : start+end])); err == nil {
+				res.MinInterval = interval
 			}
 		}
 	}

@@ -125,7 +125,7 @@ object P2PMessageRelay {
         mediaAlbumGenerations[albumId] != generation
 
     @Volatile private var localPeerDiscovery: LocalPeerDiscovery? = null
-    private data class LocalPeerCandidate(val fingerprint: String, val endpoint: String)
+    private data class LocalPeerCandidate(val fingerprint: String, val endpoint: String, val seenAt: Long = System.currentTimeMillis())
 
     private val localPeerCandidates =
         ConcurrentHashMap<String, CopyOnWriteArrayList<LocalPeerCandidate>>()
@@ -133,30 +133,32 @@ object P2PMessageRelay {
     private fun localPeerCandidateKey(peerName: String): String =
         peerName.trim().lowercase(Locale.ROOT)
 
-    internal fun localDiscoveryEndpoints(peerName: String): List<String> =
-        localPeerCandidates[localPeerCandidateKey(peerName)]
-            ?.map(LocalPeerCandidate::endpoint)
-            ?.distinct()
-            ?.take(12)
-            .orEmpty()
+    @Synchronized
+    internal fun localDiscoveryEndpoints(peerName: String): List<String> {
+        val key = localPeerCandidateKey(peerName)
+        val rows = localPeerCandidates[key] ?: return emptyList()
+        val now = System.currentTimeMillis()
+        rows.removeAll { now - it.seenAt >= 30 * 60_000L }
+        if (rows.isEmpty()) localPeerCandidates.remove(key)
+        return rows.map { it.endpoint }.distinct().take(12)
+    }
 
+    @Synchronized
     fun injectLocalDiscoveryCandidate(peerName: String, peerFingerprint: String, endpoint: String) {
+        val normalized = EndpointRetention.normalize(endpoint) ?: return
         val key = localPeerCandidateKey(peerName)
         if (localPeerCandidates.size >= 128 && !localPeerCandidates.containsKey(key)) {
-            val oldestKey = localPeerCandidates.keys.firstOrNull()
+            val oldestKey = localPeerCandidates.entries.minByOrNull { entry -> entry.value.maxOfOrNull { it.seenAt } ?: 0L }?.key
             if (oldestKey != null) localPeerCandidates.remove(oldestKey)
         }
-        val candidates = localPeerCandidates.computeIfAbsent(key) {
-            CopyOnWriteArrayList()
-        }
-        val candidate = LocalPeerCandidate(peerFingerprint, endpoint)
-        candidates.remove(candidate)
-        candidates.add(candidate)
+        val candidates = localPeerCandidates.computeIfAbsent(key) { CopyOnWriteArrayList() }
+        candidates.removeAll { it.fingerprint == peerFingerprint && it.endpoint == normalized }
+        candidates.add(LocalPeerCandidate(peerFingerprint, normalized))
         while (candidates.size > 12) candidates.removeAt(0)
     }
 
     @Synchronized
-    internal fun rememberAuthenticatedPeerEndpoint(peerName: String, endpoints: String, context: Context? = null): Boolean {
+    internal fun rememberAuthenticatedPeerEndpoint(peerName: String, endpoints: String, context: Context? = null, source: EndpointSource = EndpointSource.AUTHENTICATED, advertisedExpires: Long = 0): Boolean {
         val normalizedName = peerName.trim()
         val normalizedEndpoints = endpoints.trim()
         val endpointParts = normalizedEndpoints.split(',').map(String::trim).filter(String::isNotEmpty)
@@ -164,20 +166,28 @@ object P2PMessageRelay {
             endpointParts.isEmpty() || !isValidPeerEndpointList(normalizedEndpoints)) {
             return false
         }
-        if (normalizedName !in _peerEndpoints && _peerEndpoints.size >= MAX_TRACKED_PEER_ENDPOINTS) return false
+        if (normalizedName !in _peerEndpoints && _peerEndpoints.size >= MAX_TRACKED_PEER_ENDPOINTS) {
+            // This is only a UI projection. Persistent friend routes are never evicted here.
+            _peerEndpoints.keys.firstOrNull { peerSessionStates[it] != true }?.let { _peerEndpoints.remove(it) }
+        }
         val existingParts = _peerEndpoints[normalizedName]?.split(',')?.map(String::trim)?.filter(String::isNotEmpty).orEmpty()
-        val combined = (existingParts + endpointParts).distinct()
+        val combined = (endpointParts + existingParts).distinct().take(EndpointRetention.MAX_PER_PEER)
         val joined = combined.joinToString(",")
         _peerEndpoints[normalizedName] = joined
         val ctx = context?.applicationContext ?: storedAppContext
         if (ctx != null && !isPlaceholderPeerName(normalizedName)) {
-            P2PPreferences.prefs(ctx).edit().putString("last_endpoint_$normalizedName", joined).apply()
-            val onionPart = combined.firstOrNull { it.contains(".onion", ignoreCase = true) }
-            if (onionPart != null) {
-                com.example.twopchat.data.ChatDatabaseHelper.getInstance(ctx).savePeerOnionAddress(
-                    normalizedName,
-                    onionPart.substringBefore(':')
-                )
+            val fp = P2PPreferences.getPeerFingerprint(ctx, normalizedName)
+                ?: normalizedName.takeIf { it.length == 64 && it.all { ch -> ch in "0123456789abcdefABCDEF" } }
+            serviceScope.launch {
+                if (fp != null) {
+                    if (source != EndpointSource.MIGRATED) {
+                        PeerEndpointStore.observe(ctx, normalizedName, fp, endpointParts, source, advertisedExpires)
+                    }
+                    val retained = PeerEndpointStore.candidates(ctx, normalizedName, fp, includeReserve = true)
+                    P2PPreferences.prefs(ctx).edit().putString("last_endpoint_$normalizedName", retained.joinToString(",")).apply()
+                } else {
+                    P2PPreferences.prefs(ctx).edit().putString("last_endpoint_$normalizedName", joined).apply()
+                }
             }
         }
         return true
@@ -483,7 +493,7 @@ object P2PMessageRelay {
             if (peerPresenceVersions.current(peerName) != version) return@launch
             peerSessionStates[peerName] = true
             if (transport != null) peerConnectionTransports[peerName] = transport
-            if (endpoint.isNotEmpty()) rememberAuthenticatedPeerEndpoint(peerName, endpoint)
+            // Socket source addresses are display data, not reusable dial routes.
         }
     }
 
@@ -1377,10 +1387,10 @@ object P2PMessageRelay {
         for (peerName in persistedChats) {
             persistedPrefs.getString("last_endpoint_$peerName", null)
                 ?.takeIf { it.isNotBlank() }
-                ?.let { rememberAuthenticatedPeerEndpoint(peerName, it) }
+                ?.let { rememberAuthenticatedPeerEndpoint(peerName, it, appContext, EndpointSource.MIGRATED) }
             val savedOnion = P2PPreferences.getPeerOnionAddress(appContext, peerName)
             if (savedOnion != null) {
-                rememberAuthenticatedPeerEndpoint(peerName, savedOnion)
+                rememberAuthenticatedPeerEndpoint(peerName, savedOnion, appContext, EndpointSource.MIGRATED)
             }
         }
         synchronized(identityLock) {
@@ -2575,9 +2585,6 @@ object P2PMessageRelay {
                                 ChatDatabaseHelper.getInstance(appContext).savePeerAboutMe(resolvedPeerName, aboutMe)
                                 ChatDatabaseHelper.getInstance(appContext).savePeerAboutMe(fingerprint, aboutMe)
                             }
-                            if (endpoint.isNotEmpty()) {
-                                putString("last_endpoint_$resolvedPeerName", endpoint)
-                            }
                             apply()
                         }
                     getBridge(appContext).updatePeerNameMapping(fingerprint, resolvedPeerName)
@@ -2703,9 +2710,9 @@ object P2PMessageRelay {
                                 log(appContext, "Discovered ${verified.endpoints.size} signed endpoints for $peerName (seq=${verified.seq}) via $source")
                                 for (verifiedEp in verified.endpoints) {
                                     injectLocalDiscoveryCandidate(peerName, fp, verifiedEp)
-                                    rememberAuthenticatedPeerEndpoint(peerName, verifiedEp, appContext)
+                                    rememberAuthenticatedPeerEndpoint(peerName, verifiedEp, appContext, EndpointSource.DISCOVERY, org.json.JSONObject(endpoint).optLong("expires_at", 0))
                                     if (!getBridge(appContext).isPeerOnline(peerName, fp)) {
-                                        getBridge(appContext).reconnectPeerSession(peerName, verifiedEp, fp)
+                                        getBridge(appContext).reconnectPeerSessionInBackground(peerName, verifiedEp, fp)
                                     }
                                 }
                                 continue
@@ -2721,10 +2728,10 @@ object P2PMessageRelay {
 
                             log(appContext, "Discovered endpoint $endpoint for $peerName via $source")
                             injectLocalDiscoveryCandidate(peerName, fp, endpoint)
-                            rememberAuthenticatedPeerEndpoint(peerName, endpoint, appContext)
+                            rememberAuthenticatedPeerEndpoint(peerName, endpoint, appContext, EndpointSource.DISCOVERY)
 
                             if (!getBridge(appContext).isPeerOnline(peerName, fp)) {
-                                getBridge(appContext).reconnectPeerSession(peerName, endpoint, fp)
+                                getBridge(appContext).reconnectPeerSessionInBackground(peerName, endpoint, fp)
                             }
                         }
                     }
@@ -3268,6 +3275,7 @@ object P2PMessageRelay {
             val db = ChatDatabaseHelper.getInstance(context)
             db.clearMessagesForPeer(peerName, aliases)
             db.deletePendingControlsForPeer(peerName)
+            if (!fp.isNullOrBlank()) PeerEndpointStore.delete(context.applicationContext, fp)
             db.deletePeer(peerName, aliases)
         }
 

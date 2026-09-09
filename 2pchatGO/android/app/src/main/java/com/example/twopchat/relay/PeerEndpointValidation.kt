@@ -4,8 +4,8 @@ package com.example.twopchat.relay
 internal fun isValidPeerEndpointList(value: String): Boolean {
     if (value.isBlank() || value.length > 4_096) return false
     val endpoints = value.split(',').map(String::trim).filter(String::isNotEmpty)
-    if (endpoints.isEmpty()) return false
-    return endpoints.take(16).all(::isValidPeerEndpoint)
+    if (endpoints.isEmpty() || endpoints.size > 16) return false
+    return endpoints.all(::isValidPeerEndpoint)
 }
 
 private fun isValidPeerEndpoint(endpoint: String): Boolean {

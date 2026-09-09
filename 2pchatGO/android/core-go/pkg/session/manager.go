@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 	"twopchat/core/pkg/crypto"
 	"twopchat/core/pkg/diagnostics"
@@ -25,6 +26,9 @@ import (
 
 // EventCallbacks defines JNI/Kotlin callback hooks for networking events.
 type EventCallbacks struct {
+	// Only an authenticated outbound route can report success. Incoming socket
+	// source ports and relay endpoints are never advertised as reusable routes.
+	OnEndpointResult   func(peerFP, endpoint string, success bool)
 	OnPeerConnected    func(peerFP, endpoint string)
 	OnPeerDisconnected func(peerFP, reason string)
 	OnMessageReceived  func(peerFP string, payload []byte, messageID string)
@@ -527,15 +531,24 @@ func (m *Manager) connectPeerInternal(endpoint, expectedFingerprint string, cont
 	var winEndpoint string
 	var err error
 	relayFallbackUsed := false
+	dialCandidate := func(c context.Context, ep string) (net.Conn, error) {
+		conn, dialErr := m.dialer.DialContext(c, "tcp", ep)
+		if dialErr != nil && ctx.Err() == nil && !errors.Is(c.Err(), context.Canceled) &&
+			!errors.Is(dialErr, transport.ErrPolicyDenied) && !errors.Is(dialErr, syscall.ENETDOWN) &&
+			!errors.Is(dialErr, syscall.ENETUNREACH) && expectedFingerprint != "" {
+			if callback := m.callbacksSnapshot().OnEndpointResult; callback != nil {
+				callback(expectedFingerprint, ep, false)
+			}
+		}
+		return conn, dialErr
+	}
 
 	if len(candidates) == 1 {
 		winEndpoint = candidates[0]
-		conn, err = m.dialer.DialContext(ctx, "tcp", winEndpoint)
+		conn, err = dialCandidate(ctx, winEndpoint)
 	} else {
 		prober := discovery.NewFastTieredProber()
-		conn, winEndpoint, err = prober.ProbeFast(ctx, candidates, func(c context.Context, ep string) (net.Conn, error) {
-			return m.dialer.DialContext(c, "tcp", ep)
-		})
+		conn, winEndpoint, err = prober.ProbeFast(ctx, candidates, dialCandidate)
 	}
 
 	// 1. If direct dialing failed, attempt TCP Hole Punching if hole puncher is configured
@@ -608,6 +621,9 @@ func (m *Manager) connectPeerInternal(endpoint, expectedFingerprint string, cont
 		}
 		return nil, fmt.Errorf("initiator handshake failed with %s: %w", winEndpoint, err)
 	}
+	if !relayFallbackUsed {
+		sess.verifiedDialEndpoint = winEndpoint
+	}
 
 	if class, _ := transport.ClassifyEndpoint(winEndpoint); class == transport.TransportTor {
 		sess.SetTorTransport(true)
@@ -652,6 +668,11 @@ func (m *Manager) RegisterSession(newSess *Session, peerFP, endpoint string, ini
 	if onConnCb != nil {
 		onConnCb(peerFP, endpoint)
 	}
+	if newSess.verifiedDialEndpoint != "" {
+		if callback := m.callbacksSnapshot().OnEndpointResult; callback != nil {
+			callback(peerFP, newSess.verifiedDialEndpoint, true)
+		}
+	}
 
 	// Automatic identity_info exchange upon session establishment (full parity with Python discovery_bridge.py)
 	if nick != "" || m.announceProtocol {
@@ -686,7 +707,16 @@ func (m *Manager) dispatchSessionMessages(s *Session, peerFP string) {
 		}
 	}()
 
+	lastRouteSuccess := time.Now()
 	for msg := range s.Messages() {
+		// Messages() contains authenticated session payloads. Sample long-lived
+		// routes without writing metadata for every heartbeat or file fragment.
+		if s.verifiedDialEndpoint != "" && time.Since(lastRouteSuccess) >= 5*time.Minute {
+			lastRouteSuccess = time.Now()
+			if callback := m.callbacksSnapshot().OnEndpointResult; callback != nil {
+				callback(peerFP, s.verifiedDialEndpoint, true)
+			}
+		}
 		msgType, _ := msg["type"].(string)
 
 		if msgType == string(TypeIdentityInfo) {
