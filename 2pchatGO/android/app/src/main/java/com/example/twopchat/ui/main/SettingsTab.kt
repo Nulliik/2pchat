@@ -1562,6 +1562,7 @@ fun SettingsTab(
                     updateResult = null
                 }
             },
+            shape = RoundedCornerShape(20.dp),
             containerColor = surfaceColor,
             title = {
                 Text(
@@ -1598,18 +1599,19 @@ fun SettingsTab(
                                     fontSize = 13.sp,
                                     color = onSurfaceColor
                                 )
-                                Spacer(modifier = Modifier.height(4.dp))
+                                Spacer(modifier = Modifier.height(6.dp))
                                 Box(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .heightIn(max = 160.dp)
-                                        .background(onSurfaceColor.copy(alpha = 0.05f), RoundedCornerShape(8.dp))
-                                        .padding(10.dp)
+                                        .heightIn(min = 140.dp, max = 280.dp)
+                                        .background(onSurfaceColor.copy(alpha = 0.05f), RoundedCornerShape(10.dp))
+                                        .padding(12.dp)
                                         .verticalScroll(rememberScrollState())
                                 ) {
                                     Text(
                                         text = rel.changelog,
                                         fontSize = 12.sp,
+                                        lineHeight = 17.sp,
                                         color = onSurfaceVariant
                                     )
                                 }
@@ -1678,7 +1680,7 @@ fun SettingsTab(
                                         downloadProgress = 0f
                                         downloadStatusText = Localizations.tr(appLanguage, ru = "Подготовка загрузки...", en = "Preparing download...", de = "Download wird vorbereitet...", es = "Preparando descarga...", fr = "Préparation du téléchargement...", pt = "Preparando download...", tr = "İndirme hazırlanıyor...")
                                         coroutineScope.launch {
-                                            val downloadResult = AppUpdateManager.downloadApk(context, res.release.apkUrl) { bytes, total, prog ->
+                                             val downloadResult = AppUpdateManager.downloadApk(context, res.release.apkUrl) { bytes, total, prog ->
                                                 downloadProgress = prog
                                                 val mbDown = bytes / (1024.0 * 1024.0)
                                                 val mbTotal = total / (1024.0 * 1024.0)
@@ -1701,7 +1703,11 @@ fun SettingsTab(
                                 }
                             },
                             enabled = !isDownloadingApk,
-                            colors = ButtonDefaults.buttonColors(containerColor = primaryColor)
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = primaryColor,
+                                contentColor = if (primaryColor == MintGreen) StealthBlack else Color.White
+                            )
                         ) {
                             Text(
                                 text = if (isDownloadingApk) {
@@ -1709,7 +1715,7 @@ fun SettingsTab(
                                 } else {
                                     Localizations.tr(appLanguage, ru = "Скачать и установить", en = "Download & Install", de = "Herunterladen & Installieren", es = "Descargar e instalar", fr = "Télécharger et installer", pt = "Baixar e instalar", tr = "İndir ve Yükle")
                                 },
-                                color = Color.White
+                                fontWeight = FontWeight.Bold
                             )
                         }
                     }
