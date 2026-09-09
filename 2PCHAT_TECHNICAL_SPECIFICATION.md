@@ -6,8 +6,8 @@
 
 - `messenger/`: Python CLI, Kivy GUI, FastAPI backend; общий код криптографии, discovery, сессий и транспортов.
 - `2pchatGO/android/`: основной Android-клиент на Kotlin/Compose. Сетевые сессии и криптографические операции Go доступны через CGO/JNI (`core-go/cmd/lib2pcore`, `NativeBridge`).
-- `2PChat android/android/`: предыдущий клиент с Chaquopy. Gradle генерирует Python-источники из корневого `messenger/`.
-- Групповые runtime, ACL, хранение и UI находятся в Kotlin в обоих Android-деревьях. Перенос на Go заменил bridge криптографии/транспорта, а не весь групповой runtime.
+- Предыдущий Android-клиент с Chaquopy удалён 2026-09-09; исходники доступны в истории Git.
+- Групповые runtime, ACL, хранение и UI находятся в Kotlin в `2pchatGO/android`. Перенос на Go заменил bridge криптографии/транспорта, а не весь групповой runtime.
 
 ## Обнаружение и транспорт
 
@@ -36,7 +36,7 @@ Framing: 4-байтовая big-endian длина и payload. Application frames
 
 Используется журнал подписанных событий, HLC/author sequence, SQLCipher-проекции, durable outbox и anti-entropy. Шифрование эпох — AES-256-GCM, подписи — Ed25519; suite v2 добавляет привязки control/roster. Это собственный протокол, **не MLS**. Секрет эпохи позволяет расшифровать доступные ciphertext этой эпохи.
 
-Реализованы роли, ограничения, приглашения, текст, reply/edit/delete, реакции, pin, опросы, вложения, typing и mute. В Go-дереве схема `twopchat-groups.db` — v7; в Chaquopy-дереве — v6. Версия SQLCipher-зависимости и версия схемы — разные величины.
+Реализованы роли, ограничения, приглашения, текст, reply/edit/delete, реакции, pin, опросы, вложения, typing и mute. В Go-дереве схема `twopchat-groups.db` — v7; в удалённом Chaquopy-дереве была v6. Версия SQLCipher-зависимости и версия схемы — разные величины.
 
 До 32 получателей обычные события доставляются напрямую; для больших групп используются три HRW-реплики и до трёх соседей кольца. Serialized membership control сохраняет полный fan-out. Вложения разбиваются на блоки по 512 КиБ. Подробные лимиты и ограничения — в групповом протоколе.
 

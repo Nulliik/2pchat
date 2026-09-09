@@ -2,7 +2,7 @@
 
 Актуализация: 2026-09-05. Описание реализации сверено с локальными исходниками и конфигурацией сборки; внешние статьи и обещания релизной поддержки не использовались как подтверждение состояния кода.
 
-Основной Android-клиент — `2pchatGO/android`. Предыдущее дерево `2PChat android/android` сохраняется для совместимости. Python-код — `messenger/`; каталога `webui/` нет.
+Основной Android-клиент — `2pchatGO/android`. Предыдущее дерево `2PChat android/android` объявлено устаревшим и удалено 2026-09-09; упоминания в исторических отчётах относятся к прежним срезам. Python-код — `messenger/`; каталога `webui/` нет.
 
 Правила разработки описывают требования. ADR могут содержать целевую политику, которая ещё не реализована в CI. Исторические отчёты сохраняют выводы своих проверок; номера строк, счётчики тестов и слова «исправлено» относятся к тому срезу. Они не заменяют повторную проверку текущего кода.
 
@@ -33,7 +33,6 @@
 - [AGENTS.md](../AGENTS.md)
 - [RULES.md](../RULES.md)
 - [SECURITY.md](../SECURITY.md)
-- [2PChat android/GEMINI.md](../2PChat%20android/GEMINI.md)
 - [2pchatGO/android/docs/ADR_001_PRIMARY_ANDROID_TREE.md](../2pchatGO/android/docs/ADR_001_PRIMARY_ANDROID_TREE.md)
 - [2pchatGO/android/docs/ADR_002_JNI_BRIDGE_SAFETY_CONTRACT.md](../2pchatGO/android/docs/ADR_002_JNI_BRIDGE_SAFETY_CONTRACT.md)
 - [2pchatGO/android/docs/ADR_003_TESTING_AND_CI_REPRODUCIBILITY.md](../2pchatGO/android/docs/ADR_003_TESTING_AND_CI_REPRODUCIBILITY.md)

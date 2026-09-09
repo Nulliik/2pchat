@@ -35,7 +35,7 @@ The source configuration currently declares the following values; the CI Go setu
 - **Gradle**: 9.5.0
 - **Android Gradle Plugin (AGP)**: 9.3.1
 - **Android NDK**: 26.3.11579264 (targeting Android API 24)
-- **Python**: Chaquopy runtime defaults to 3.11; desktop tests were run with 3.10.11 on 2026-09-05. No desktop Python pin is declared.
+- **Python**: The Chaquopy Android client was removed on 2026-09-09; desktop tests were run with 3.10.11 on 2026-09-05. No desktop Python pin is declared.
 
 ### 4. Release Promotion Gate
 Target policy for production promotion (not yet enforced by the release workflow):

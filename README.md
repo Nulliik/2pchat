@@ -8,12 +8,13 @@ P2P-мессенджер: Android-клиент на Kotlin/Jetpack Compose с Go
 | --- | --- |
 | [2pchatGO/android](2pchatGO/android/README.md) | Основной Android-клиент, цель релизного CI; Go-ядро в `core-go/` |
 | [messenger](messenger/README.md) | Python: CLI, Kivy GUI, FastAPI, протокол и тесты совместимости |
-| [2PChat android](2PChat%20android/GEMINI.md) | Предыдущее Android-дерево с Chaquopy; сохраняется для совместимости |
 | [docs](docs/README.md) | Протоколы, интеграция и отчёты |
 | [plans](plans/README.md) | Исторические планы и список замечаний |
 | `scripts/` | Сборка desktop и публикация релизов |
 | `tools/` | Android E2E и вспомогательные инструменты |
 | [.agents/skills](.agents/skills/README.md) | Локальные инструкции для агентов |
+
+Предыдущий Android-клиент с Chaquopy (`2PChat android/`) объявлен устаревшим и удалён 2026-09-09. Для Android используйте [клиент с Go-ядром](2pchatGO/android/README.md). Старые исходники доступны в истории Git; удаление уменьшает размер рабочего дерева, но не существующей истории.
 
 ## Запуск Python-клиента
 

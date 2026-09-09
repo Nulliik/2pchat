@@ -8,7 +8,7 @@ Reviewed against repository sources on 2026-09-05. This is a capability inventor
 - Signed handshake v3, live X3DH-style bootstrap and Double Ratchet; legacy compatibility is documented in [PROTOCOL.md](../docs/PROTOCOL.md).
 - Persisted identity, TOFU, labels, QR/text verification, ACK/retry, reconnect and offline outbox.
 - File transfer, status messages and GUI control layer.
-- Primary Kotlin/Compose Android client with Go core; previous Chaquopy client retained for compatibility.
+- Primary Kotlin/Compose Android client with Go core; previous Chaquopy client deprecated and removed on 2026-09-09.
 - Android group runtime: epoch encryption, event log, ACL, invitations, media, polls, typing, mute, outbox and anti-entropy. See [group protocol](../docs/GROUP_CHAT_PROTOCOL.md).
 - PyInstaller scripts and desktop/Android release workflows.
 

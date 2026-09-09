@@ -43,7 +43,7 @@ The former 1.4.x support table did not match the application version declared in
 | Version | Supported |
 | :--- | :--- |
 | Primary Android source (`2pchatGO/android`) | Current development target |
-| Previous Chaquopy client | Compatibility tree; not the release CI target |
+| Previous Chaquopy client | Deprecated and removed on 2026-09-09; no longer maintained |
 
 ---
 

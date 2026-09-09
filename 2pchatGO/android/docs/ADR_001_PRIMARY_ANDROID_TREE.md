@@ -1,14 +1,14 @@
 # ADR 001: Primary Android tree
 
-Status: accepted 2026-08-31; factual description updated 2026-09-05.
+Status: accepted 2026-08-31; retirement decision updated 2026-09-09.
 
 ## Decision
 
 `2pchatGO/android` is the primary Android client and the target of `.github/workflows/android-release.yml`.
 
-`2PChat android/android` is the previous Chaquopy client. It remains in the repository for compatibility and comparison; the release workflow does not build it. The earlier statement that this tree was frozen is not an accurate description of the repository: it contains later group and compatibility changes.
+`2PChat android/android`, the previous Chaquopy client, is deprecated and removed as of 2026-09-09 to reduce checkout size and retire the duplicate Android implementation. Its source remains in Git history; history is not rewritten. The Python desktop client remains in `messenger/`.
 
-## Comparison
+## Historical comparison before removal
 
 | Area | Previous client | Primary client |
 | --- | --- | --- |
@@ -22,4 +22,4 @@ No speedup or stronger cryptographic guarantee follows solely from the choice of
 
 ## Consequences
 
-Default Android feature work targets the primary tree. Compatibility work must explicitly identify whether both trees are involved. Do not remove the previous tree without migrating its references and tests. Build commands are maintained in [Android README](../README.md).
+Android feature work targets `2pchatGO/android`. References and build instructions now target that tree. The two tests parsing the removed Kotlin `PythonBridge` contract are retired; the independent Python discovery bridge smoke test is retained. This source removal introduces no wire-format or database migration and does not establish an upgrade path from installed Chaquopy clients. Build commands are maintained in [Android README](../README.md).

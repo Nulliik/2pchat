@@ -8,16 +8,9 @@ Updated against the repository on 2026-09-05.
 
 Group runtime, SQLCipher storage, ACL and Compose UI remain in Kotlin. Python tests check reference behavior and selected interoperability contracts; they do not replace Go or Android tests.
 
-## Previous client: Chaquopy
+## Retired client: Chaquopy
 
-The actual directory is `2PChat android/android` (the old `Android_App/android` path no longer exists).
-
-- Edit shared Python code and bridge glue in root `messenger/`, including `discovery_bridge.py` and `bootstrap.py`.
-- `syncCanonicalPythonCore` in `2PChat android/android/app/build.gradle.kts` copies the package and bridge entrypoints to `app/build/generated/python/main`.
-- `forbidDuplicatedPythonCore` prevents a second maintained Python copy under `app/src/main/python`.
-- Edit this client's Kotlin code under `2PChat android/android/app/src/main/java` only when working on compatibility with that client.
-
-Chaquopy runtime defaults to Python `3.11`; this is independent of the desktop interpreter. Overrides: `-PchaquopyRuntimePython`, `-PchaquopyBuildPython`, `CHAQUOPY_PYTHON_VERSION`, `CHAQUOPY_BUILD_PYTHON`.
+The previous `2PChat android/` tree was deprecated and removed on 2026-09-09. Use the Go client above for Android development. Historical source remains available in Git history. The Python desktop client and shared `messenger/` package retain their existing tests.
 
 ## Validation
 
@@ -28,9 +21,4 @@ python -m pip install -r messenger/requirements.txt
 python -m pytest
 ```
 
-For primary Android, follow its [build and test guide](../2pchatGO/android/README.md). To validate the previous client in PowerShell:
-
-```powershell
-Set-Location '2PChat android/android'
-.\gradlew.bat testDebugUnitTest assembleDebug
-```
+For Android, follow its [build and test guide](../2pchatGO/android/README.md).

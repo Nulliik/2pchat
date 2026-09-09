@@ -1,6 +1,6 @@
 # Групповые чаты 2PChat: фактическая Android-реализация
 
-Сверено 2026-09-05. Основная область документа — `2pchatGO/android`; различия предыдущего Chaquopy-клиента указаны отдельно.
+Сверено 2026-09-05. Основная область документа — `2pchatGO/android`; различия предыдущего Chaquopy-клиента указаны как исторические (клиент удалён 2026-09-09).
 
 - версия JSON wire-протокола: `1`;
 - версия отдельной SQLCipher-схемы групп: `7` в Go-клиенте, `6` в Chaquopy-клиенте;
@@ -1183,7 +1183,7 @@ Android instrumented:
 Основные команды:
 
 ```powershell
-cd "2PChat android/android"
+cd "2pchatGO/android"
 .\gradlew.bat :app:testDebugUnitTest
 .\gradlew.bat :app:connectedDebugAndroidTest
 ```
