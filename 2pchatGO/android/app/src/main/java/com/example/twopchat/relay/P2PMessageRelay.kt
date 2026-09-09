@@ -185,12 +185,18 @@ object P2PMessageRelay {
                     }
                     val retained = PeerEndpointStore.candidates(ctx, normalizedName, fp, includeReserve = true)
                     P2PPreferences.prefs(ctx).edit().putString("last_endpoint_$normalizedName", retained.joinToString(",")).apply()
+                    runOnMain { replaceEndpointProjection(normalizedName, retained.joinToString(",")) }
                 } else {
                     P2PPreferences.prefs(ctx).edit().putString("last_endpoint_$normalizedName", joined).apply()
                 }
             }
         }
         return true
+    }
+
+    internal fun replaceEndpointProjection(peerName: String, endpoints: String) {
+        if (endpoints.isBlank()) _peerEndpoints.remove(peerName)
+        else if (peerName in _peerEndpoints || _peerEndpoints.size < MAX_TRACKED_PEER_ENDPOINTS) _peerEndpoints[peerName] = endpoints
     }
 
     fun listenerPort(context: Context): Int = P2PPreferences.listenerPort(context)
@@ -790,9 +796,8 @@ object P2PMessageRelay {
             if (knownPeer != null) {
                 val (authenticatedName, peerFingerprint) = knownPeer
                 injectLocalDiscoveryCandidate(authenticatedName, peerFingerprint, endpoint)
-                currentPrefs.edit().putString(P2PPreferences.lastEndpoint(authenticatedName), endpoint).apply()
-                rememberAuthenticatedPeerEndpoint(authenticatedName, endpoint)
-                outboundMessenger.reconnect(context, authenticatedName)
+                rememberAuthenticatedPeerEndpoint(authenticatedName, endpoint, context, EndpointSource.DISCOVERY)
+                getBridge(context).reconnectPeerSessionInBackground(authenticatedName, endpoint, peerFingerprint)
             } else {
                 injectLocalDiscoveryCandidate("Peer", discoveryToken, endpoint)
             }

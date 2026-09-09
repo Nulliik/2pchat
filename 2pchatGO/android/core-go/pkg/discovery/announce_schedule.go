@@ -52,12 +52,42 @@ func (s *DiscoveryService) RegisterInfoHash(value string) error {
 		return errors.New("empty discovery hash")
 	}
 	s.mu.Lock()
+	for key, expiry := range s.lookupExpiry {
+		if !time.Now().Before(expiry) {
+			delete(s.lookupExpiry, key)
+			if _, self := s.selfHashes[key]; !self {
+				delete(s.infoHashes, key)
+			}
+		}
+	}
 	if _, exists := s.infoHashes[value]; !exists && len(s.lookupExpiry) >= maxLookupRegistrations {
 		s.mu.Unlock()
 		return errors.New("too many discovery lookups")
 	}
 	s.infoHashes[value] = decodeInfoHash(value)
 	s.lookupExpiry[value] = time.Now().Add(lookupRegistrationTTL)
+	s.mu.Unlock()
+	s.wakeAnnouncer()
+	return nil
+}
+
+// RegisterSelfInfoHash supports legacy callers publishing a single self hash.
+func (s *DiscoveryService) RegisterSelfInfoHash(value string, port int) error {
+	if strings.TrimSpace(value) == "" || port < 1 || port > 65535 {
+		return errors.New("invalid self announcement")
+	}
+	s.mu.Lock()
+	if _, exists := s.selfHashes[value]; !exists && len(s.selfHashes) >= 16 {
+		s.mu.Unlock()
+		return errors.New("too many self discovery hashes")
+	}
+	hash := decodeInfoHash(value)
+	s.selfHashes[value], s.infoHashes[value] = hash, hash
+	if s.listenPort != port {
+		s.listenPort = port
+		s.refreshSchedulesLocked(time.Now())
+	}
+	s.lanEngine.SetTCPPort(port)
 	s.mu.Unlock()
 	s.wakeAnnouncer()
 	return nil
@@ -90,6 +120,7 @@ func (s *DiscoveryService) SetSelfInfoHashes(values []string, port int) error {
 		s.listenPort = port
 		s.refreshSchedulesLocked(time.Now())
 	}
+	s.lanEngine.SetTCPPort(port)
 	s.mu.Unlock()
 	s.wakeAnnouncer()
 	return nil
@@ -186,7 +217,9 @@ func (s *DiscoveryService) dispatchDue(ctx context.Context, now time.Time, worke
 	trackers := append([]string(nil), s.trackers...)
 	s.mu.RUnlock()
 	allowed := make(map[string]bool)
+	configured := make(map[string]bool)
 	for _, tracker := range trackers {
+		configured[tracker] = true
 		if s.isTrackerAllowed(tracker) {
 			allowed[tracker] = true
 		}
@@ -206,7 +239,7 @@ func (s *DiscoveryService) dispatchDue(ctx context.Context, now time.Time, worke
 		hashes[hash] = true
 	}
 	for key, state := range s.announces {
-		if (!allowed[key.tracker] || !hashes[key.hash]) && !state.inFlight {
+		if (!configured[key.tracker] || !hashes[key.hash]) && !state.inFlight {
 			delete(s.announces, key)
 		}
 	}

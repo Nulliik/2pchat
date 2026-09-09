@@ -105,7 +105,13 @@ internal object EndpointRetention {
         val friends = records.filter { it.savedContact && (it.lastSuccess > 0 || it.source != EndpointSource.DISCOVERY) }
         val best = compareBy<EndpointRecord> { it.lastSuccess > 0 }.thenBy { it.lastSuccess }.thenBy { it.lastSeen }.thenBy { it.endpoint }
         for (kind in listOf(EndpointKind.TOR, EndpointKind.YGGDRASIL)) {
-            friends.filter { it.kind == kind }.maxWithOrNull(best)?.let { result.add(it.endpoint) }
+            val routes = friends.filter { it.kind == kind }
+            if (routes.none { it.lastSuccess > 0 }) {
+                // Legacy CSV has no success history. Do not guess which stable
+                // address worked: preserve migrated alternatives until one works.
+                routes.filter { it.source == EndpointSource.MIGRATED }.forEach { result.add(it.endpoint) }
+            }
+            routes.maxWithOrNull(best)?.let { result.add(it.endpoint) }
         }
         if (friends.none { it.kind == EndpointKind.TOR || it.kind == EndpointKind.YGGDRASIL }) {
             friends.maxWithOrNull(best)?.let { result.add(it.endpoint) }
@@ -116,7 +122,8 @@ internal object EndpointRetention {
     fun retain(records: List<EndpointRecord>, now: Long, active: Set<String> = emptySet()): List<EndpointRecord> {
         val protected = protected(records, active)
         return records.filter { it.endpoint in protected || now < expiresAt(it) }
-            .sortedWith(compareByDescending<EndpointRecord> { it.endpoint in protected }
+            .sortedWith(compareByDescending<EndpointRecord> { it.endpoint in active }
+                .thenByDescending { it.endpoint in protected }
                 .thenByDescending { it.lastSuccess > 0 }
                 .thenBy { it.failures }
                 .thenByDescending { maxOf(it.lastSuccess, it.lastSeen) }

@@ -1,0 +1,144 @@
+{
+  "schema_version": 1,
+  "overall_status": "PARTIAL",
+  "scope": "Tracker scheduling and peer endpoint retention",
+  "review_base": "90ee034",
+  "generated_at": "2026-09-09 20:58:19 UTC",
+  "limitations": [
+    "Go race tests unavailable without host C compiler.",
+    "Optional scanners unavailable.",
+    "Targeted emulator SQLCipher/JNI-load test passed; live Tor/Yggdrasil and third-party tracker E2E unverified."
+  ],
+  "checks": [
+    {
+      "command": "go build ./...",
+      "cwd": "2pchatGO/android/core-go",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 2.7220091,
+      "summary": "Completed successfully.",
+      "timestamp": "2026-09-09 20:58:19 UTC",
+      "timestamp_kind": "evidence_recorded_at"
+    },
+    {
+      "command": "go test -count=1 ./...",
+      "cwd": "2pchatGO/android/core-go",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 5.7151627000000005,
+      "summary": "All Go packages passed; host CGO disabled. Native JNI compiled separately for Android.",
+      "timestamp": "2026-09-09 20:58:19 UTC",
+      "timestamp_kind": "evidence_recorded_at"
+    },
+    {
+      "command": "go vet ./...",
+      "cwd": "2pchatGO/android/core-go",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 2.2431634,
+      "summary": "Completed successfully.",
+      "timestamp": "2026-09-09 20:58:19 UTC",
+      "timestamp_kind": "evidence_recorded_at"
+    },
+    {
+      "command": "$env:CGO_ENABLED='1'; go test -race ./...",
+      "cwd": "2pchatGO/android/core-go",
+      "status": "UNVERIFIED",
+      "exit_code": 1,
+      "duration_seconds": null,
+      "summary": "Cannot compile runtime/cgo: host C compiler gcc missing from PATH. Race tests did not execute.",
+      "timestamp": "2026-09-09 20:58:19 UTC",
+      "timestamp_kind": "evidence_recorded_at"
+    },
+    {
+      "command": "go test ./pkg/discovery -run '^$' -fuzz '^FuzzParseHTTPAnnounceResponse$' -fuzztime=3s -parallel=2",
+      "cwd": "2pchatGO/android/core-go",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 3.342,
+      "summary": "117952 fuzz executions; no failure.",
+      "timestamp": "2026-09-09 20:58:19 UTC",
+      "timestamp_kind": "evidence_recorded_at"
+    },
+    {
+      "command": ".venv/Scripts/python.exe -m pip install -r messenger/requirements.txt",
+      "cwd": ".",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 2.068,
+      "summary": "Requirements already installed.",
+      "timestamp": "2026-09-09 20:58:19 UTC",
+      "timestamp_kind": "evidence_recorded_at"
+    },
+    {
+      "command": ".venv/Scripts/python.exe -m pytest --junitxml=endpoint-python-results.xml",
+      "cwd": ".",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 66.29,
+      "summary": "228 passed, 8 live tracker tests skipped (opt-in), 1 warning. XML moved into ignored Android app/build directory.",
+      "timestamp": "2026-09-09 20:58:19 UTC",
+      "timestamp_kind": "evidence_recorded_at"
+    },
+    {
+      "command": ".\\gradlew.bat testDebugUnitTest assembleDebug connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.example.twopchat.relay.PeerEndpointStoreInstrumentedTest --no-daemon -Pkotlin.compiler.execution.strategy=in-process --console=plain",
+      "cwd": "2pchatGO/android",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 50,
+      "summary": "BUILD SUCCESSFUL. Unit results: 706 tests, 0 failures/errors, 1 skipped. Instrumentation: 1 passed on Pixel_7 Android 16. buildGoCoreBinaries executed; all three configured Android ABIs rebuilt. ANDROID_NDK_HOME pointed to android-ndk-r26d; ANDROID_SERIAL=emulator-5554.",
+      "timestamp": "2026-09-09 20:58:19 UTC",
+      "timestamp_kind": "evidence_recorded_at"
+    },
+    {
+      "command": "Get-Command staticcheck",
+      "cwd": ".",
+      "status": "UNVERIFIED",
+      "exit_code": null,
+      "duration_seconds": null,
+      "summary": "Tool unavailable in PATH; scan not run.",
+      "timestamp": "2026-09-09 20:58:19 UTC",
+      "timestamp_kind": "evidence_recorded_at"
+    },
+    {
+      "command": "Get-Command govulncheck",
+      "cwd": ".",
+      "status": "UNVERIFIED",
+      "exit_code": null,
+      "duration_seconds": null,
+      "summary": "Tool unavailable in PATH; scan not run.",
+      "timestamp": "2026-09-09 20:58:19 UTC",
+      "timestamp_kind": "evidence_recorded_at"
+    },
+    {
+      "command": "Get-Command semgrep",
+      "cwd": ".",
+      "status": "UNVERIFIED",
+      "exit_code": null,
+      "duration_seconds": null,
+      "summary": "Tool unavailable in PATH; scan not run.",
+      "timestamp": "2026-09-09 20:58:19 UTC",
+      "timestamp_kind": "evidence_recorded_at"
+    },
+    {
+      "command": "Get-Command gitleaks",
+      "cwd": ".",
+      "status": "UNVERIFIED",
+      "exit_code": null,
+      "duration_seconds": null,
+      "summary": "Tool unavailable in PATH; scan not run.",
+      "timestamp": "2026-09-09 20:58:19 UTC",
+      "timestamp_kind": "evidence_recorded_at"
+    },
+    {
+      "command": "Get-Command trivy",
+      "cwd": ".",
+      "status": "UNVERIFIED",
+      "exit_code": null,
+      "duration_seconds": null,
+      "summary": "Tool unavailable in PATH; scan not run.",
+      "timestamp": "2026-09-09 20:58:19 UTC",
+      "timestamp_kind": "evidence_recorded_at"
+    }
+  ]
+}

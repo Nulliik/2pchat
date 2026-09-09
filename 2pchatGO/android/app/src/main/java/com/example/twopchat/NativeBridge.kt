@@ -21,7 +21,7 @@ object NativeBridge {
 
     // Callbacks invoked by background Go goroutines via JNI
     var onPeerConnectedListener: ((peerFP: String, endpoint: String) -> Unit)? = null
-    var onEndpointResultListener: ((peerFP: String, endpoint: String, success: Boolean) -> Unit)? = null
+    var onEndpointResultListener: ((peerFP: String, endpoint: String, success: Boolean, observedAt: Long) -> Unit)? = null
     var onPeerDisconnectedListener: ((peerFP: String, reason: String) -> Unit)? = null
     var onMessageReceivedListener: ((peerFP: String, payload: ByteArray, messageID: String) -> Unit)? = null
     var onErrorListener: ((code: Int, message: String) -> Unit)? = null
@@ -547,9 +547,10 @@ object NativeBridge {
 
     @JvmStatic
     fun onEndpointResult(peerFP: String, endpoint: String, success: Boolean) {
+        val observedAt = System.currentTimeMillis()
         bridgeScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             try {
-                onEndpointResultListener?.invoke(peerFP, endpoint, success)
+                onEndpointResultListener?.invoke(peerFP, endpoint, success, observedAt)
             } catch (e: Exception) {
                 SafeLog.e(TAG, "Error persisting endpoint result", e)
             }

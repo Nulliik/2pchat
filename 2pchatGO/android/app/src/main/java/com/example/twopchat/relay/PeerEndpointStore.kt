@@ -62,7 +62,7 @@ internal object PeerEndpointStore {
         val friend = savedFriend(context, peerName, fp, db)
         db.query("peer_endpoint_imports", arrayOf("fingerprint"), "fingerprint = ?", arrayOf(fp), null, null, null).use {
             if (it.moveToFirst()) {
-                if (friend) db.update(TABLE, ContentValues().apply { put("saved_contact", 1) }, "fingerprint = ?", arrayOf(fp))
+                if (friend) db.update(TABLE, ContentValues().apply { put("saved_contact", 1) }, "fingerprint = ? AND saved_contact = 0", arrayOf(fp))
                 return
             }
         }
@@ -125,6 +125,9 @@ internal object PeerEndpointStore {
             val rows = read(db, fp).associateBy { it.endpoint }.toMutableMap()
             val old = rows[ep] ?: if (success) EndpointRecord(fp, ep, EndpointSource.AUTHENTICATED, now, now,
                 savedContact = savedFriend(context, peerName, fp, db)) else return@endpointTransaction
+            // JNI callbacks run asynchronously; a delayed failure cannot undo
+            // a newer successful connection to this route.
+            if (now < maxOf(old.lastSuccess, old.lastFailure) || (!success && now <= old.lastSuccess)) return@endpointTransaction
             rows[ep] = if (success) EndpointRetention.success(old, now) else EndpointRetention.failure(old, now)
             if (success) active[fp] = ep
             replace(db, fp, EndpointRetention.retain(rows.values.toList(), now, setOfNotNull(active[fp])))
@@ -158,8 +161,9 @@ internal object PeerEndpointStore {
     }
 
     @Synchronized @WorkerThread
-    fun maintain(context: Context, now: Long = System.currentTimeMillis()) {
-        ChatDatabaseHelper.getInstance(context).endpointTransaction { db ->
+    fun maintain(context: Context, now: Long = System.currentTimeMillis()): Map<String, String> {
+        active.keys.removeAll { !com.example.twopchat.NativeBridge.isPeerOnline(it) }
+        return ChatDatabaseHelper.getInstance(context).endpointTransaction { db ->
             val identities = P2PPreferences.prefs(context).all.entries.mapNotNull { (key, value) ->
                 if (key.startsWith("peer_fingerprint_") && value is String && validFingerprint(value.lowercase()))
                     key.removePrefix("peer_fingerprint_") to value.lowercase() else null
@@ -169,15 +173,29 @@ internal object PeerEndpointStore {
             }
             for ((name, fp) in identities) importOnce(db, context, name, fp, now)
             trimIfNeeded(db, now, force = true)
+            val retained = read(db).groupBy { it.fingerprint }
+            val projections = identities.associate { (name, fp) ->
+                name to EndpointRetention.candidates(retained[fp].orEmpty(), now, includeReserve = true).joinToString(",")
+            }
+            // Existing UI readers still consume these bounded projections.
+            // Remove expired CSV entries too, without touching contact identity.
+            val editor = P2PPreferences.prefs(context).edit()
+            for ((name, endpoints) in projections) {
+                if (endpoints.isEmpty()) editor.remove(P2PPreferences.lastEndpoint(name))
+                else editor.putString(P2PPreferences.lastEndpoint(name), endpoints)
+            }
+            editor.apply()
+            projections
         }
     }
 
     @Synchronized @WorkerThread
     fun delete(context: Context, fingerprint: String) {
-        if (!validFingerprint(fingerprint)) return
-        active.remove(fingerprint)
+        val fp = fingerprint.lowercase()
+        if (!validFingerprint(fp)) return
+        active.remove(fp)
         ChatDatabaseHelper.getInstance(context).endpointTransaction {
-            it.delete(TABLE, "fingerprint = ?", arrayOf(fingerprint))
+            it.delete(TABLE, "fingerprint = ?", arrayOf(fp))
             // Keep the marker: stale legacy aliases must not resurrect a deleted cache.
         }
     }

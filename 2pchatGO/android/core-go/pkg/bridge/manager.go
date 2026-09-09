@@ -51,6 +51,7 @@ type SessionManager struct {
 	discoverySeqCounter  uint64
 	seqPersistHook       func(seq uint64)
 	lastSeenDiscoverySeq sync.Map // map[string]uint64
+	probeInFlight        sync.Map // map[fingerprint]struct{}; fresh+reserve share one attempt
 	seqLookupHook        func(fp string) uint64
 	seqUpsertHook        func(fp string, seq uint64)
 	heartbeatSeqCounters sync.Map // map[string]*uint64 (groupID -> counter)
@@ -477,7 +478,7 @@ func (m *SessionManager) AnnounceSelf(infoHashHex string, port int) error {
 	m.mu.RUnlock()
 
 	if svc != nil {
-		if err := svc.RegisterInfoHash(infoHashHex); err != nil {
+		if err := svc.RegisterSelfInfoHash(infoHashHex, port); err != nil {
 			return err
 		}
 		go svc.AnnounceAll()
@@ -538,7 +539,15 @@ func (m *SessionManager) ProbePeerWithFlags(endpointsJSON, expectedFingerprint s
 	}
 
 	contactPolicy := transport.PolicyFromFlags(policyFlags)
+	if expectedFingerprint != "" {
+		if _, loaded := m.probeInFlight.LoadOrStore(expectedFingerprint, struct{}{}); loaded {
+			return nil
+		}
+	}
 	go func() {
+		if expectedFingerprint != "" {
+			defer m.probeInFlight.Delete(expectedFingerprint)
+		}
 		err := connectEndpointGroups(fresh, reserve, func(endpointStr string) error {
 			_, connectErr := nm.ConnectPeerWithPolicy(endpointStr, expectedFingerprint, contactPolicy)
 			return connectErr

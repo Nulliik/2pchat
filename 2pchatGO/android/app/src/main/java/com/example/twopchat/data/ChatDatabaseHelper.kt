@@ -445,20 +445,11 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
     }
 
     private fun createEndpointTables(db: SQLiteDatabase) {
-        db.execSQL("""CREATE TABLE IF NOT EXISTS peer_endpoint_records(
-            fingerprint TEXT NOT NULL, endpoint TEXT NOT NULL, source TEXT NOT NULL,
-            first_seen INTEGER NOT NULL, last_seen INTEGER NOT NULL,
-            last_success INTEGER NOT NULL DEFAULT 0, success_days INTEGER NOT NULL DEFAULT 0,
-            last_failure INTEGER NOT NULL DEFAULT 0, failures INTEGER NOT NULL DEFAULT 0,
-            retry_after INTEGER NOT NULL DEFAULT 0, advertised_expires INTEGER NOT NULL DEFAULT 0,
-            saved_contact INTEGER NOT NULL DEFAULT 0,
-            PRIMARY KEY(fingerprint, endpoint))""")
-        db.execSQL("""CREATE TABLE IF NOT EXISTS peer_endpoint_imports(
-            fingerprint TEXT PRIMARY KEY NOT NULL)""")
+        EndpointSchema.statements.forEach { db.execSQL(it) }
     }
 
-    // Route metadata shares the existing SQLCipher database and its backup /
-    // restore lifetime. Schema v20 adds tables only; v19 data is left intact.
+    // Route metadata shares the existing SQLCipher database lifecycle.
+    // Schema v20 adds tables only; v19 data is left intact.
     internal fun <T> endpointTransaction(block: (SQLiteDatabase) -> T): T {
         val db = safeWritableDatabase
         db.beginTransaction()

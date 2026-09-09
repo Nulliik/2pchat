@@ -213,10 +213,17 @@ func (e *LANEngine) broadcastLoop() {
 	}
 }
 
+func (e *LANEngine) SetTCPPort(port int) {
+	e.mu.Lock()
+	e.tcpPort = port
+	e.mu.Unlock()
+}
+
 func (e *LANEngine) sendBeacon() {
 	e.mu.Lock()
 	allowLAN := e.policy.AllowLAN
 	provider := e.recordProvider
+	tcpPort := e.tcpPort
 	e.mu.Unlock()
 	if !allowLAN {
 		return
@@ -225,11 +232,11 @@ func (e *LANEngine) sendBeacon() {
 	beacon := LANBeacon{
 		Service:     LANServiceName,
 		Fingerprint: e.fingerprint,
-		Port:        e.tcpPort,
+		Port:        tcpPort,
 		Timestamp:   time.Now().Unix(),
 	}
 	if provider != nil {
-		beacon.Record = provider(e.tcpPort)
+		beacon.Record = provider(tcpPort)
 	}
 
 	data, err := json.Marshal(beacon)

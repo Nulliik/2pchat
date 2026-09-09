@@ -222,7 +222,7 @@ class NativeBridgeImpl(
     }
 
     private fun setupNativeCallbacks() {
-        NativeBridge.onEndpointResultListener = result@{ peerFP, endpoint, success ->
+        NativeBridge.onEndpointResultListener = result@{ peerFP, endpoint, success, observedAt ->
             val context = com.example.twopchat.yggdrasil.GlobalApplication.appContext
             if (!success) {
                 // Offline devices and unavailable transports say nothing about
@@ -235,7 +235,7 @@ class NativeBridgeImpl(
                 if (kind == EndpointKind.YGGDRASIL && !P2PPreferences.prefs(context).getBoolean("settings_yggdrasil", false)) return@result
             }
             val peerName = resolvePeerName(peerFP) ?: peerFP
-            PeerEndpointStore.result(context, peerName, peerFP, endpoint, success)
+            PeerEndpointStore.result(context, peerName, peerFP, endpoint, success, observedAt)
         }
         NativeBridge.onPeerConnectedListener = connected@{ peerFP, endpoint ->
             SafeLog.i(TAG, "[GoCore] Peer connected: ${SafeLog.fp(peerFP)}")
@@ -546,9 +546,8 @@ class NativeBridgeImpl(
                 } catch (_: Throwable) { "" }
         }
 
-        if (fullEndpoint.isNotBlank()) {
-            val candidateList = retainedCandidates(peerName, resolvedFP, fullEndpoint, includeReserve = true)
-            if (candidateList.isEmpty()) return@withContext false
+        val candidateList = retainedCandidates(peerName, resolvedFP, fullEndpoint, includeReserve = true)
+        if (candidateList.isNotEmpty()) {
             val hasDirect = candidateList.any { !it.contains(".onion", ignoreCase = true) }
 
             // Always enqueue the message first so it is never dropped during background connection/handshake
@@ -682,7 +681,7 @@ class NativeBridgeImpl(
                 } catch (_: Throwable) { "" }
         }
 
-        if (!isLive && fullEndpoint.isNotBlank()) {
+        if (!isLive) {
             val candidateList = retainedCandidates(peerName, resolvedFP, fullEndpoint, includeReserve = true)
             if (candidateList.isEmpty()) return@withContext false
             val hasOnion = candidateList.any { it.contains(".onion") }
@@ -726,7 +725,7 @@ class NativeBridgeImpl(
         scheduleReconnect(peerName, endpoint, fingerprint, includeReserve = false)
 
     private fun scheduleReconnect(peerName: String, endpoint: String, fingerprint: String?, includeReserve: Boolean): Boolean {
-        if (endpoint.isBlank()) return false
+        if (endpoint.isBlank() && fingerprint.isNullOrBlank()) return false
         bridgeScope.launch(Dispatchers.IO) { reconnectWithRetainedRoutes(peerName, endpoint, fingerprint, includeReserve) }
         return true
     }
@@ -739,15 +738,22 @@ class NativeBridgeImpl(
 
     private fun dialRetainedCandidates(peerName: String, fingerprint: String?, candidates: List<String>, includeReserve: Boolean, policyFlags: Int = 0): Boolean {
         val context = com.example.twopchat.yggdrasil.GlobalApplication.appContext
+        val preference = P2PPreferences.getPeerTransportPreference(context, peerName)
+        val effectiveFlags = if (policyFlags != 0) policyFlags else when (preference) {
+            P2PPreferences.PeerTransportPreference.TOR_ONLY -> 8
+            P2PPreferences.PeerTransportPreference.YGGDRASIL_ONLY -> 4
+            P2PPreferences.PeerTransportPreference.DIRECT_ONLY -> 3
+            P2PPreferences.PeerTransportPreference.AUTO -> 0
+        }
         val fresh = if (fingerprint.isNullOrBlank()) candidates else
             PeerEndpointStore.candidates(context, peerName, fingerprint, includeReserve = false).filter { it in candidates }
         val reserve = if (includeReserve) candidates.filter { it !in fresh } else emptyList()
         if (fresh.isEmpty() && reserve.isEmpty()) return false
-        return NativeBridge.probePeer(fresh, fingerprint.orEmpty(), policyFlags, reserve)
+        return NativeBridge.probePeer(fresh, fingerprint.orEmpty(), effectiveFlags, reserve)
     }
 
     private fun reconnectWithRetainedRoutes(peerName: String, endpoint: String, fingerprint: String?, includeReserve: Boolean): Boolean {
-        if (endpoint.isBlank()) return false
+        if (endpoint.isBlank() && fingerprint.isNullOrBlank()) return false
         if (!fingerprint.isNullOrBlank()) {
             peerNameMap[fingerprint] = peerName
             nameToFpMap[peerName] = fingerprint

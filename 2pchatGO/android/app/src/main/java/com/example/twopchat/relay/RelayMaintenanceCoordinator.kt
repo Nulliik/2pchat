@@ -94,7 +94,10 @@ internal class RelayMaintenanceCoordinator(
                     }
 
                     if (now - lastEndpointMaintenanceAt >= 60 * 60_000L) {
-                        PeerEndpointStore.maintain(appContext, now)
+                        val retainedEndpoints = PeerEndpointStore.maintain(appContext, now)
+                        P2PMessageRelay.runOnMain {
+                            retainedEndpoints.forEach(P2PMessageRelay::replaceEndpointProjection)
+                        }
                         lastEndpointMaintenanceAt = now
                     }
                     val prefs = P2PPreferences.prefs(appContext)

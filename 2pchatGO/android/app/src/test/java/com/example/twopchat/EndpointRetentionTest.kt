@@ -69,6 +69,15 @@ class EndpointRetentionTest {
         assertEquals(setOf(good.endpoint), EndpointRetention.protected(listOf(good, unknown)))
     }
 
+    @Test fun migrationPreservesStableAlternativesUntilOneIsConfirmed() {
+        val first = row("${"b".repeat(56)}.onion:50001", true).copy(source = EndpointSource.MIGRATED)
+        val second = row("${"c".repeat(56)}.onion:50001", true).copy(source = EndpointSource.MIGRATED)
+        val future = now + 1000 * EndpointRetention.DAY
+        assertEquals(2, EndpointRetention.retain(listOf(first, second), future).size)
+        val confirmed = EndpointRetention.success(second, future)
+        assertEquals(listOf(confirmed), EndpointRetention.retain(listOf(first, confirmed), future))
+    }
+
     @Test fun failedAttemptPreservesHistoryButBacksOffUntilUserRequestsConnection() {
         val good = EndpointRetention.success(row("8.8.8.8:50001", true), now)
         val failed = EndpointRetention.failure(good, now + 1)

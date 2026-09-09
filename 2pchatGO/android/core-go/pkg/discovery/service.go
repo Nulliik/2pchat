@@ -176,6 +176,7 @@ func (s *DiscoveryService) ApplyPolicy(p transport.NetworkPolicy) {
 			_ = lan.Start()
 		}
 	}
+	s.wakeAnnouncer()
 }
 
 // GetPolicy returns the active network policy.
