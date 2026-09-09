@@ -17,6 +17,7 @@ import (
 	"sync/atomic"
 	"time"
 	"twopchat/core/pkg/crypto"
+	"twopchat/core/pkg/diagnostics"
 	"twopchat/core/pkg/discovery"
 	"twopchat/core/pkg/protocol"
 	"twopchat/core/pkg/transport"
@@ -84,6 +85,7 @@ func (l *ipRateLimiter) allow(ip string) bool {
 
 // Manager manages P2P listening, outbound dialing, active sessions, and connection arbitration.
 type Manager struct {
+	diagnostics      diagnostics.Collector
 	mu               sync.RWMutex
 	policy           transport.NetworkPolicy
 	identity         *crypto.IdentityKeyPair
@@ -463,6 +465,21 @@ func (m *Manager) connectPeerInternal(endpoint, expectedFingerprint string, cont
 		}
 	}
 
+	// Count a completed outbound operation, not the asynchronous JNI request or
+	// reuse of an already-online session. Only fixed categories cross this boundary.
+	observation := m.diagnostics.Begin()
+	var observationStarted time.Time
+	if observation.Active() {
+		observationStarted = time.Now()
+	}
+	observationKind := diagnostics.Unknown
+	observationOutcome := diagnostics.Rejected
+	defer func() {
+		if observation.Active() {
+			m.diagnostics.Finish(observation, observationKind, observationOutcome, time.Since(observationStarted))
+		}
+	}()
+
 	rawEndpoints := strings.Split(endpoint, ",")
 	m.mu.RLock()
 	effectivePolicy := m.policy
@@ -485,6 +502,10 @@ func (m *Manager) connectPeerInternal(endpoint, expectedFingerprint string, cont
 	if filterErr != nil || len(candidates) == 0 {
 		return nil, fmt.Errorf("no valid permitted endpoints provided: %w", filterErr)
 	}
+	if observation.Active() {
+		observationKind = m.diagnosticCandidateKind(candidates)
+	}
+	observationOutcome = diagnostics.DialFailed
 
 	hasTor := false
 	for _, ep := range candidates {
@@ -505,6 +526,7 @@ func (m *Manager) connectPeerInternal(endpoint, expectedFingerprint string, cont
 	var conn net.Conn
 	var winEndpoint string
 	var err error
+	relayFallbackUsed := false
 
 	if len(candidates) == 1 {
 		winEndpoint = candidates[0]
@@ -551,12 +573,23 @@ func (m *Manager) connectPeerInternal(endpoint, expectedFingerprint string, cont
 			conn = relayConn
 			winEndpoint = relayEP
 			err = nil
+			relayFallbackUsed = true
 		}
 	}
 
 	if err != nil {
+		if diagnosticTimeout(err) {
+			observationOutcome = diagnostics.Timeout
+		}
 		return nil, fmt.Errorf("failed to dial endpoints %v: %w", candidates, err)
 	}
+	if observation.Active() {
+		observationKind = m.diagnosticCandidateKind([]string{winEndpoint})
+		if relayFallbackUsed {
+			observationKind = diagnostics.Unknown
+		}
+	}
+	observationOutcome = diagnostics.HandshakeFailed
 
 	sess, err := NewSession(
 		conn,
@@ -570,6 +603,9 @@ func (m *Manager) connectPeerInternal(endpoint, expectedFingerprint string, cont
 	)
 	if err != nil {
 		_ = conn.Close()
+		if diagnosticTimeout(err) {
+			observationOutcome = diagnostics.Timeout
+		}
 		return nil, fmt.Errorf("initiator handshake failed with %s: %w", winEndpoint, err)
 	}
 
@@ -578,6 +614,7 @@ func (m *Manager) connectPeerInternal(endpoint, expectedFingerprint string, cont
 	}
 
 	peerFP := sess.PeerFingerprint()
+	observationOutcome = diagnostics.Success
 	m.RegisterSession(sess, peerFP, winEndpoint, true)
 	return sess, nil
 }

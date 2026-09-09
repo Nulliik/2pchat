@@ -1018,6 +1018,20 @@ func Java_com_example_twopchat_NativeBridge_nativeRefreshNatDiagnostics(env *C.J
 	return C.JNI_FALSE
 }
 
+//export Java_com_example_twopchat_NativeBridge_nativeSetDiagnosticsEnabled
+func Java_com_example_twopchat_NativeBridge_nativeSetDiagnosticsEnabled(env *C.JNIEnv, clazz C.jclass, enabled C.jboolean) C.jboolean {
+	bridge.GetManager().SetDiagnosticsEnabled(enabled != C.JNI_FALSE)
+	return C.JNI_TRUE
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeGetPublicDiagnosticsJSON
+func Java_com_example_twopchat_NativeBridge_nativeGetPublicDiagnosticsJSON(env *C.JNIEnv, clazz C.jclass) C.jstring {
+	encoded := bridge.GetManager().GetPublicDiagnosticsJSON()
+	cStr := C.CString(encoded)
+	defer C.free(unsafe.Pointer(cStr))
+	return C.createJString(env, cStr)
+}
+
 //export Java_com_example_twopchat_NativeBridge_nativeGetNatDiagnosticsJSON
 func Java_com_example_twopchat_NativeBridge_nativeGetNatDiagnosticsJSON(env *C.JNIEnv, clazz C.jclass) C.jstring {
 	jsonStr := bridge.GetManager().GetNatDiagnosticsJSON()

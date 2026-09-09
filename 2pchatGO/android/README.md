@@ -56,3 +56,20 @@ Android instrumentation requires a device/emulator. The isolated group QA setup 
 - [ADR 003: Testing and CI](docs/ADR_003_TESTING_AND_CI_REPRODUCIBILITY.md)
 - [Historical audit](FULL_PROJECT_AUDIT_REPORT.md)
 - [Engineering rules](RULES.md), [security policy](SECURITY.md)
+
+## Diagnostic reports for GitHub
+
+Open **Settings → Diagnostic report**, enable local collection, reproduce the
+problem, then choose **Preview report**. Inspect the complete text before **Save
+ZIP**, **Share ZIP**, or **Copy report**. Nothing is uploaded automatically.
+
+Reports use coarse connection counters and crash categories, without raw logs,
+addresses, contact identifiers, device models or timestamps. Publishing still
+links the report to your GitHub account and issue text. Do not attach `app.log`,
+logcat, system bugreports, or screenshots showing contacts or network details.
+
+Counters reset on restart or Clear. One crash summary can survive a restart for
+up to seven days; expiry is checked on startup/report access. Disable collection
+to clear local collected reports. Saved/shared copies must be deleted separately.
+Native counters require freshly built Go libraries; an older library is shown as
+unavailable. See the [data contract and threat model](../../docs/BETA_TELEMETRY_ARCHITECTURE.md).

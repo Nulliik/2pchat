@@ -30,7 +30,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.content.FileProvider
 import com.example.twopchat.bridge.P2PBridgeProvider
 import com.example.twopchat.config.P2PPreferences
 import com.example.twopchat.data.Localizations
@@ -124,6 +123,10 @@ fun SettingsTab(
     var showAutolockDialog by remember { mutableStateOf(false) }
     var autolockMinutes by remember { mutableIntStateOf(sharedPrefs.getInt("passcode_autolock_minutes", 1)) }
     var showDeleteAccountDialog by remember { mutableStateOf(false) }
+    var showPublicReport by remember { mutableStateOf(false) }
+    if (showPublicReport) {
+        PublicDiagnosticReportDialog(appLanguage) { showPublicReport = false }
+    }
     var showSetDuressDialog by remember { mutableStateOf(false) }
     var showSeedBackupDialog by remember { mutableStateOf(false) }
     var showPinForBackupDialog by remember { mutableStateOf(false) }
@@ -462,30 +465,10 @@ fun SettingsTab(
                             DeepSettingItem(
                                 category = Localizations.tr(appLanguage, ru = "Отладка", en = "Debug", de = "Debugging", es = "Depuración", fr = "Débogage", pt = "Depuração", tr = "Hata Ayıklama"),
                                 categoryColor = Color(0xFF8D6E63),
-                                title = Localizations.tr(appLanguage, ru = "Экспорт логов приложения", en = "Export App Logs", de = "App-Protokolle exportieren", es = "Exportar registros de la app", fr = "Exporter les journaux de l'application", pt = "Exportar registros do aplicativo", tr = "Uygulama Günlüklerini Dışa Aktar"),
-                                subtitle = Localizations.tr(appLanguage, ru = "Поделиться файлом логов app.log", en = "Share app.log file", de = "app.log-Datei teilen", es = "Compartir archivo app.log", fr = "Partager le fichier app.log", pt = "Compartilhar arquivo app.log", tr = "app.log dosyasını paylaş"),
+                                title = Localizations.getString("diagnostics_title", appLanguage),
+                                subtitle = Localizations.getString("diagnostics_subtitle", appLanguage),
                                 keywords = listOf("export", "share", "file", "экспорт", "поделиться", "лог-файл", "app.log", "dışa aktar", "paylaş"),
-                                onClick = {
-                                    val logFile = File(File(context.filesDir, "config"), "app.log")
-                                    if (logFile.exists() && logFile.length() > 0) {
-                                        try {
-                                            val authority = "${context.packageName}.fileprovider"
-                                            val fileUri: android.net.Uri = FileProvider.getUriForFile(context, authority, logFile)
-                                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                                type = "text/plain"
-                                                putExtra(Intent.EXTRA_STREAM, fileUri)
-                                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                            }
-                                            val chooserTitle = Localizations.tr(appLanguage, ru = "Поделиться логами", en = "Share Logs", de = "Protokolle teilen", es = "Compartir registros", fr = "Partager les journaux", pt = "Compartilhar registros", tr = "Günlükleri Paylaş")
-                                            context.startActivity(Intent.createChooser(shareIntent, chooserTitle))
-                                        } catch (e: Exception) {
-                                            Toast.makeText(context, "Error sharing logs: ${e.message}", Toast.LENGTH_SHORT).show()
-                                        }
-                                    } else {
-                                        val emptyMsg = Localizations.tr(appLanguage, ru = "Лог-файл пуст или еще не создан", en = "Log file is empty or not created yet", de = "Protokolldatei ist leer oder noch nicht erstellt", es = "El archivo de registro está vacío o aún no se ha creado", fr = "Le fichier journal est vide ou pas encore créé", pt = "O arquivo de log está vazio ou ainda não foi criado", tr = "Günlük dosyası boş veya henüz oluşturulmadı")
-                                        Toast.makeText(context, emptyMsg, Toast.LENGTH_SHORT).show()
-                                    }
-                                }
+                                onClick = { showPublicReport = true }
                             ),
                             DeepSettingItem(
                                 category = Localizations.tr(appLanguage, ru = "Опасная зона", en = "Danger Zone", de = "Gefahrenzone", es = "Zona de peligro", fr = "Zone dangereuse", pt = "Zona de perigo", tr = "Tehlikeli Bölge"),
@@ -1201,43 +1184,14 @@ fun SettingsTab(
                                 HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.05f))
 
                                 SettingsRow(
-                                    title = Localizations.getString("export_app_logs", appLanguage),
-                                    subtitle = Localizations.tr(
-                                        appLanguage,
-                                        ru = "Поделиться файлом логов app.log",
-                                        en = "Share app.log file",
-                                        de = "app.log-Datei teilen",
-                                        es = "Compartir archivo app.log",
-                                        fr = "Partager le fichier app.log",
-                                        pt = "Compartilhar arquivo app.log",
-                                        tr = "app.log dosyasını paylaş"
-                                    ),
+                                    title = Localizations.getString("diagnostics_title", appLanguage),
+                                    subtitle = Localizations.getString("diagnostics_subtitle", appLanguage),
                                     iconRes = com.example.twopchat.R.drawable.ic_quick_ip,
                                     iconColor = Color(0xFF78716C),
                                     onSurfaceColor = onSurfaceColor,
                                     onSurfaceVariant = onSurfaceVariant,
                                     primaryColor = primaryColor,
-                                    onClick = {
-                                        val logFile = File(File(context.filesDir, "config"), "app.log")
-                                        if (logFile.exists() && logFile.length() > 0) {
-                                            try {
-                                                val authority = "${context.packageName}.fileprovider"
-                                                val fileUri: android.net.Uri = FileProvider.getUriForFile(context, authority, logFile)
-                                                val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                                    type = "text/plain"
-                                                    putExtra(Intent.EXTRA_STREAM, fileUri)
-                                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                                }
-                                                val shareChooserTitle = Localizations.tr(appLanguage, ru = "Поделиться логами", en = "Share Logs", de = "Protokolle teilen", es = "Compartir registros", fr = "Partager les journaux", pt = "Compartilhar registros", tr = "Günlükleri Paylaş")
-                                                context.startActivity(Intent.createChooser(shareIntent, shareChooserTitle))
-                                            } catch (e: Exception) {
-                                                Toast.makeText(context, "Error sharing logs: ${e.message}", Toast.LENGTH_SHORT).show()
-                                            }
-                                        } else {
-                                            val emptyLogMsg = Localizations.tr(appLanguage, ru = "Лог-файл пуст или еще не создан", en = "Log file is empty or not created yet", de = "Protokolldatei ist leer oder noch nicht erstellt", es = "El archivo de registro está vacío o aún no se ha creado", fr = "Le fichier journal est vide ou pas encore créé", pt = "O arquivo de log está vazio ou ainda não foi criado", tr = "Günlük dosyası boş veya henüz oluşturulmadı")
-                                            Toast.makeText(context, emptyLogMsg, Toast.LENGTH_SHORT).show()
-                                        }
-                                    }
+                                    onClick = { showPublicReport = true }
                                 )
 
                                 HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.05f))

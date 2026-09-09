@@ -2,6 +2,21 @@ package com.example.twopchat.data
 
 object Localizations {
     private val enStrings = mapOf(
+        "diagnostics_title" to "Diagnostic report",
+        "diagnostics_subtitle" to "Review a minimal report for a GitHub issue",
+        "diagnostics_description" to "Collect coarse connection results and a minimal crash category on this device. Enable before reproducing the problem. Nothing is uploaded automatically.",
+        "diagnostics_collect" to "Collect local diagnostics",
+        "diagnostics_retention" to "Counters reset on restart or Clear. One crash summary is kept for up to 7 days, then removed at the next app start or report action. Turning this off deletes collected reports.",
+        "diagnostics_privacy" to "The report contains no raw logs or personal identifiers. Counters can still reveal app usage. GitHub and sharing apps can identify your account and connection; check your issue text. Saved or shared copies are not deleted by this app.",
+        "diagnostics_preview" to "Preview report",
+        "diagnostics_clear" to "Clear collected data",
+        "diagnostics_preview_description" to "This is the complete report.txt inside the ZIP. Review it before sharing.",
+        "diagnostics_copy" to "Copy report",
+        "diagnostics_save" to "Save ZIP",
+        "diagnostics_share" to "Share ZIP",
+        "diagnostics_close" to "Close",
+        "diagnostics_error" to "Could not complete the diagnostic action. Please try again.",
+        "diagnostics_raw_warning" to "Local logs may contain private information. Do not publish them. Use Diagnostic report for GitHub.",
         // Onboarding
         "welcome_title" to "Welcome to 2PChat",
         "welcome_desc" to "A zero-footprint, peer-to-peer secure messaging platform. No central servers. No trackers. Just direct, encrypted communication.",
@@ -279,6 +294,21 @@ object Localizations {
     )
 
     private val ruStrings = mapOf(
+        "diagnostics_title" to "Диагностический отчёт",
+        "diagnostics_subtitle" to "Проверить минимальный отчёт для issue на GitHub",
+        "diagnostics_description" to "Собирать на устройстве обобщённые результаты соединений и категорию сбоя. Включите перед воспроизведением проблемы. Автоматической отправки нет.",
+        "diagnostics_collect" to "Собирать локальную диагностику",
+        "diagnostics_retention" to "Счётчики сбрасываются при перезапуске или очистке. Один отчёт о сбое хранится до 7 дней, затем удаляется при следующем запуске или действии с отчётом. Отключение удаляет собранные отчёты.",
+        "diagnostics_privacy" to "В отчёте нет исходных логов и личных идентификаторов. Счётчики могут раскрывать использование приложения. GitHub и приложения для отправки могут определить ваш аккаунт и соединение; проверьте текст issue. Сохранённые и отправленные копии приложение не удаляет.",
+        "diagnostics_preview" to "Просмотр отчёта",
+        "diagnostics_clear" to "Очистить данные",
+        "diagnostics_preview_description" to "Это полное содержимое report.txt в ZIP. Проверьте его перед отправкой.",
+        "diagnostics_copy" to "Копировать отчёт",
+        "diagnostics_save" to "Сохранить ZIP",
+        "diagnostics_share" to "Поделиться ZIP",
+        "diagnostics_close" to "Закрыть",
+        "diagnostics_error" to "Не удалось выполнить действие с диагностикой. Повторите попытку.",
+        "diagnostics_raw_warning" to "Локальные логи могут содержать личную информацию. Не публикуйте их. Для GitHub используйте диагностический отчёт.",
         // Onboarding
         "welcome_title" to "Добро пожаловать в 2PChat",
         "welcome_desc" to "Децентрализованный мессенджер без серверов. Без логов, без посредников, только прямое шифрование напрямую между устройствами.",
@@ -556,6 +586,21 @@ object Localizations {
     )
 
     private val deStrings = mapOf(
+        "diagnostics_title" to "Diagnosebericht",
+        "diagnostics_subtitle" to "Einen kompakten Bericht für ein GitHub-Issue prüfen",
+        "diagnostics_description" to "Grobe Verbindungsergebnisse und eine Absturzkategorie lokal sammeln. Vor dem Reproduzieren des Problems aktivieren. Es wird nichts automatisch hochgeladen.",
+        "diagnostics_collect" to "Lokale Diagnose erfassen",
+        "diagnostics_retention" to "Zähler werden beim Neustart oder Löschen zurückgesetzt. Ein Absturzbericht bleibt bis zu 7 Tage und wird dann beim nächsten Start oder einer Berichtsaktion gelöscht. Deaktivieren löscht gesammelte Berichte.",
+        "diagnostics_privacy" to "Der Bericht enthält keine Rohprotokolle oder persönlichen Kennungen. Zähler können die App-Nutzung verraten. GitHub und Freigabe-Apps können Konto und Verbindung erkennen; prüfen Sie den Issue-Text. Gespeicherte oder geteilte Kopien werden nicht von dieser App gelöscht.",
+        "diagnostics_preview" to "Bericht ansehen",
+        "diagnostics_clear" to "Erfasste Daten löschen",
+        "diagnostics_preview_description" to "Dies ist die vollständige report.txt im ZIP. Vor dem Teilen prüfen.",
+        "diagnostics_copy" to "Bericht kopieren",
+        "diagnostics_save" to "ZIP speichern",
+        "diagnostics_share" to "ZIP teilen",
+        "diagnostics_close" to "Schließen",
+        "diagnostics_error" to "Die Diagnoseaktion konnte nicht abgeschlossen werden. Bitte erneut versuchen.",
+        "diagnostics_raw_warning" to "Lokale Protokolle können private Informationen enthalten. Nicht veröffentlichen. Für GitHub den Diagnosebericht verwenden.",
         // Onboarding
         "welcome_title" to "Willkommen bei 2PChat",
         "welcome_desc" to "Eine dezentrale, sichere Peer-to-Peer-Messaging-Plattform. Keine zentralen Server. Keine Tracker. Nur direkte, verschlüsselte Kommunikation.",
@@ -830,6 +875,21 @@ object Localizations {
     )
 
     private val esStrings = mapOf(
+        "diagnostics_title" to "Informe de diagnóstico",
+        "diagnostics_subtitle" to "Revisar un informe mínimo para una incidencia en GitHub",
+        "diagnostics_description" to "Recopilar resultados generales de conexión y una categoría de fallo en este dispositivo. Actívalo antes de reproducir el problema. No se sube nada automáticamente.",
+        "diagnostics_collect" to "Recopilar diagnóstico local",
+        "diagnostics_retention" to "Los contadores se reinician al reiniciar la app o borrar los datos. Un informe de fallo se conserva hasta 7 días y se elimina en el siguiente inicio o acción del informe. Desactivar elimina los informes recopilados.",
+        "diagnostics_privacy" to "El informe no contiene registros originales ni identificadores personales. Los contadores pueden revelar el uso de la app. GitHub y las apps para compartir pueden identificar tu cuenta y conexión; revisa el texto de la incidencia. Esta app no elimina las copias guardadas o compartidas.",
+        "diagnostics_preview" to "Vista previa",
+        "diagnostics_clear" to "Borrar datos recopilados",
+        "diagnostics_preview_description" to "Este es el contenido completo de report.txt dentro del ZIP. Revísalo antes de compartir.",
+        "diagnostics_copy" to "Copiar informe",
+        "diagnostics_save" to "Guardar ZIP",
+        "diagnostics_share" to "Compartir ZIP",
+        "diagnostics_close" to "Cerrar",
+        "diagnostics_error" to "No se pudo completar la acción de diagnóstico. Inténtalo de nuevo.",
+        "diagnostics_raw_warning" to "Los registros locales pueden contener información privada. No los publiques. Usa el informe de diagnóstico para GitHub.",
         // Onboarding
         "welcome_title" to "Bienvenido a 2PChat",
         "welcome_desc" to "Una plataforma de mensajería segura, descentralizada y punto a punto. Sin servidores centrales. Sin rastreadores. Solo comunicación cifrada directa.",
@@ -1104,6 +1164,21 @@ object Localizations {
     )
 
     private val frStrings = mapOf(
+        "diagnostics_title" to "Rapport de diagnostic",
+        "diagnostics_subtitle" to "Vérifier un rapport minimal pour un ticket GitHub",
+        "diagnostics_description" to "Collecter des résultats de connexion agrégés et une catégorie de plantage sur cet appareil. Activer avant de reproduire le problème. Aucun envoi automatique.",
+        "diagnostics_collect" to "Collecter le diagnostic local",
+        "diagnostics_retention" to "Les compteurs sont remis à zéro au redémarrage ou à la suppression. Un rapport de plantage est conservé jusqu’à 7 jours, puis supprimé au prochain démarrage ou lors d’une action sur le rapport. Désactiver supprime les rapports collectés.",
+        "diagnostics_privacy" to "Le rapport ne contient ni journaux bruts ni identifiants personnels. Les compteurs peuvent révéler l’usage de l’app. GitHub et les apps de partage peuvent identifier votre compte et votre connexion ; vérifiez le texte du ticket. Cette app ne supprime pas les copies enregistrées ou partagées.",
+        "diagnostics_preview" to "Aperçu du rapport",
+        "diagnostics_clear" to "Effacer les données",
+        "diagnostics_preview_description" to "Voici le contenu intégral de report.txt dans le ZIP. Vérifiez-le avant de partager.",
+        "diagnostics_copy" to "Copier le rapport",
+        "diagnostics_save" to "Enregistrer le ZIP",
+        "diagnostics_share" to "Partager le ZIP",
+        "diagnostics_close" to "Fermer",
+        "diagnostics_error" to "Impossible de terminer l’action de diagnostic. Réessayez.",
+        "diagnostics_raw_warning" to "Les journaux locaux peuvent contenir des informations privées. Ne les publiez pas. Utilisez le rapport de diagnostic pour GitHub.",
         // Onboarding
         "welcome_title" to "Bienvenue sur 2PChat",
         "welcome_desc" to "Une plateforme de messagerie sécurisée, décentralisée et peer-to-peer. Sans serveurs centraux. Sans traqueurs. Uniquement une communication chiffrée directe.",
@@ -1378,6 +1453,21 @@ object Localizations {
     )
 
     private val ptStrings = mapOf(
+        "diagnostics_title" to "Relatório de diagnóstico",
+        "diagnostics_subtitle" to "Revisar um relatório mínimo para uma issue no GitHub",
+        "diagnostics_description" to "Coletar resultados gerais de conexão e uma categoria de falha neste dispositivo. Ative antes de reproduzir o problema. Nada é enviado automaticamente.",
+        "diagnostics_collect" to "Coletar diagnóstico local",
+        "diagnostics_retention" to "Os contadores são zerados ao reiniciar ou limpar. Um resumo de falha é mantido por até 7 dias e removido na próxima inicialização ou ação do relatório. Desativar exclui os relatórios coletados.",
+        "diagnostics_privacy" to "O relatório não contém logs originais nem identificadores pessoais. Os contadores ainda podem revelar o uso do app. O GitHub e apps de compartilhamento podem identificar sua conta e conexão; revise o texto da issue. Este app não exclui cópias salvas ou compartilhadas.",
+        "diagnostics_preview" to "Visualizar relatório",
+        "diagnostics_clear" to "Limpar dados coletados",
+        "diagnostics_preview_description" to "Este é o conteúdo completo de report.txt no ZIP. Revise antes de compartilhar.",
+        "diagnostics_copy" to "Copiar relatório",
+        "diagnostics_save" to "Salvar ZIP",
+        "diagnostics_share" to "Compartilhar ZIP",
+        "diagnostics_close" to "Fechar",
+        "diagnostics_error" to "Não foi possível concluir a ação de diagnóstico. Tente novamente.",
+        "diagnostics_raw_warning" to "Os logs locais podem conter informações privadas. Não os publique. Use o relatório de diagnóstico para o GitHub.",
         // Onboarding
         "welcome_title" to "Bem-vindo ao 2PChat",
         "welcome_desc" to "Uma plataforma de mensagens segura, descentralizada e ponto a ponto. Sem servidores centrais. Sem rastreadores. Apenas comunicação direta e criptografada.",
@@ -1652,6 +1742,21 @@ object Localizations {
     )
 
     private val trStrings = mapOf(
+        "diagnostics_title" to "Tanı raporu",
+        "diagnostics_subtitle" to "GitHub sorunu için asgari raporu inceleyin",
+        "diagnostics_description" to "Bu cihazda genel bağlantı sonuçlarını ve bir çökme kategorisini toplayın. Sorunu yeniden oluşturmadan önce etkinleştirin. Hiçbir şey otomatik yüklenmez.",
+        "diagnostics_collect" to "Yerel tanı verisi topla",
+        "diagnostics_retention" to "Sayaçlar yeniden başlatmada veya temizlemede sıfırlanır. Bir çökme özeti en fazla 7 gün saklanır, ardından sonraki açılışta veya rapor işleminde silinir. Kapatmak toplanan raporları siler.",
+        "diagnostics_privacy" to "Raporda ham günlükler veya kişisel tanımlayıcılar yoktur. Sayaçlar uygulama kullanımını gösterebilir. GitHub ve paylaşım uygulamaları hesabınızı ve bağlantınızı belirleyebilir; sorun metnini kontrol edin. Kaydedilen veya paylaşılan kopyalar bu uygulama tarafından silinmez.",
+        "diagnostics_preview" to "Raporu önizle",
+        "diagnostics_clear" to "Toplanan verileri temizle",
+        "diagnostics_preview_description" to "ZIP içindeki report.txt dosyasının tamamı budur. Paylaşmadan önce inceleyin.",
+        "diagnostics_copy" to "Raporu kopyala",
+        "diagnostics_save" to "ZIP kaydet",
+        "diagnostics_share" to "ZIP paylaş",
+        "diagnostics_close" to "Kapat",
+        "diagnostics_error" to "Tanı işlemi tamamlanamadı. Lütfen yeniden deneyin.",
+        "diagnostics_raw_warning" to "Yerel günlükler özel bilgiler içerebilir. Bunları yayınlamayın. GitHub için Tanı raporunu kullanın.",
         "welcome_title" to "2PChat'e Hoş Geldiniz",
         "welcome_desc" to "Sıfır iz bırakan, eşler arası güvenli mesajlaşma platformu. Merkezi sunucu yok. İzleyici yok. Yalnızca doğrudan, şifreli iletişim.",
         "get_started" to "Başlayın",

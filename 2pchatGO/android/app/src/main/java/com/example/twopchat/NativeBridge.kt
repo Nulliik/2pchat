@@ -270,6 +270,17 @@ object NativeBridge {
         }
     }
 
+    // Optional local diagnostics ABI. Older packaged native libraries fail closed
+    // to "unavailable"; never fall back to NAT diagnostics or free-text logs.
+    internal fun setDiagnosticsEnabled(enabled: Boolean): Boolean =
+        if (!isLoaded) false else runCatching { nativeSetDiagnosticsEnabled(enabled) }.getOrDefault(false)
+
+    internal fun getPublicDiagnosticsJSON(): String? =
+        if (!isLoaded) null else runCatching { nativeGetPublicDiagnosticsJSON() }.getOrNull()
+
+    private external fun nativeSetDiagnosticsEnabled(enabled: Boolean): Boolean
+    private external fun nativeGetPublicDiagnosticsJSON(): String?
+
     fun updatePeerNameMapping(peerFingerprint: String, nickname: String): Boolean {
         if (!isLoaded || peerFingerprint.isBlank() || nickname.isBlank()) return false
         return try {

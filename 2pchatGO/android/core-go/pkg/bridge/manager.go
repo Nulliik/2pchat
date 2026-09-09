@@ -25,6 +25,7 @@ import (
 
 // SessionManager manages active Double Ratchet sessions, local identity, networking, and discovery.
 type SessionManager struct {
+	diagnosticsEnabled   bool
 	mu                   sync.RWMutex
 	policy               transport.NetworkPolicy
 	storageDir           string
@@ -286,6 +287,7 @@ func (m *SessionManager) Init() error {
 			m.callbacks,
 			protocol.AndroidCapabilities(),
 		)
+		m.netManager.SetDiagnosticsEnabled(m.diagnosticsEnabled)
 		if effectiveDir != "" {
 			m.netManager.SetStorageDir(effectiveDir)
 		}

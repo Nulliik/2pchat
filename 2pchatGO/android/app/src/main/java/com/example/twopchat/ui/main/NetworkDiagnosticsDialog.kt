@@ -154,27 +154,6 @@ private fun clearLogFile(context: Context) {
     }
 }
 
-private fun shareLogFile(context: Context) {
-    try {
-        val logFile = File(File(context.filesDir, "config"), "app.log")
-        if (logFile.exists()) {
-            val uri = androidx.core.content.FileProvider.getUriForFile(
-                context,
-                "${context.packageName}.fileprovider",
-                logFile
-            )
-            val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-                type = "text/plain"
-                putExtra(android.content.Intent.EXTRA_STREAM, uri)
-                addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            }
-            context.startActivity(android.content.Intent.createChooser(intent, "Share Logs"))
-        }
-    } catch (e: Exception) {
-        Toast.makeText(context, "Failed to share logs", Toast.LENGTH_SHORT).show()
-    }
-}
-
 /** Returns DNS lookup latency only; it is deliberately not tracker ping/health. */
 private fun getTrackerDnsLatency(announceUrl: String): Long {
     val startTime = System.currentTimeMillis()
@@ -799,6 +778,11 @@ fun NetworkDiagnosticsDialog(
         val context = LocalContext.current
         val clipboardManager = LocalClipboardManager.current
         val diagnosticsScope = rememberCoroutineScope()
+        var showPublicReport by remember { mutableStateOf(false) }
+        if (showPublicReport) {
+            PublicDiagnosticReportDialog(appLanguage) { showPublicReport = false }
+        }
+
 
         var logsText by remember { mutableStateOf("") }
         var upnpDetails by remember { mutableStateOf(emptyMap<String, String>()) }
@@ -1390,23 +1374,7 @@ fun NetworkDiagnosticsDialog(
                                         .size(28.dp)
                                         .clip(CircleShape)
                                         .background(onSurfaceColor.copy(alpha = 0.06f))
-                                        .clickable {
-                                            clipboardManager.setText(AnnotatedString(formattedLogs.text))
-                                            Toast.makeText(
-                                                context,
-                                                Localizations.tr(
-                                                    appLanguage,
-                                                    ru = "Логи скопированы",
-                                                    en = "Logs copied",
-                                                    de = "Protokolle kopiert",
-                                                    es = "Registros copiados",
-                                                    fr = "Journaux copiés",
-                                                    pt = "Registros copiados",
-                                                    tr = "Günlükler kopyalandı"
-                                                ),
-                                                Toast.LENGTH_SHORT
-                                            ).show()
-                                        },
+                                        .clickable { showPublicReport = true },
                                     contentAlignment = Alignment.Center
                                 ) {
                                     CustomCopyIcon(tint = primaryColor, modifier = Modifier.size(13.dp))
@@ -1417,12 +1385,12 @@ fun NetworkDiagnosticsDialog(
                                         .size(28.dp)
                                         .clip(CircleShape)
                                         .background(onSurfaceColor.copy(alpha = 0.06f))
-                                        .clickable { shareLogFile(context) },
+                                        .clickable { showPublicReport = true },
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.Share,
-                                        contentDescription = "Share",
+                                        contentDescription = Localizations.getString("diagnostics_title", appLanguage),
                                         tint = primaryColor,
                                         modifier = Modifier.size(14.dp)
                                     )
@@ -1450,6 +1418,12 @@ fun NetworkDiagnosticsDialog(
                         }
 
                         Spacer(modifier = Modifier.height(4.dp))
+
+                        Text(
+                            Localizations.getString("diagnostics_raw_warning", appLanguage),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = onSurfaceVariant,
+                        )
 
                         // Monospace Dark Terminal Box
                         Box(

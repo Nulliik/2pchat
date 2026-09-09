@@ -26,6 +26,7 @@
 - [docs/PROTOCOL.md](../docs/PROTOCOL.md)
 - [docs/GROUP_CHAT_PROTOCOL.md](../docs/GROUP_CHAT_PROTOCOL.md)
 - [docs/ANDROID_INTEGRATION.md](../docs/ANDROID_INTEGRATION.md)
+- [Локальные диагностические отчёты для GitHub](BETA_TELEMETRY_ARCHITECTURE.md)
 - [docs/P2P_SIGNAL_ADAPTATION.md](../docs/P2P_SIGNAL_ADAPTATION.md)
 
 ## Правила и решения

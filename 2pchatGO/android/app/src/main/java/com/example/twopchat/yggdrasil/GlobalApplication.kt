@@ -46,6 +46,13 @@ class GlobalApplication: Application(), YggStateReceiver.StateReceiver {
             return
         }
 
+        // Consent/storage initialization is local and asynchronous. Until it finishes,
+        // optional diagnostics remain disabled. Never load lib2pcore in :yggdrasil.
+        com.example.twopchat.diagnostics.PublicDiagnostics.installCrashHandler()
+        CoroutineScope(Dispatchers.IO).launch {
+            runCatching { com.example.twopchat.diagnostics.PublicDiagnostics.initialize(applicationContext) }
+        }
+
         registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
             override fun onActivityCreated(activity: Activity, savedInstanceState: android.os.Bundle?) {
                 initFullProfile()
@@ -154,21 +161,7 @@ class GlobalApplication: Application(), YggStateReceiver.StateReceiver {
     }
 
     private fun setupCrashHandler() {
-        val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
-        Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
-            try {
-                SafeLog.e("FATAL_CRASH", "Uncaught exception in thread ${thread.name}", throwable)
-                val sw = java.io.StringWriter()
-                throwable.printStackTrace(java.io.PrintWriter(sw))
-                com.example.twopchat.AppLog.append(
-                    applicationContext,
-                    "[FATAL_CRASH] Thread: ${thread.name}\n$sw\n"
-                )
-            } catch (_: Throwable) {
-                // intentionally ignored: prevent secondary crash in uncaught exception handler
-            }
-            defaultHandler?.uncaughtException(thread, throwable)
-        }
+        com.example.twopchat.diagnostics.PublicDiagnostics.installCrashHandler()
     }
 
     private fun loadSqlcipherLibrary() {
