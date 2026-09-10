@@ -133,6 +133,8 @@ class P2PRelayService : Service() {
         }
     }
 
+    private var didStartRelay = false
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         startCommandCallCount++
         if (!com.example.twopchat.yggdrasil.AppForegroundTracker.isAppInForeground()) {
@@ -156,6 +158,7 @@ class P2PRelayService : Service() {
 
             acquireLocks()
             NativeBridge.initialize()
+            didStartRelay = true
             if (action == ACTION_RESTART) {
                 P2PMessageRelay.restartServer(appContext)
             } else {
@@ -168,7 +171,9 @@ class P2PRelayService : Service() {
     override fun onDestroy() {
         unregisterReceiversAndNetworkCallbacks()
         releaseLocks()
-        P2PMessageRelay.stopServer()
+        if (didStartRelay) {
+            P2PMessageRelay.stopServer()
+        }
         serviceScope.cancel()
         instance = null
         super.onDestroy()

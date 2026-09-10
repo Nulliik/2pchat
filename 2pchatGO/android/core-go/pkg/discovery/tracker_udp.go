@@ -109,13 +109,13 @@ func (c *UDPTrackerClient) Announce(
 	peerID [20]byte,
 	listenPort int,
 ) (*AnnounceResult, error) {
-	if c.torEnabled {
-		return nil, ErrUDPDisabledUnderTor
-	}
-
 	u, err := url.Parse(trackerURL)
 	if err != nil || u.Scheme != "udp" {
 		return nil, fmt.Errorf("%w: %s", ErrInvalidTrackerURL, trackerURL)
+	}
+
+	if c.torEnabled && !isYggdrasilTrackerHost(u.Hostname()) {
+		return nil, ErrUDPDisabledUnderTor
 	}
 
 	hostPort := u.Host

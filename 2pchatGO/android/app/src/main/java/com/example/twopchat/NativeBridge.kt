@@ -218,7 +218,9 @@ object NativeBridge {
     fun startListener(port: Int = 50001): Boolean {
         if (!isLoaded) return false
         return try {
-            nativeStartListener(port)
+            val ok = nativeStartListener(port)
+            SafeLog.i(TAG, "startListener($port) -> $ok")
+            ok
         } catch (e: Throwable) {
             SafeLog.e(TAG, "nativeStartListener failed", e)
             false
@@ -228,7 +230,9 @@ object NativeBridge {
     fun stopListener(): Boolean {
         if (!isLoaded) return false
         return try {
-            nativeStopListener()
+            val ok = nativeStopListener()
+            SafeLog.i(TAG, "stopListener() -> $ok")
+            ok
         } catch (e: Throwable) {
             SafeLog.e(TAG, "nativeStopListener failed", e)
             false

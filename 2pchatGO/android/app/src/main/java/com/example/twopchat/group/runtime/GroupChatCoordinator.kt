@@ -3102,6 +3102,10 @@ object GroupChatCoordinator {
 
         require(validatePolicy(group, author, event, payload))
 
+        if (event.kind == GroupEventKind.DELETE) {
+            shredMessageAttachmentsIfUnreferenced(group.groupId, event.targetEventId)
+        }
+
         val stored = event.toStored(payload, json)
         val inserted = db().ingestEvent(
             stored,
@@ -3128,7 +3132,6 @@ object GroupChatCoordinator {
             return
         }
         if (event.kind == GroupEventKind.DELETE) {
-            shredMessageAttachmentsIfUnreferenced(group.groupId, event.targetEventId)
             applicationContext?.let { context ->
                 GroupNotificationService.cancelNotificationForGroup(context, group.groupId)
             }
@@ -4307,6 +4310,9 @@ object GroupChatCoordinator {
         )
         val json = GroupWireProtocol.eventToJson(event)
         val outboxTasks = buildEventOutboxTasks(group, event, payload, json)
+        if (kind == GroupEventKind.DELETE) {
+            shredMessageAttachmentsIfUnreferenced(groupId, targetEventId)
+        }
         check(
             storage.ingestEventWithOutbox(
                 event.toStored(payload, json),
@@ -7659,15 +7665,22 @@ object GroupChatCoordinator {
         groupId: String,
         eventId: String,
     ): List<GroupAttachmentManifest> {
+        val cacheKey = attachmentManifestKey(groupId, eventId)
+        val cached = attachmentManifests[cacheKey]
         val stored = db().getEvent(groupId, eventId)
             ?.takeIf { it.kind == GroupEventKind.MEDIA.name }
-            ?: return emptyList()
+        if (stored == null) {
+            return if (cached != null) listOf(cached) else emptyList()
+        }
         val wire = stored.payload?.let {
             runCatching {
                 GroupWireProtocol.parseEvent(JSONObject(it.toString(Charsets.UTF_8)))
             }.getOrNull()
-        } ?: return emptyList()
-        val key = db().getEpochKey(groupId, wire.epoch) ?: return emptyList()
+        }
+        if (wire == null) {
+            return if (cached != null) listOf(cached) else emptyList()
+        }
+        val key = db().getEpochKey(groupId, wire.epoch) ?: return if (cached != null) listOf(cached) else emptyList()
         val rosterHash = if (wire.cryptoSuite == GroupWireProtocol.SUITE_V2) {
             GroupWireProtocol.computeRosterHash(db().listMembers(groupId))
         } else null
@@ -7686,8 +7699,8 @@ object GroupChatCoordinator {
                     list.add(GroupAttachmentManifest.fromJson(json))
                 }
             }
-            list
-        }.getOrDefault(emptyList())
+            list.ifEmpty { if (cached != null) listOf(cached) else emptyList() }
+        }.getOrDefault(if (cached != null) listOf(cached) else emptyList())
     }
 
     private fun loadAttachmentManifest(
@@ -7717,6 +7730,9 @@ object GroupChatCoordinator {
                     destination.lastModified(),
                 ).joinToString(":"),
             )
+            applicationContext?.let { ctx ->
+                P2PPreferences.adjustCachedMediaBytes(ctx, destination.length())
+            }
             true
         }.onFailure {
             SafeLog.w(TAG, "Could not assemble attachment $eventId: ${it.message}")
@@ -7815,10 +7831,17 @@ object GroupChatCoordinator {
                 }
                 applicationContext?.let { ctx ->
                     AttachmentStorageManager.deleteMessageAttachments(ctx, destination.absolutePath)
-                } ?: run {
-                    if (destination.exists()) {
-                        TemporaryCacheSanitizer.shredFile(destination)
+                }
+                if (destination.exists()) {
+                    val size = destination.length().coerceAtLeast(0L)
+                    if (TemporaryCacheSanitizer.shredFile(destination) && size > 0L) {
+                        applicationContext?.let { ctx ->
+                            P2PPreferences.adjustCachedMediaBytes(ctx, -size)
+                        }
                     }
+                }
+                runCatching {
+                    destination.parentFile?.delete()
                 }
             }
         }

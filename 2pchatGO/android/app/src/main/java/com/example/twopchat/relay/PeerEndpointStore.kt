@@ -105,10 +105,28 @@ internal object PeerEndpointStore {
                 rows[ep] = old.copy(lastSeen = if (source == EndpointSource.DISCOVERY && old.source != EndpointSource.DISCOVERY) old.lastSeen else now,
                     source = if (source == EndpointSource.DISCOVERY) old.source else source,
                     advertisedExpires = if (source == EndpointSource.DISCOVERY && old.source != EndpointSource.DISCOVERY) old.advertisedExpires else advertisedExpires,
-                    savedContact = old.savedContact || friend)
+                    savedContact = old.savedContact || friend,
+                    retryAfter = if (source == EndpointSource.DISCOVERY) 0L else old.retryAfter)
             }
             replace(db, fp, EndpointRetention.retain(rows.values.toList(), now, setOfNotNull(active[fp])))
             trimIfNeeded(db, now)
+        }
+    }
+
+    @Synchronized @WorkerThread
+    fun resetCooldowns(context: Context, fingerprint: String? = null) {
+        ChatDatabaseHelper.getInstance(context).endpointTransaction { db ->
+            val values = ContentValues().apply {
+                put("failures", 0)
+                put("retry_after", 0L)
+            }
+            if (fingerprint.isNullOrBlank()) {
+                db.update(TABLE, values, null, null)
+            } else {
+                canonicalEndpointFingerprint(fingerprint)?.let { fp ->
+                    db.update(TABLE, values, "fingerprint = ?", arrayOf(fp))
+                }
+            }
         }
     }
 

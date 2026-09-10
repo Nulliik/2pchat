@@ -305,7 +305,7 @@ private suspend fun runConnectionDiagnosticsTest(context: Context): ConnectionSw
     var totalRtt = 0L
     var rttCount = 0
     for ((_, status) in trackerStatuses) {
-        if (status.contains("OK", ignoreCase = true) || status.contains("peers", ignoreCase = true)) {
+        if (status.contains("announce=OK", ignoreCase = true)) {
             onlineTrackers++
         }
         val rttMatch = Regex("(?:announce_rtt=|rtt=|rtt:)\\s*([0-9]+)", RegexOption.IGNORE_CASE).find(status)

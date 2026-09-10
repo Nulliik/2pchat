@@ -304,11 +304,13 @@ object TrackerPreferences {
         }
     }
 
-    /** Maps every built-in tracker name to its latest actual announce result. */
+    /** Maps built-in and custom trackers to their latest actual announce result. */
     fun diagnosticStatuses(context: Context): Map<String, String> {
         ensureLoaded(context)
-        return builtInTrackers.associate { tracker ->
-            val item = inMemoryDiagnostics[tracker.url]
+        val allTrackers = builtInTrackers.map { it.name to it.url } +
+            customTrackers(context).map { it.name to it.url }
+        return allTrackers.associate { (name, url) ->
+            val item = inMemoryDiagnostics[url]
             val status = if (item == null) {
                 "announce=NOT_RUN, peers=n/a, announce_rtt=n/ams"
             } else {
@@ -321,7 +323,7 @@ object TrackerPreferences {
                     }
                 }
             }
-            tracker.name to status
+            name to status
         }
     }
 

@@ -984,6 +984,8 @@ class NativeBridgeImpl(
     }
 
     override fun resetStaleEndpointCooldowns(): Boolean {
+        val appContext = com.example.twopchat.yggdrasil.GlobalApplication.appContext
+        com.example.twopchat.relay.PeerEndpointStore.resetCooldowns(appContext)
         return NativeBridge.resetStaleEndpointCooldowns()
     }
 

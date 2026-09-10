@@ -9,7 +9,7 @@ import time
 
 PACKAGE = "com.example.twopchat.groupqa"
 ACTION = "com.example.twopchat.debug.GROUP"
-ADB = os.environ.get("ADB", "adb")
+ADB = os.environ.get("ADB") or os.path.expandvars(r"%LOCALAPPDATA%\Android\Sdk\platform-tools\adb.exe") if os.name == "nt" else os.environ.get("ADB", "adb")
 
 
 def adb(serial, *args):
@@ -56,7 +56,9 @@ def main():
     a, b = args.first, args.second
     for serial in (a, b):
         adb(serial, "shell", f"pm clear {PACKAGE}")
+        adb(serial, "logcat", "-c")
         adb(serial, "shell", "monkey", "-p", PACKAGE, "1")
+    time.sleep(1)
     ia = control(a, "setup", name="GroupAlice")
     ib = control(b, "setup", name="GroupBob")
     adb(a, "forward", "tcp:55154", f"tcp:{ia['port']}")

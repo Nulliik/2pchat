@@ -40,7 +40,8 @@ def main():
         def do_GET(self):
             params = dict(item.split("=", 1) for item in urlsplit(self.path).query.split("&") if "=" in item)
             key = unquote_to_bytes(params.get("info_hash", ""))
-            requests.append((key, time.monotonic()))
+            peer_id = params.get("peer_id", "")
+            requests.append((key, time.monotonic(), peer_id))
             port = peers.get(key)
             packed = socket.inet_aton("10.0.2.2") + struct.pack("!H", port) if port else b""
             body = b"d8:intervali60e5:peers" + str(len(packed)).encode() + b":" + packed + b"e"
@@ -57,8 +58,10 @@ def main():
     try:
         for serial in (a, b):
             adb(serial, "shell", "pm", "clear", PACKAGE)
+            adb(serial, "logcat", "-c")
             adb(serial, "shell", "pm", "grant", PACKAGE, "android.permission.POST_NOTIFICATIONS")
             adb(serial, "shell", "monkey", "-p", PACKAGE, "1")
+        time.sleep(1)
         ia = control(a, "setup", name="PeerAlice")
         ib = control(b, "setup", name="PeerBob")
         assert len(base64.b64decode(ia["fingerprint"], validate=True)) == 32
@@ -83,8 +86,10 @@ def main():
             adb(serial, "shell", "monkey", "-p", PACKAGE, "1")
         control(a, "setup", name="PeerAlice")
         control(b, "setup", name="PeerBob")
-        state = wait_peer(a, "MigrationPeer", lambda s: len(s["records"]) == 4)
-        assert all(r["success"] == 0 for r in state["records"])
+        state = wait_peer(a, "MigrationPeer", lambda s: len([r for r in s["records"] if r["source"] == "MIGRATED"]) == 4)
+        migrated_records = [r for r in state["records"] if r["source"] == "MIGRATED"]
+        assert len(migrated_records) == 4
+        assert all(r["success"] == 0 for r in migrated_records)
         print("PASS startup migration: native Base64 identity, IPv4/LAN/Ygg/Tor retained without invented success", flush=True)
         wait_peer(a, "PeerBob", lambda s: s["online"])
         wait_peer(b, "PeerAlice", lambda s: s["online"])
@@ -106,8 +111,10 @@ def main():
         for _ in range(3):
             control(a, "peer_lookup", name="PeerBob")
         for key in peers:
-            times = sorted(t for h, t in requests if h == key)
-            assert len([t for t in times if t < times[0] + 55]) <= 2, times
+            matched = [(t, p) for h, t, p in requests if h == key]
+            times = sorted(t for t, p in matched)
+            print(f"DEBUG tracker key {key.hex()}: {len(times)} requests -> {[(round(t - times[0], 2), p) for t, p in sorted(matched)]}", flush=True)
+            assert len([t for t in times if t < times[0] + 55]) <= 2, (key.hex(), [(round(t - times[0], 2), p) for t, p in sorted(matched)])
         print("PASS tracker interval respected across repeated lookup registration", flush=True)
         adb(b, "shell", "am", "force-stop", PACKAGE)
         wait_peer(a, "PeerBob", lambda s: not s["online"])
@@ -117,7 +124,7 @@ def main():
         wait_peer(b, "PeerAlice", lambda s: any(m["text"] == "Queued while offline" for m in s["messages"]), timeout=90)
         print("PASS restart, automatic reconnect and queued message delivery", flush=True)
         state = control(a, "peer_status", name="MigrationPeer")
-        assert len(state["records"]) == 4
+        assert len([r for r in state["records"] if r["source"] == "MIGRATED"]) == 4
         print(json.dumps({"tracker_requests": len(requests), "result": "PASS"}), flush=True)
     finally:
         server.shutdown()

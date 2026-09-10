@@ -39,7 +39,6 @@ internal object GroupE2EControl {
                 result.put("projection", prefs.getString(P2PPreferences.lastEndpoint(name), ""))
                 result.put("routes", JSONObject(P2PMessageRelay.peerEndpoints.toMap()))
                 result.put("ygg", P2PMessageRelay.getYggdrasilAddress())
-                result.put("trackers", prefs.getString("tracker_diagnostics_json", ""))
                 val db = com.example.twopchat.data.ChatDatabaseHelper.getInstance(context)
                 val rows = JSONArray()
                 db.endpointTransaction { sql ->
@@ -75,9 +74,25 @@ internal object GroupE2EControl {
             "setup" -> {
                 check(NativeBridge.initialize())
                 check(NativeBridge.setNickname(arg("name")))
-                P2PPreferences.prefs(context).edit().putString("username_profile", arg("name"))
-                    .putInt(P2PPreferences.LISTENER_PORT, 51001).apply()
+                P2PPreferences.prefs(context).edit()
+                    .putBoolean("onboarding_completed", true)
+                    .putString("username_profile", arg("name"))
+                    .putInt(P2PPreferences.LISTENER_PORT, 51001).commit()
+                NativeBridge.stopListener()
+                check(NativeBridge.startListener(51001)) { "Failed to start listener on 51001" }
                 P2PMessageRelay.startServer(context)
+                P2PMessageRelay.resetPeerBackoffs()
+                val prefs = P2PPreferences.prefs(context)
+                val chats = prefs.getStringSet("active_chats", emptySet()).orEmpty()
+                    .filterNot { it == "Saved Messages" }
+                for (peerName in chats) {
+                    val fingerprint = prefs.getString("peer_fingerprint_$peerName", "").orEmpty()
+                    val liveEndpoint = P2PMessageRelay.peerEndpoints[peerName]
+                    val endpoint = P2PPreferences.getEffectiveEndpointsForPeer(context, peerName, liveEndpoint)
+                    if (endpoint.isNotBlank()) {
+                        com.example.twopchat.bridge.P2PBridgeProvider.get(context).reconnectPeerSession(peerName, endpoint, fingerprint)
+                    }
+                }
                 result.put("fingerprint", NativeBridge.getLocalIdentity()?.fingerprint)
                 result.put("code", P2PPreferences.getRendezvousCode(context))
                 result.put("port", P2PMessageRelay.listenerPort(context))
@@ -177,12 +192,6 @@ internal object GroupE2EControl {
                     result.put("wallpaper", chat.wallpaperUri)
                     com.example.twopchat.group.storage.GroupDatabaseHelper(context).use { db ->
                         result.put("epoch", db.getGroup(group)?.currentEpoch)
-                        result.put("roster", JSONArray(db.listMembers(group).map {
-                            JSONObject().put("name", it.peerName).put("status", it.status).put("epoch", it.joinedEpoch)
-                        }))
-                        result.put("events", JSONArray(db.listRecentEvents(group, 20).map {
-                            JSONObject().put("id", it.eventId).put("kind", it.kind).put("epoch", it.epoch)
-                        }))
                     }
                     result.put("members", JSONArray(info.members.map {
                         val roleName = if (it.role.name == "ADMIN") "ADMINISTRATOR" else it.role.name
@@ -191,12 +200,16 @@ internal object GroupE2EControl {
                             .put("can_media", it.permissions.canSendMedia)
                     }))
                     result.put("messages", JSONArray(chat.messages.map {
-                        JSONObject().put("id", it.messageId).put("text", it.text).put("edited", it.isEdited)
-                            .put("pinned", it.isPinned).put("reply", it.replyTo?.messageId)
-                            .put("read", JSONArray(it.readByMembers)).put("votes", it.poll?.totalVotes)
-                            .put("downloaded", it.attachment?.isDownloaded)
-                            .put("path", it.attachment?.localPath)
+                        val m = JSONObject().put("id", it.messageId).put("text", it.text)
+                            .put("edited", it.isEdited)
+                            .put("pinned", it.isPinned)
+                            .put("read", JSONArray(it.readByMembers))
                             .put("reactions", JSONArray(it.reactions.map { r -> JSONObject().put("emoji", r.emoji).put("count", r.count) }))
+                        it.replyTo?.messageId?.let { r -> m.put("reply", r) }
+                        it.poll?.totalVotes?.let { v -> m.put("votes", v) }
+                        it.attachment?.isDownloaded?.let { d -> m.put("downloaded", d) }
+                        it.attachment?.localPath?.let { p -> m.put("path", p) }
+                        m
                     }))
                 }
             }

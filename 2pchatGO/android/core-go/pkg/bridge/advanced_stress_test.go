@@ -110,7 +110,13 @@ func TestSimultaneousConnectionTieBreaking(t *testing.T) {
 	t.Logf("[TIE-BREAK] Simultaneous dials completed. Alice err: %v, Bob err: %v", aliceDialErr, bobDialErr)
 
 	// Allow arbitration to settle
-	time.Sleep(100 * time.Millisecond)
+	settleDeadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(settleDeadline) {
+		if alice.IsPeerOnline(bobFP) && bob.IsPeerOnline(aliceFP) {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
 
 	// 3. Verify bidirectional messaging works reliably after race resolution
 	msgFromAlice := "Hello Bob! Verified message after simultaneous connection tie-break."

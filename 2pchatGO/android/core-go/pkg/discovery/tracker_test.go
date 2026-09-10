@@ -3,6 +3,7 @@ package discovery
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"net"
 	"strings"
 	"testing"
@@ -191,3 +192,21 @@ func TestParseHTTPAnnounceResponseEmpty(t *testing.T) {
 		t.Fatalf("Expected error on empty HTTP response")
 	}
 }
+
+func TestUDPTrackerClientAllowsYggdrasilUnderTor(t *testing.T) {
+	client := NewUDPTrackerClient(true, 50*time.Millisecond)
+	ctx := context.Background()
+
+	// Clearnet UDP tracker must be denied under Tor
+	_, err := client.Announce(ctx, "udp://tracker.example.com:6969/announce", [20]byte{}, [20]byte{}, 50001)
+	if !errors.Is(err, ErrUDPDisabledUnderTor) {
+		t.Fatalf("Expected ErrUDPDisabledUnderTor for clearnet tracker, got: %v", err)
+	}
+
+	// Yggdrasil UDP tracker must not return ErrUDPDisabledUnderTor
+	_, err = client.Announce(ctx, "udp://[202:68d0:f0d5:b88d:1d1a:555e:2f6b:3148]:6969/announce", [20]byte{}, [20]byte{}, 50001)
+	if errors.Is(err, ErrUDPDisabledUnderTor) {
+		t.Fatalf("Yggdrasil UDP tracker was blocked with ErrUDPDisabledUnderTor under Tor")
+	}
+}
+
