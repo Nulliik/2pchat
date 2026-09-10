@@ -39,6 +39,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -48,6 +49,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
@@ -62,13 +64,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.twopchat.relay.P2PMessageRelay
+import com.example.twopchat.relay.PeerEndpointStore
+import com.example.twopchat.relay.canonicalEndpointFingerprint
 import com.example.twopchat.config.P2PPreferences
 import com.example.twopchat.config.P2PPreferences.PeerTransportPreference
 import com.example.twopchat.R
 import com.example.twopchat.tor.*
 import com.example.twopchat.relay.TransportType
 import com.example.twopchat.data.Localizations
-import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -100,6 +103,29 @@ fun ConnectionModeBottomSheet(
 
     var isReconnecting by remember { mutableStateOf(false) }
     var isEndpointsExpanded by remember(peerName) { mutableStateOf(false) }
+
+    var storedEndpoints by remember(peerName) {
+        val fromPrefs = P2PPreferences.prefs(context).getString(P2PPreferences.lastEndpoint(peerName), null).orEmpty()
+            .split(",").map { it.trim() }.filter { it.isNotEmpty() }
+        mutableStateOf(fromPrefs)
+    }
+
+    LaunchedEffect(peerName) {
+        withContext(Dispatchers.IO) {
+            val fp = P2PPreferences.getPeerFingerprint(context, peerName)
+                ?: canonicalEndpointFingerprint(peerName)
+            if (fp != null) {
+                val candidates = runCatching {
+                    PeerEndpointStore.candidates(context, peerName, fp, includeReserve = true)
+                }.getOrDefault(emptyList())
+                if (candidates.isNotEmpty()) {
+                    withContext(Dispatchers.Main) {
+                        storedEndpoints = (storedEndpoints + candidates).distinct()
+                    }
+                }
+            }
+        }
+    }
 
     fun selectMode(mode: PeerTransportPreference) {
         currentPreference = mode
@@ -329,7 +355,7 @@ fun ConnectionModeBottomSheet(
                         )
                     }
 
-                    val rawEndpoints = activeEndpoint.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+                    val rawEndpoints = (activeEndpoint.split(",") + storedEndpoints).map { it.trim() }.filter { it.isNotEmpty() }
                     val allEndpoints = mutableListOf<String>()
                     for (ep in rawEndpoints) {
                         if (isValidPeerEndpoint(ep) && ep !in allEndpoints) allEndpoints.add(ep)

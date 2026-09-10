@@ -69,6 +69,22 @@ class EndpointRetentionTest {
         assertEquals(setOf(good.endpoint), EndpointRetention.protected(listOf(good, unknown)))
     }
 
+    @Test fun discoveredStableRoutesSurviveExpiryForSavedFriendsEvenBeforeFirstSuccess() {
+        val ygg = row("[200::1]:50001", friend = true)
+        val tor = row("${"b".repeat(56)}.onion:50001", friend = true)
+        val lan = row("192.168.1.5:50001", friend = true)
+        val future = now + 1000 * EndpointRetention.DAY
+
+        val protected = EndpointRetention.protected(listOf(ygg, tor, lan))
+        assertEquals(setOf(ygg.endpoint, tor.endpoint), protected)
+
+        val retained = EndpointRetention.retain(listOf(ygg, tor, lan), future)
+        assertEquals(2, retained.size)
+        assertEquals(setOf(ygg.endpoint, tor.endpoint), retained.map { it.endpoint }.toSet())
+        assertTrue(EndpointRetention.candidates(retained, future, includeReserve = false).isEmpty())
+        assertEquals(setOf(ygg.endpoint, tor.endpoint), EndpointRetention.candidates(retained, future, includeReserve = true).toSet())
+    }
+
     @Test fun migrationPreservesStableAlternativesUntilOneIsConfirmed() {
         val first = row("${"b".repeat(56)}.onion:50001", true).copy(source = EndpointSource.MIGRATED)
         val second = row("${"c".repeat(56)}.onion:50001", true).copy(source = EndpointSource.MIGRATED)

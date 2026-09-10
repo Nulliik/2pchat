@@ -980,7 +980,12 @@ object P2PPreferences : com.example.twopchat.security.SensitiveMemoryHolder {
     }
 
     fun getEffectiveEndpointsForPeer(context: Context, peerName: String, rawEndpoints: String? = null): String {
-        val lastEp = prefs(context).getString(lastEndpoint(peerName), "").orEmpty()
+        var lastEp = prefs(context).getString(lastEndpoint(peerName), "").orEmpty()
+        if (lastEp.isBlank()) {
+            lastEp = runCatching {
+                com.example.twopchat.data.ChatDatabaseHelper.getInstance(context).getPeerLastEndpoint(peerName)
+            }.getOrNull().orEmpty()
+        }
         val savedOnion = getPeerOnionAddress(context, peerName)
 
         val combined = mutableListOf<String>()

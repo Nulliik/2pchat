@@ -1730,6 +1730,24 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
         }
     }
 
+    fun getPeerLastEndpoint(peerName: String): String? {
+        val db = this.safeReadableDatabase
+        return db.query(
+            TABLE_PEERS,
+            arrayOf(KEY_LAST_ENDPOINT),
+            "$KEY_PEER_NAME = ?",
+            arrayOf(peerName),
+            null,
+            null,
+            null,
+        ).use { cursor ->
+            if (cursor.moveToFirst()) {
+                val idx = cursor.getColumnIndexOrThrow(KEY_LAST_ENDPOINT)
+                if (!cursor.isNull(idx)) cursor.getString(idx) else null
+            } else null
+        }
+    }
+
     fun getPeerFingerprint(peerName: String): String? {
         val db = this.safeReadableDatabase
         return db.query(

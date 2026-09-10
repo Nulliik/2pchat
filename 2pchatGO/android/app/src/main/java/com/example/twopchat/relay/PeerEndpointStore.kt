@@ -52,9 +52,13 @@ internal object PeerEndpointStore {
     private fun savedFriend(context: Context, peerName: String, fp: String, db: SQLiteDatabase): Boolean {
         val prefs = P2PPreferences.prefs(context)
         val chats = prefs.getStringSet("active_chats", emptySet()).orEmpty()
-        return chats.any { name -> name == fp || (name == peerName && canonicalEndpointFingerprint(P2PPreferences.getPeerFingerprint(context, name)) == fp) ||
-            canonicalEndpointFingerprint(prefs.getString(P2PPreferences.peerFingerprint(name), null)) == fp } ||
-            db.rawQuery("SELECT 1 FROM peers WHERE fingerprint = ? LIMIT 1", arrayOf(fp)).use { it.moveToFirst() }
+        return chats.contains(peerName) || chats.contains(fp) ||
+            chats.any { name ->
+                canonicalEndpointFingerprint(P2PPreferences.getPeerFingerprint(context, name)) == fp ||
+                canonicalEndpointFingerprint(prefs.getString(P2PPreferences.peerFingerprint(name), null)) == fp
+            } ||
+            db.rawQuery("SELECT 1 FROM peers WHERE fingerprint = ? OR peer_name = ? LIMIT 1", arrayOf(fp, peerName)).use { it.moveToFirst() } ||
+            db.rawQuery("SELECT 1 FROM messages WHERE peer_name = ? LIMIT 1", arrayOf(peerName)).use { it.moveToFirst() }
     }
 
     private fun importOnce(db: SQLiteDatabase, context: Context, peerName: String, fp: String, now: Long, seeds: Collection<String> = emptyList()) {
@@ -62,7 +66,8 @@ internal object PeerEndpointStore {
         db.query("peer_endpoint_imports", arrayOf("fingerprint"), "fingerprint = ?", arrayOf(fp), null, null, null).use {
             if (it.moveToFirst()) {
                 if (friend) db.update(TABLE, ContentValues().apply { put("saved_contact", 1) }, "fingerprint = ? AND saved_contact = 0", arrayOf(fp))
-                return
+                val existing = read(db, fp)
+                if (existing.isNotEmpty()) return
             }
         }
         val prefs = P2PPreferences.prefs(context)
@@ -77,7 +82,7 @@ internal object PeerEndpointStore {
             legacy += prefs.getString(P2PPreferences.lastEndpoint(alias), "").orEmpty().split(',')
             P2PPreferences.getPeerOnionAddress(context, alias)?.let(legacy::add)
         }
-        db.query("peers", arrayOf("last_endpoint", "onion_address"), "fingerprint = ?", arrayOf(fp), null, null, null).use {
+        db.query("peers", arrayOf("last_endpoint", "onion_address"), "fingerprint = ? OR peer_name = ?", arrayOf(fp, peerName), null, null, null).use {
             while (it.moveToNext()) {
                 if (!it.isNull(0)) legacy += it.getString(0).split(',')
                 if (!it.isNull(1)) legacy += it.getString(1)

@@ -113,7 +113,7 @@ internal object EndpointRetention {
      * If no stable route exists, retain one last direct route instead. */
     fun protected(records: List<EndpointRecord>, active: Set<String> = emptySet()): Set<String> {
         val result = active.toMutableSet()
-        val friends = records.filter { it.savedContact && (it.lastSuccess > 0 || it.source != EndpointSource.DISCOVERY) }
+        val friends = records.filter { it.savedContact && (it.kind == EndpointKind.TOR || it.kind == EndpointKind.YGGDRASIL || it.lastSuccess > 0 || it.source != EndpointSource.DISCOVERY) }
         val best = compareBy<EndpointRecord> { it.lastSuccess > 0 }.thenBy { it.lastSuccess }.thenBy { it.lastSeen }.thenBy { it.endpoint }
         for (kind in listOf(EndpointKind.TOR, EndpointKind.YGGDRASIL)) {
             val routes = friends.filter { it.kind == kind }
