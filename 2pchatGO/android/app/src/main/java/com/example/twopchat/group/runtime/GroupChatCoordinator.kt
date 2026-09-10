@@ -3102,9 +3102,11 @@ object GroupChatCoordinator {
 
         require(validatePolicy(group, author, event, payload))
 
-        if (event.kind == GroupEventKind.DELETE) {
-            shredMessageAttachmentsIfUnreferenced(group.groupId, event.targetEventId)
-        }
+        // Capture manifests before the committed tombstone removes their payload.
+        // Files must remain intact if ingest rejects or rolls back this DELETE.
+        val deletedAttachments = if (event.kind == GroupEventKind.DELETE) {
+            loadAttachmentManifests(group.groupId, event.targetEventId.orEmpty())
+        } else emptyList()
 
         val stored = event.toStored(payload, json)
         val inserted = db().ingestEvent(
@@ -3132,6 +3134,7 @@ object GroupChatCoordinator {
             return
         }
         if (event.kind == GroupEventKind.DELETE) {
+            shredMessageAttachmentsIfUnreferenced(group.groupId, event.targetEventId, deletedAttachments)
             applicationContext?.let { context ->
                 GroupNotificationService.cancelNotificationForGroup(context, group.groupId)
             }
@@ -4226,7 +4229,7 @@ object GroupChatCoordinator {
         ).map { it.value }
     }
 
-    private suspend fun emitEvent(
+    internal suspend fun emitEvent(
         groupId: String,
         kind: GroupEventKind,
         payload: JSONObject,
@@ -4310,9 +4313,9 @@ object GroupChatCoordinator {
         )
         val json = GroupWireProtocol.eventToJson(event)
         val outboxTasks = buildEventOutboxTasks(group, event, payload, json)
-        if (kind == GroupEventKind.DELETE) {
-            shredMessageAttachmentsIfUnreferenced(groupId, targetEventId)
-        }
+        val deletedAttachments = if (kind == GroupEventKind.DELETE) {
+            loadAttachmentManifests(groupId, targetEventId.orEmpty())
+        } else emptyList()
         check(
             storage.ingestEventWithOutbox(
                 event.toStored(payload, json),
@@ -4320,6 +4323,9 @@ object GroupChatCoordinator {
                 tasks = outboxTasks,
             ),
         )
+        if (kind == GroupEventKind.DELETE) {
+            shredMessageAttachmentsIfUnreferenced(groupId, targetEventId, deletedAttachments)
+        }
         if (isSerializedControl(kind)) {
             applySerializedControl(group, event, payload)
             drainStoredControlChain(group.groupId)
@@ -7812,10 +7818,14 @@ object GroupChatCoordinator {
         return false
     }
 
-    internal fun shredMessageAttachmentsIfUnreferenced(groupId: String, targetEventId: String?) {
+    internal fun shredMessageAttachmentsIfUnreferenced(
+        groupId: String,
+        targetEventId: String?,
+        capturedManifests: List<GroupAttachmentManifest>? = null,
+    ) {
         if (targetEventId.isNullOrBlank()) return
         if (applicationContext == null) return
-        val manifests = loadAttachmentManifests(groupId, targetEventId)
+        val manifests = capturedManifests ?: loadAttachmentManifests(groupId, targetEventId)
         val store = attachmentStore(groupId)
         for (manifest in manifests) {
             for (block in manifest.blocks) {

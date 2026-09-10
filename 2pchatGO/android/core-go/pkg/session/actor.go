@@ -211,9 +211,10 @@ func (a *PeerActor) handleSendChat(body, nickname string) (string, error) {
 	return a.handleSendBinary(raw)
 }
 
-// maxBinaryFramePayload is the maximum allowed binary payload size (16 MiB).
-// This guards against integer overflow in the frame size computation.
-const maxBinaryFramePayload = 16 << 20
+// Reserve the largest message ID (int64 time, separator, uint64 counter), the
+// binary envelope, and the obfuscated ratchet packet overhead. The receiver's
+// 2 MiB limit applies to the encrypted packet, not just its plaintext payload.
+const maxBinaryFramePayload = transport.MaxFrameSize - (3 + 41 + 2 + crypto.ObfuscatedHeaderLen + crypto.SecretBoxNonceSize + crypto.SecretBoxOverhead + crypto.PacketTagLen)
 
 // handleSendBinary encrypts with Double Ratchet and writes to the Yamux Chat Stream.
 func (a *PeerActor) handleSendBinary(payload []byte) (string, error) {

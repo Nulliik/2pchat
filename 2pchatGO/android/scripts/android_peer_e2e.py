@@ -84,8 +84,9 @@ def main():
         requests.clear()
         for serial in (a, b):
             adb(serial, "shell", "monkey", "-p", PACKAGE, "1")
-        control(a, "setup", name="PeerAlice")
-        control(b, "setup", name="PeerBob")
+        # Relaunch must restore the service and contacts through production code.
+        # The fixture's setup command forces listener/reconnect state and would
+        # hide startup regressions here.
         state = wait_peer(a, "MigrationPeer", lambda s: len([r for r in s["records"] if r["source"] == "MIGRATED"]) == 4)
         migrated_records = [r for r in state["records"] if r["source"] == "MIGRATED"]
         assert len(migrated_records) == 4
@@ -120,7 +121,6 @@ def main():
         wait_peer(a, "PeerBob", lambda s: not s["online"])
         assert control(a, "peer_send", name="PeerBob", text="Queued while offline")["accepted"]
         adb(b, "shell", "monkey", "-p", PACKAGE, "1")
-        control(b, "setup", name="PeerBob")
         wait_peer(b, "PeerAlice", lambda s: any(m["text"] == "Queued while offline" for m in s["messages"]), timeout=90)
         print("PASS restart, automatic reconnect and queued message delivery", flush=True)
         state = control(a, "peer_status", name="MigrationPeer")

@@ -56,6 +56,7 @@ def main():
     a, b = args.first, args.second
     for serial in (a, b):
         adb(serial, "shell", f"pm clear {PACKAGE}")
+        adb(serial, "shell", "pm", "grant", PACKAGE, "android.permission.POST_NOTIFICATIONS")
         adb(serial, "logcat", "-c")
         adb(serial, "shell", "monkey", "-p", PACKAGE, "1")
     time.sleep(1)
@@ -121,14 +122,10 @@ def main():
     adb(b, "shell", f"am force-stop {PACKAGE}")
     control(a, "send", group=gid, text="Offline delivery")
     adb(b, "shell", "monkey", "-p", PACKAGE, "1")
-    ib2 = control(b, "setup", name="GroupBob")
-    adb(b, "forward", "tcp:55156", f"tcp:{ib2['port']}")
-    control(b, "connect", name="GroupAlice", fingerprint=ia["fingerprint"], endpoint="10.0.2.2:55154")
-    control(a, "connect", name="GroupBob", fingerprint=ib2["fingerprint"], endpoint="10.0.2.2:55156")
-    wait_for(b, "", lambda s: any(s["peers"].values()), timeout=30)
-    wait_for(a, "", lambda s: any(s["peers"].values()), timeout=30)
-    control(b, "sync", group=gid)
-    control(a, "sync", group=gid)
+    # Production startup/reconnect/anti-entropy must recover without a test-only
+    # listener reset, explicit connect, or forced sync command.
+    wait_for(b, "", lambda s: any(s["peers"].values()), timeout=90)
+    wait_for(a, "", lambda s: any(s["peers"].values()), timeout=90)
     wait_for(b, gid, lambda s: any(m["text"] == "Offline delivery" for m in s["messages"]), timeout=90)
     print("PASS offline/restart/recovery", flush=True)
 

@@ -66,8 +66,9 @@ internal object PeerEndpointStore {
         db.query("peer_endpoint_imports", arrayOf("fingerprint"), "fingerprint = ?", arrayOf(fp), null, null, null).use {
             if (it.moveToFirst()) {
                 if (friend) db.update(TABLE, ContentValues().apply { put("saved_contact", 1) }, "fingerprint = ? AND saved_contact = 0", arrayOf(fp))
-                val existing = read(db, fp)
-                if (existing.isNotEmpty()) return
+                // Empty is a valid post-expiry/deletion state. Reimporting would
+                // revive old CSV routes and conflict with this existing marker.
+                return
             }
         }
         val prefs = P2PPreferences.prefs(context)

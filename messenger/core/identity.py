@@ -443,7 +443,7 @@ class Outbox:
         temporary = self.path.with_name(f".{self.path.name}.{uuid4().hex}.tmp")
         try:
             temporary.write_text(
-                _protect_local_text(json.dumps(self._messages, separators=(",", ":")))  # nosec B106 -- pre-encrypted by _protect_local_text; file chmod 0o600,
+                _protect_local_text(json.dumps(self._messages, separators=(",", ":"))),
                 encoding="utf-8",
             )
             try:

@@ -54,6 +54,10 @@ class PeerEndpointStoreInstrumentedTest {
             }
             assertTrue(prefs.getStringSet("active_chats", emptySet()).orEmpty().contains(name))
             assertEquals(fp, prefs.getString(P2PPreferences.peerFingerprint(name), null))
+            PeerEndpointStore.delete(context, fp)
+            prefs.edit().putString(P2PPreferences.lastEndpoint(name), "$direct,$onion").commit()
+            assertTrue("A completed import must not resurrect deleted routes from stale aliases",
+                PeerEndpointStore.candidates(context, name, fp, true, future + 1).isEmpty())
         } finally {
             PeerEndpointStore.disconnected(fp)
             ChatDatabaseHelper.getInstance(context).endpointTransaction { sql ->

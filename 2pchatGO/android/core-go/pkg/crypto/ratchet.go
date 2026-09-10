@@ -435,6 +435,10 @@ func (s *SessionState) maybeSkipMessageKeys(until uint32, dhPub *X25519PublicKey
 // EncryptMessage encrypts a plaintext payload using the current Double Ratchet sending chain.
 // Wire format is 100% compatible with Python double_ratchet.py encrypt_message.
 func (s *SessionState) EncryptMessage(plaintext []byte) ([]byte, error) {
+	// Reject deterministic input errors before deriving or consuming a message key.
+	if len(plaintext) > maxSecretBoxPlaintext {
+		return nil, fmt.Errorf("plaintext exceeds maximum allowed size (%d bytes)", maxSecretBoxPlaintext)
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 

@@ -133,6 +133,53 @@ class GroupChatCoordinatorInstrumentedTest {
     }
 
     @Test
+    fun rejectedDeleteCommitPreservesAttachmentAndSuccessfulDeleteShredsIt() {
+        val created = AtomicReference<String>()
+        GroupChatCoordinator.createGroup(title = "Delete transaction", description = "", contactIds = emptySet(), onCreated = created::set)
+        awaitCondition { created.get() != null }
+        val groupId = checkNotNull(created.get())
+        val chat = GroupChatCoordinator.chatState(groupId)
+        awaitCondition { chat.value.mediaComposerEnabled }
+        val source = java.io.File(context.cacheDir, "delete-transaction-${UUID.randomUUID()}.bin")
+        val content = ByteArray(1024) { (it % 251).toByte() }
+        source.writeBytes(content)
+        try {
+            GroupChatCoordinator.sendAttachment(groupId, android.net.Uri.fromFile(source).toString(), "application/octet-stream", "transaction attachment")
+            awaitCondition { chat.value.messages.any { it.attachment?.isDownloaded == true } }
+            val message = chat.value.messages.first { it.attachment?.isDownloaded == true }
+            val destination = java.io.File(checkNotNull(message.attachment?.localPath))
+            GroupDatabaseHelper(context).use { database ->
+                database.safeWritableDatabase.execSQL("""
+                    CREATE TRIGGER test_reject_delete BEFORE INSERT ON group_events
+                    WHEN NEW.kind = 'DELETE' BEGIN
+                        SELECT RAISE(ABORT, 'simulated delete commit failure');
+                    END
+                """.trimIndent())
+                try {
+                    val failure = runCatching {
+                        kotlinx.coroutines.runBlocking {
+                            GroupChatCoordinator.emitEvent(groupId, GroupEventKind.DELETE, JSONObject(), message.messageId)
+                        }
+                    }.exceptionOrNull()
+                    org.junit.Assert.assertNotNull("The injected database failure must reject DELETE", failure)
+                    assertTrue("Uncommitted DELETE must not remove the attachment", destination.isFile)
+                    assertTrue(content.contentEquals(destination.readBytes()))
+                    assertFalse(checkNotNull(database.getEvent(groupId, message.messageId)).isTombstoned)
+                } finally {
+                    database.safeWritableDatabase.execSQL("DROP TRIGGER IF EXISTS test_reject_delete")
+                }
+                kotlinx.coroutines.runBlocking {
+                    org.junit.Assert.assertNotNull(GroupChatCoordinator.emitEvent(groupId, GroupEventKind.DELETE, JSONObject(), message.messageId))
+                }
+                assertTrue(checkNotNull(database.getEvent(groupId, message.messageId)).isTombstoned)
+                assertFalse("Committed DELETE must shred its attachment", destination.exists())
+            }
+        } finally {
+            source.delete()
+        }
+    }
+
+    @Test
     fun joiningRefreshAndCanonicalActivationWorkWhileTransportIsOffline() {
         val groupId = "runtime-group-${UUID.randomUUID()}"
         val firstSecret = ByteArray(32) { 0x11 }

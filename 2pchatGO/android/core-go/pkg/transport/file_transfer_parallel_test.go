@@ -151,6 +151,7 @@ func TestFileTransfer_BitmaskPersistenceAndResume(t *testing.T) {
 
 	// Receiver 1 receives metadata and only chunk 0 and 2
 	ftmReceiver1 := NewFileTransferManager(nil)
+	t.Cleanup(func() { ftmReceiver1.ReapIncompleteTransfers(0) })
 	_, _ = ftmReceiver1.ReceiveChunk("peer_bob", messageID, base64.StdEncoding.EncodeToString(frames[0]), downloadsDir)
 	_, _ = ftmReceiver1.ReceiveChunk("peer_bob", messageID, base64.StdEncoding.EncodeToString(frames[1]), downloadsDir) // chunk 0
 	_, _ = ftmReceiver1.ReceiveChunk("peer_bob", messageID, base64.StdEncoding.EncodeToString(frames[3]), downloadsDir) // chunk 2
@@ -165,10 +166,18 @@ func TestFileTransfer_BitmaskPersistenceAndResume(t *testing.T) {
 	}
 
 	// Receiver restarts (new instance of manager), loads bitmask from disk
+	// Process exit closes the first receiver's descriptor, but preserves its
+	// partial file and bitmask. Leaving it open races Windows TempDir cleanup.
+	transfer := ftmReceiver1.inbound[messageID]
+	if err := transfer.PartFile.Close(); err != nil {
+		t.Fatal(err)
+	}
+	transfer.PartFile = nil
 	ftmReceiver2 := NewFileTransferManager(nil)
+	t.Cleanup(func() { ftmReceiver2.ReapIncompleteTransfers(0) })
 	// Receive remaining missing chunk 1 and 3
-	_, _ = ftmReceiver2.ReceiveChunk("peer_bob", messageID, base64.StdEncoding.EncodeToString(frames[0]), downloadsDir) // meta
-	_, _ = ftmReceiver2.ReceiveChunk("peer_bob", messageID, base64.StdEncoding.EncodeToString(frames[2]), downloadsDir) // chunk 1
+	_, _ = ftmReceiver2.ReceiveChunk("peer_bob", messageID, base64.StdEncoding.EncodeToString(frames[0]), downloadsDir)                 // meta
+	_, _ = ftmReceiver2.ReceiveChunk("peer_bob", messageID, base64.StdEncoding.EncodeToString(frames[2]), downloadsDir)                 // chunk 1
 	finalAssembled, err := ftmReceiver2.ReceiveChunk("peer_bob", messageID, base64.StdEncoding.EncodeToString(frames[4]), downloadsDir) // chunk 3
 
 	if err != nil {

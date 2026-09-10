@@ -62,6 +62,34 @@ internal object GroupE2EControl {
                 val fp = P2PPreferences.getPeerFingerprint(context, arg("name"))
                 com.example.twopchat.bridge.P2PBridgeProvider.get(context).searchPeers(arg("name"), arg("name"), fp, null)
             }
+            "network_status" -> {
+                val prefs = P2PPreferences.prefs(context)
+                result.put("ygg", P2PMessageRelay.getYggdrasilAddress())
+                result.put("ygg_state", prefs.getString("yggdrasil_runtime_state", ""))
+                result.put("ygg_peers", prefs.getInt("yggdrasil_runtime_peers", 0))
+                result.put("tor_running", com.example.twopchat.tor.TorManager.isTorRunning.value)
+                result.put("tor_connecting", com.example.twopchat.tor.TorManager.isTorConnecting.value)
+                result.put("onion", P2PPreferences.getTorOnionHostname(context).orEmpty())
+                result.put("transports", JSONObject(P2PMessageRelay.peerConnectionTransports.toMap()))
+                result.put("trackers", JSONObject(com.example.twopchat.config.TrackerPreferences.diagnosticStatuses(context)))
+            }
+            "peer_transport" -> {
+                val name = arg("name")
+                val pref = P2PPreferences.PeerTransportPreference.valueOf(arg("mode"))
+                val fp = checkNotNull(P2PPreferences.getPeerFingerprint(context, name))
+                P2PPreferences.setPeerTransportPreference(context, name, pref)
+                val flags = when (pref) {
+                    P2PPreferences.PeerTransportPreference.AUTO -> 0
+                    P2PPreferences.PeerTransportPreference.DIRECT_ONLY -> 3
+                    P2PPreferences.PeerTransportPreference.YGGDRASIL_ONLY -> 4
+                    P2PPreferences.PeerTransportPreference.TOR_ONLY -> 8
+                }
+                check(NativeBridge.setPeerPolicy(fp, flags))
+                val bridge = com.example.twopchat.bridge.P2PBridgeProvider.get(context)
+                bridge.closePeerSession(name, fp)
+                result.put("accepted", bridge.reconnectPeerSession(name,
+                    P2PPreferences.getEffectiveEndpointsForPeer(context, name), fp))
+            }
             "peer_tracker" -> {
                 val trackers = com.example.twopchat.config.TrackerPreferences
                 P2PPreferences.prefs(context).edit()
@@ -72,14 +100,16 @@ internal object GroupE2EControl {
                 NativeBridge.updateTrackers(listOf(arg("url")))
             }
             "setup" -> {
+                val port = arg("port").toIntOrNull() ?: 51001
+                require(port in 1..65535)
                 check(NativeBridge.initialize())
                 check(NativeBridge.setNickname(arg("name")))
                 P2PPreferences.prefs(context).edit()
                     .putBoolean("onboarding_completed", true)
                     .putString("username_profile", arg("name"))
-                    .putInt(P2PPreferences.LISTENER_PORT, 51001).commit()
+                    .putInt(P2PPreferences.LISTENER_PORT, port).commit()
                 NativeBridge.stopListener()
-                check(NativeBridge.startListener(51001)) { "Failed to start listener on 51001" }
+                check(NativeBridge.startListener(port)) { "Failed to start listener on $port" }
                 P2PMessageRelay.startServer(context)
                 P2PMessageRelay.resetPeerBackoffs()
                 val prefs = P2PPreferences.prefs(context)
