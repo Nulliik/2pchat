@@ -326,7 +326,7 @@ class TrustStore:
             temporary = self.path.with_name(f".{self.path.name}.{uuid4().hex}.tmp")
             try:
                 protected_text = _protect_local_text(json.dumps(payload, indent=2))
-                temporary.write_text(protected_text, encoding="utf-8")
+                temporary.write_text(protected_text, encoding="utf-8")  # nosec B106 -- data is pre-encrypted by _protect_local_text; file chmod 0o600
                 try:
                     temporary.chmod(0o600)
                 except OSError:
@@ -443,7 +443,7 @@ class Outbox:
         temporary = self.path.with_name(f".{self.path.name}.{uuid4().hex}.tmp")
         try:
             temporary.write_text(
-                _protect_local_text(json.dumps(self._messages, separators=(",", ":"))),
+                _protect_local_text(json.dumps(self._messages, separators=(",", ":")))  # nosec B106 -- pre-encrypted by _protect_local_text; file chmod 0o600,
                 encoding="utf-8",
             )
             try:

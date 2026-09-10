@@ -24,6 +24,9 @@ const (
 	ChaChaKeySize = chacha20poly1305.KeySize
 	// ChaChaNonceSize is 12 bytes (Standard IETF nonce).
 	ChaChaNonceSize = chacha20poly1305.NonceSize
+	// maxSecretBoxPlaintext is the maximum plaintext size accepted by SecretBoxEncrypt (64 MiB).
+	// This bounds the capacity arithmetic in make() and prevents integer overflow.
+	maxSecretBoxPlaintext = 64 << 20
 )
 
 // HKDFSHA256 derives a key of specified length from input key material, optional salt, and context info.
@@ -56,12 +59,17 @@ func SecretBoxEncrypt(key []byte, plaintext []byte) ([]byte, error) {
 	var secretKey [SecretBoxKeySize]byte
 	copy(secretKey[:], key)
 
+	if len(plaintext) > maxSecretBoxPlaintext {
+		return nil, fmt.Errorf("plaintext exceeds maximum allowed size (%d bytes)", maxSecretBoxPlaintext)
+	}
+
 	var nonce [SecretBoxNonceSize]byte
 	if _, err := rand.Read(nonce[:]); err != nil {
 		return nil, fmt.Errorf("failed to generate random nonce: %w", err)
 	}
 
-	// Allocate buffer starting with the 24-byte nonce
+	// Allocate buffer starting with the 24-byte nonce.
+	// Capacity arithmetic is overflow-safe: plaintext size is bounded above.
 	out := make([]byte, SecretBoxNonceSize, SecretBoxNonceSize+len(plaintext)+SecretBoxOverhead)
 	copy(out, nonce[:])
 

@@ -630,7 +630,9 @@ func (s *Session) SendReliable(msg map[string]any) (string, error) {
 		return "", protocol.ErrIncompatible
 	}
 	if msg["type"] == string(TypeIdentityInfo) {
-		copyMsg := make(map[string]any, len(msg)+1)
+		// len(msg) is bounded by protocol message field count (O(10) keys);
+		// +1 is safe and cannot overflow. CodeQL size-overflow does not apply.
+		copyMsg := make(map[string]any, len(msg)+1) //nolint:gosec
 		for k, v := range msg {
 			copyMsg[k] = v
 		}

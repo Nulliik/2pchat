@@ -171,7 +171,10 @@ func IdentityKeyPairFromSeed(seed []byte) (*IdentityKeyPair, error) {
 	xPriv[31] |= 64
 	xPub := xPriv.Public()
 
-	edPriv := ed25519.NewKeyFromSeed(seed)
+	// seed is always sourced from crypto/rand (via GenerateIdentityKeyPair or
+	// the key-derivation path). ed25519.NewKeyFromSeed is deterministic key
+	// expansion, not random generation — CodeQL CWE-338 does not apply here.
+	edPriv := ed25519.NewKeyFromSeed(seed) //nolint:gosec
 	edPub := edPriv.Public().(ed25519.PublicKey)
 
 	return &IdentityKeyPair{

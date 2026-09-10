@@ -156,10 +156,13 @@ func (c *UDPTrackerClient) Announce(
 		if relay == "" {
 			return conn.Write(payload)
 		}
+		if rAddr.Port < 0 || rAddr.Port > 65535 {
+			return 0, fmt.Errorf("relay port %d out of valid range [0, 65535]", rAddr.Port)
+		}
 		frame := make([]byte, 22+len(payload))
 		copy(frame[:4], []byte("YUDP"))
 		copy(frame[4:20], rAddr.IP.To16())
-		binary.BigEndian.PutUint16(frame[20:22], uint16(rAddr.Port))
+		binary.BigEndian.PutUint16(frame[20:22], uint16(rAddr.Port)) //nolint:gosec // port range validated above
 		copy(frame[22:], payload)
 		return conn.Write(frame)
 	}
