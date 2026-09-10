@@ -177,13 +177,14 @@ object P2PMessageRelay {
         val ctx = context?.applicationContext ?: storedAppContext
         if (ctx != null && !isPlaceholderPeerName(normalizedName)) {
             val fp = P2PPreferences.getPeerFingerprint(ctx, normalizedName)
-                ?: normalizedName.takeIf { it.length == 64 && it.all { ch -> ch in "0123456789abcdefABCDEF" } }
+                ?: canonicalEndpointFingerprint(normalizedName)
             serviceScope.launch {
                 if (fp != null) {
                     if (source != EndpointSource.MIGRATED) {
                         PeerEndpointStore.observe(ctx, normalizedName, fp, endpointParts, source, advertisedExpires)
                     }
-                    val retained = PeerEndpointStore.candidates(ctx, normalizedName, fp, includeReserve = true)
+                    val retained = PeerEndpointStore.candidates(ctx, normalizedName, fp, includeReserve = true,
+                        legacyEndpoints = combined)
                     P2PPreferences.prefs(ctx).edit().putString("last_endpoint_$normalizedName", retained.joinToString(",")).apply()
                     runOnMain { replaceEndpointProjection(normalizedName, retained.joinToString(",")) }
                 } else {
@@ -2697,7 +2698,16 @@ object P2PMessageRelay {
                                 .take(20).toByteArray().joinToString("") { "%02x".format(it) }
                         } else ""
 
-                        if (infoHash.equals(fp, ignoreCase = true) ||
+                        val currentFpHash = fp.takeIf { it.isNotBlank() }?.let {
+                            com.example.twopchat.bridge.discoveryInfoHash(it, it)
+                        }
+                        val currentCodeHash = discCode.takeIf { it.isNotBlank() }?.let {
+                            com.example.twopchat.bridge.discoveryInfoHash(peerName, it)
+                        }
+
+                        if (infoHash.equals(currentFpHash, ignoreCase = true) ||
+                            infoHash.equals(currentCodeHash, ignoreCase = true) ||
+                            infoHash == fp ||
                             infoHash.equals(discCode, ignoreCase = true) ||
                             infoHash.equals(fpHash, ignoreCase = true) ||
                             infoHash.equals(codeHash, ignoreCase = true)) {

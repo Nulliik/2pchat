@@ -17,7 +17,8 @@ class PeerEndpointStoreInstrumentedTest {
     @Test fun sqlCipherMigrationReservesAndSuccessRoundTrip() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val name = "endpoint-test-${UUID.randomUUID()}"
-        val fp = MessageDigest.getInstance("SHA-256").digest(name.toByteArray()).joinToString("") { "%02x".format(it) }
+        // Match crypto.Fingerprint in the native core, including case-sensitive Base64.
+        val fp = android.util.Base64.encodeToString(MessageDigest.getInstance("SHA-256").digest(name.toByteArray()), android.util.Base64.NO_WRAP)
         val prefs = P2PPreferences.prefs(context)
         val onion = "${"b".repeat(56)}.onion:50001"
         val direct = "8.8.8.8:50001"

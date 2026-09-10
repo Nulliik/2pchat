@@ -121,9 +121,20 @@ class EndpointRetentionTest {
     }
 
     @Test fun canonicalAddressesAndBoundedValidation() {
+        assertEquals("8.8.8.8:50001", EndpointRetention.normalize("8.8.8.8"))
         assertEquals(EndpointRetention.normalize("[200::1]:50001"), EndpointRetention.normalize("[0200:0:0:0:0:0:0:1]:50001"))
         assertNull(EndpointRetention.normalize("127.0.0.1:42342"))
         assertNull(EndpointRetention.normalize("[::1]:50001"))
         assertFalse(isValidPeerEndpointList((1..17).joinToString(",") { "8.8.8.$it:50001" }))
+    }
+
+    @Test fun nativeBase64FingerprintPreservesCaseAndLegacyHexStillWorks() {
+        val fp = "hm0jt4WFVQcvZYeAdWOtik3Vk0n9cNwI3aS/ZKlERX4="
+        assertEquals(fp, com.example.twopchat.relay.canonicalEndpointFingerprint(fp))
+        assertNotEquals(com.example.twopchat.relay.canonicalEndpointFingerprint(fp),
+            com.example.twopchat.relay.canonicalEndpointFingerprint(fp.replaceFirst('h', 'H')))
+        assertEquals("a".repeat(64), com.example.twopchat.relay.canonicalEndpointFingerprint("A".repeat(64)))
+        assertNull(com.example.twopchat.relay.canonicalEndpointFingerprint("a".repeat(44)))
+        assertNull(com.example.twopchat.relay.canonicalEndpointFingerprint("a".repeat(42) + "B="))
     }
 }

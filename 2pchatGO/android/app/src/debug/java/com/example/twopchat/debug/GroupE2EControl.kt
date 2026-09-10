@@ -24,6 +24,54 @@ internal object GroupE2EControl {
         val group = arg("group")
         Groups.initialize(context)
         when (arg("op")) {
+            "peer_seed" -> {
+                val prefs = P2PPreferences.prefs(context)
+                prefs.edit().putString(P2PPreferences.peerFingerprint(arg("name")), arg("fingerprint"))
+                    .putString(P2PPreferences.lastEndpoint(arg("name")), arg("endpoints"))
+                    .putStringSet("active_chats", prefs.getStringSet("active_chats", emptySet()).orEmpty() + arg("name"))
+                    .commit()
+            }
+            "peer_status" -> {
+                val name = arg("name")
+                val prefs = P2PPreferences.prefs(context)
+                val fp = prefs.getString(P2PPreferences.peerFingerprint(name), "").orEmpty()
+                result.put("online", NativeBridge.isPeerOnline(fp))
+                result.put("projection", prefs.getString(P2PPreferences.lastEndpoint(name), ""))
+                result.put("routes", JSONObject(P2PMessageRelay.peerEndpoints.toMap()))
+                result.put("ygg", P2PMessageRelay.getYggdrasilAddress())
+                result.put("trackers", prefs.getString("tracker_diagnostics_json", ""))
+                val db = com.example.twopchat.data.ChatDatabaseHelper.getInstance(context)
+                val rows = JSONArray()
+                db.endpointTransaction { sql ->
+                    sql.rawQuery("SELECT endpoint,source,last_success,last_seen,failures FROM peer_endpoint_records WHERE fingerprint = ?", arrayOf(fp)).use {
+                        while (it.moveToNext()) rows.put(JSONObject().put("endpoint", it.getString(0))
+                            .put("source", it.getString(1)).put("success", it.getLong(2))
+                            .put("seen", it.getLong(3)).put("failures", it.getInt(4)))
+                    }
+                }
+                result.put("records", rows)
+                result.put("messages", JSONArray(db.getMessagesForPeer(name).map {
+                    JSONObject().put("id", it.id).put("text", it.text)
+                }))
+            }
+            "peer_send" -> {
+                val sent = CompletableDeferred<Boolean>()
+                P2PMessageRelay.sendMessageToPeer(context, arg("name"), arg("text")) { sent.complete(it) }
+                result.put("accepted", withTimeout(8_000) { sent.await() })
+            }
+            "peer_lookup" -> {
+                val fp = P2PPreferences.getPeerFingerprint(context, arg("name"))
+                com.example.twopchat.bridge.P2PBridgeProvider.get(context).searchPeers(arg("name"), arg("name"), fp, null)
+            }
+            "peer_tracker" -> {
+                val trackers = com.example.twopchat.config.TrackerPreferences
+                P2PPreferences.prefs(context).edit()
+                    .putStringSet(trackers.DISABLED_BUILTINS, trackers.builtInTrackers.map { it.name }.toSet())
+                    .putString(trackers.CUSTOM_TRACKERS_JSON, JSONArray().put(JSONObject()
+                        .put("id", "peer-e2e").put("name", "Peer E2E").put("url", arg("url"))
+                        .put("protocol", "http").put("enabled", true)).toString()).commit()
+                NativeBridge.updateTrackers(listOf(arg("url")))
+            }
             "setup" -> {
                 check(NativeBridge.initialize())
                 check(NativeBridge.setNickname(arg("name")))
@@ -31,6 +79,7 @@ internal object GroupE2EControl {
                     .putInt(P2PPreferences.LISTENER_PORT, 51001).apply()
                 P2PMessageRelay.startServer(context)
                 result.put("fingerprint", NativeBridge.getLocalIdentity()?.fingerprint)
+                result.put("code", P2PPreferences.getRendezvousCode(context))
                 result.put("port", P2PMessageRelay.listenerPort(context))
             }
             "connect" -> {

@@ -28,6 +28,7 @@ internal class RelayMaintenanceCoordinator(
     private val lastReconnectAttemptAt = ConcurrentHashMap<String, Long>()
     private val reconnectDelayMs = ConcurrentHashMap<String, Long>()
     private val lastHeartbeatSentAt = ConcurrentHashMap<String, Long>()
+    private val lastDiscoveryLookupAt = ConcurrentHashMap<String, Long>()
     private var sessionJob: Job? = null
     private var announceJob: Job? = null
 
@@ -157,6 +158,14 @@ internal class RelayMaintenanceCoordinator(
                     for (peerName in chats) {
                         if (P2PPreferences.isPeerIdentityChangePending(appContext, peerName)) continue
                         val fingerprint = prefs.getString("peer_fingerprint_$peerName", "").orEmpty()
+                        // Renew Go's 30-minute lookup lease even when no dialable
+                        // address remains. Registration respects tracker intervals.
+                        if (canonicalEndpointFingerprint(fingerprint) != null &&
+                            now - (lastDiscoveryLookupAt[peerName] ?: 0L) >= 15 * 60_000L) {
+                            bridge.searchPeers(peerName, peerName, fingerprint,
+                                prefs.getString("discovery_code_$peerName", null))
+                            lastDiscoveryLookupAt[peerName] = now
+                        }
                         if (bridge.isPeerOnline(peerName, fingerprint)) {
                             reconnectDelayMs.remove(peerName)
                             continue
@@ -278,6 +287,7 @@ internal class RelayMaintenanceCoordinator(
         announceJob = null
         lastReconnectAttemptAt.clear()
         reconnectDelayMs.clear()
+        lastDiscoveryLookupAt.clear()
         screenOffTimestamp = null
     }
 }

@@ -7,6 +7,16 @@ import java.util.Locale
 internal enum class EndpointKind { LAN, PUBLIC, YGGDRASIL, TOR }
 internal enum class EndpointSource { DISCOVERY, AUTHENTICATED, MANUAL, MIGRATED }
 
+// Go crypto.Fingerprint uses standard, padded Base64 for a 32-byte public key.
+// Base64 is case-sensitive; only legacy hexadecimal identifiers may be folded.
+private val endpointBase64Fingerprint = Regex("[A-Za-z0-9+/]{42}[AEIMQUYcgkosw048]=")
+internal fun canonicalEndpointFingerprint(value: String?): String? {
+    val fp = value?.trim() ?: return null
+    if (endpointBase64Fingerprint.matches(fp)) return fp
+    return fp.takeIf { it.length == 64 && it.all { ch -> ch in "0123456789abcdefABCDEF" } }
+        ?.lowercase(Locale.ROOT)
+}
+
 internal data class EndpointRecord(
     val fingerprint: String,
     val endpoint: String,
@@ -33,6 +43,7 @@ internal object EndpointRetention {
 
     fun normalize(value: String): String? {
         var endpoint = value.trim().lowercase(Locale.ROOT)
+        if (endpoint.split('.').let { it.size == 4 && it.all { part -> part.toIntOrNull() in 0..255 } }) endpoint += ":50001"
         if (endpoint.endsWith(".onion")) endpoint += ":50001"
         if (endpoint.startsWith('[') && endpoint.endsWith(']')) endpoint += ":50001"
         if (endpoint.count { it == ':' } > 1 && !endpoint.startsWith('[')) endpoint = "[$endpoint]:50001"

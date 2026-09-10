@@ -13,7 +13,6 @@ internal object PeerEndpointStore {
     private const val TABLE = "peer_endpoint_records"
     private val active = mutableMapOf<String, String>()
 
-    private fun validFingerprint(fp: String) = fp.length == 64 && fp.all { it in '0'..'9' || it.lowercaseChar() in 'a'..'f' }
 
     private fun read(db: SQLiteDatabase, fp: String? = null): List<EndpointRecord> = buildList {
         db.query(TABLE, null, if (fp == null) null else "fingerprint = ?",
@@ -53,8 +52,8 @@ internal object PeerEndpointStore {
     private fun savedFriend(context: Context, peerName: String, fp: String, db: SQLiteDatabase): Boolean {
         val prefs = P2PPreferences.prefs(context)
         val chats = prefs.getStringSet("active_chats", emptySet()).orEmpty()
-        return chats.any { name -> name == fp || (name == peerName && P2PPreferences.getPeerFingerprint(context, name).equals(fp, true)) ||
-            prefs.getString(P2PPreferences.peerFingerprint(name), null).equals(fp, true) } ||
+        return chats.any { name -> name == fp || (name == peerName && canonicalEndpointFingerprint(P2PPreferences.getPeerFingerprint(context, name)) == fp) ||
+            canonicalEndpointFingerprint(prefs.getString(P2PPreferences.peerFingerprint(name), null)) == fp } ||
             db.rawQuery("SELECT 1 FROM peers WHERE fingerprint = ? LIMIT 1", arrayOf(fp)).use { it.moveToFirst() }
     }
 
@@ -69,7 +68,7 @@ internal object PeerEndpointStore {
         val prefs = P2PPreferences.prefs(context)
         val aliases = linkedSetOf(peerName, fp)
         for ((key, value) in prefs.all) {
-            if (key.startsWith("peer_fingerprint_") && value is String && value.equals(fp, true)) {
+            if (key.startsWith("peer_fingerprint_") && value is String && canonicalEndpointFingerprint(value) == fp) {
                 aliases.add(key.removePrefix("peer_fingerprint_"))
             }
         }
@@ -94,8 +93,7 @@ internal object PeerEndpointStore {
     @Synchronized @WorkerThread
     fun observe(context: Context, peerName: String, fingerprint: String, endpoints: Collection<String>,
                 source: EndpointSource, advertisedExpires: Long = 0, now: Long = System.currentTimeMillis()) {
-        val fp = fingerprint.lowercase()
-        if (!validFingerprint(fp)) return
+        val fp = canonicalEndpointFingerprint(fingerprint) ?: return
         val incoming = endpoints.take(16).mapNotNull(EndpointRetention::normalize).distinct()
         if (incoming.isEmpty() || (advertisedExpires > 0 && advertisedExpires <= now)) return
         ChatDatabaseHelper.getInstance(context).endpointTransaction { db ->
@@ -117,9 +115,8 @@ internal object PeerEndpointStore {
     @Synchronized @WorkerThread
     fun result(context: Context, peerName: String, fingerprint: String, endpoint: String, success: Boolean,
                now: Long = System.currentTimeMillis()) {
-        val fp = fingerprint.lowercase()
+        val fp = canonicalEndpointFingerprint(fingerprint) ?: return
         val ep = EndpointRetention.normalize(endpoint) ?: return
-        if (!validFingerprint(fp)) return
         ChatDatabaseHelper.getInstance(context).endpointTransaction { db ->
             importOnce(db, context, peerName, fp, now)
             val rows = read(db, fp).associateBy { it.endpoint }.toMutableMap()
@@ -136,13 +133,12 @@ internal object PeerEndpointStore {
     }
 
     @Synchronized
-    fun disconnected(fingerprint: String) { active.remove(fingerprint.lowercase()) }
+    fun disconnected(fingerprint: String) { canonicalEndpointFingerprint(fingerprint)?.let(active::remove) }
 
     @Synchronized @WorkerThread
     fun candidates(context: Context, peerName: String, fingerprint: String, includeReserve: Boolean,
                    now: Long = System.currentTimeMillis(), legacyEndpoints: Collection<String> = emptyList()): List<String> {
-        val fp = fingerprint.lowercase()
-        if (!validFingerprint(fp)) return emptyList()
+        val fp = canonicalEndpointFingerprint(fingerprint) ?: return emptyList()
         return ChatDatabaseHelper.getInstance(context).endpointTransaction { db ->
             importOnce(db, context, peerName, fp, now, legacyEndpoints)
             EndpointRetention.candidates(read(db, fp), now, includeReserve)
@@ -165,11 +161,11 @@ internal object PeerEndpointStore {
         active.keys.removeAll { !com.example.twopchat.NativeBridge.isPeerOnline(it) }
         return ChatDatabaseHelper.getInstance(context).endpointTransaction { db ->
             val identities = P2PPreferences.prefs(context).all.entries.mapNotNull { (key, value) ->
-                if (key.startsWith("peer_fingerprint_") && value is String && validFingerprint(value.lowercase()))
-                    key.removePrefix("peer_fingerprint_") to value.lowercase() else null
+                if (key.startsWith("peer_fingerprint_") && value is String)
+                    canonicalEndpointFingerprint(value)?.let { key.removePrefix("peer_fingerprint_") to it } else null
             }.toMutableSet()
             db.rawQuery("SELECT peer_name, fingerprint FROM peers WHERE fingerprint IS NOT NULL", null).use {
-                while (it.moveToNext()) if (validFingerprint(it.getString(1).lowercase())) identities.add(it.getString(0) to it.getString(1).lowercase())
+                while (it.moveToNext()) canonicalEndpointFingerprint(it.getString(1))?.let { fp -> identities.add(it.getString(0) to fp) }
             }
             for ((name, fp) in identities) importOnce(db, context, name, fp, now)
             trimIfNeeded(db, now, force = true)
@@ -191,8 +187,7 @@ internal object PeerEndpointStore {
 
     @Synchronized @WorkerThread
     fun delete(context: Context, fingerprint: String) {
-        val fp = fingerprint.lowercase()
-        if (!validFingerprint(fp)) return
+        val fp = canonicalEndpointFingerprint(fingerprint) ?: return
         active.remove(fp)
         ChatDatabaseHelper.getInstance(context).endpointTransaction {
             it.delete(TABLE, "fingerprint = ?", arrayOf(fp))

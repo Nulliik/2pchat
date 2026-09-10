@@ -898,8 +898,9 @@ class NativeBridgeImpl(
         bridgeScope.launch(Dispatchers.IO) {
             PeerEndpointStore.observe(context, peerName, peerFingerprint, endpoints.split(','), EndpointSource.AUTHENTICATED)
         }
+        // The endpoint store merges routes before publishing the legacy projection.
+        // Replacing that CSV here can erase legacy routes before the first import.
         val editor = P2PPreferences.prefs(context).edit()
-            .putString(P2PPreferences.lastEndpoint(peerName), endpoints)
 
         // Persist Tor .onion address explicitly so TOR_ONLY transport preferences resolve instantly
         val onionRoute = endpoints.split(",")
@@ -1016,7 +1017,8 @@ class NativeBridgeImpl(
 
         val appContext = com.example.twopchat.yggdrasil.GlobalApplication.appContext
         val trackers = usableTrackerUrls(appContext)
-        NativeBridge.startDiscovery(trackers = trackers, infoHashes = infoHashes.toList())
+        NativeBridge.startDiscovery(trackers = trackers, infoHashes = infoHashes.toList(),
+            listenPort = P2PMessageRelay.listenerPort(appContext))
 
         val knownCandidates = mutableListOf<String>()
         knownCandidates.addAll(P2PMessageRelay.localDiscoveryEndpoints(resultName))
