@@ -210,3 +210,61 @@ func TestUDPTrackerClientAllowsYggdrasilUnderTor(t *testing.T) {
 	}
 }
 
+func TestDefaultUDPTrackerTimeoutAcceptsSlowConnect(t *testing.T) {
+	server, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer server.Close()
+
+	serverErr := make(chan error, 1)
+	go func() {
+		buf := make([]byte, 2048)
+		_ = server.SetReadDeadline(time.Now().Add(10 * time.Second))
+		n, clientAddr, readErr := server.ReadFromUDP(buf)
+		if readErr != nil {
+			serverErr <- readErr
+			return
+		}
+		if n != 16 || binary.BigEndian.Uint32(buf[8:12]) != uint32(ActionConnect) {
+			serverErr <- errors.New("invalid connect request")
+			return
+		}
+		time.Sleep(3500 * time.Millisecond)
+		connectResponse := make([]byte, 16)
+		binary.BigEndian.PutUint32(connectResponse[0:4], uint32(ActionConnect))
+		copy(connectResponse[4:8], buf[12:16])
+		binary.BigEndian.PutUint64(connectResponse[8:16], 1)
+		if _, writeErr := server.WriteToUDP(connectResponse, clientAddr); writeErr != nil {
+			serverErr <- writeErr
+			return
+		}
+
+		n, clientAddr, readErr = server.ReadFromUDP(buf)
+		if readErr != nil {
+			serverErr <- readErr
+			return
+		}
+		if n != 98 || binary.BigEndian.Uint32(buf[8:12]) != uint32(ActionAnnounce) {
+			serverErr <- errors.New("invalid announce request")
+			return
+		}
+		announceResponse := make([]byte, 20)
+		binary.BigEndian.PutUint32(announceResponse[0:4], uint32(ActionAnnounce))
+		copy(announceResponse[4:8], buf[12:16])
+		if _, writeErr := server.WriteToUDP(announceResponse, clientAddr); writeErr != nil {
+			serverErr <- writeErr
+			return
+		}
+		serverErr <- nil
+	}()
+
+	client := NewUDPTrackerClient(false, 0)
+	_, err = client.Announce(context.Background(), "udp://"+server.LocalAddr().String()+"/announce", [20]byte{}, [20]byte{}, 50001)
+	if err != nil {
+		t.Fatalf("default timeout rejected a 3.5-second tracker response: %v", err)
+	}
+	if err := <-serverErr; err != nil {
+		t.Fatal(err)
+	}
+}
