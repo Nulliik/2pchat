@@ -26,9 +26,19 @@ import (
 func TestSimultaneousConnectionTieBreaking(t *testing.T) {
 	aliceReceived := make(chan string, 10)
 	bobReceived := make(chan string, 10)
+	connectionChanged := make(chan struct{}, 4)
+	noteConnection := func() {
+		select {
+		case connectionChanged <- struct{}{}:
+		default:
+		}
+	}
 
 	alice := &bridge.SessionManager{}
 	alice.SetCallbacks(session.EventCallbacks{
+		OnPeerConnected: func(peerFP, endpoint string) {
+			noteConnection()
+		},
 		OnMessageReceived: func(peerFP string, payload []byte, msgID string) {
 			// Exclude authenticated compatibility control frames from chat assertions.
 			var envelope struct {
@@ -43,6 +53,9 @@ func TestSimultaneousConnectionTieBreaking(t *testing.T) {
 
 	bob := &bridge.SessionManager{}
 	bob.SetCallbacks(session.EventCallbacks{
+		OnPeerConnected: func(peerFP, endpoint string) {
+			noteConnection()
+		},
 		OnMessageReceived: func(peerFP string, payload []byte, msgID string) {
 			// Exclude authenticated compatibility control frames from chat assertions.
 			var envelope struct {
@@ -109,13 +122,27 @@ func TestSimultaneousConnectionTieBreaking(t *testing.T) {
 	// tie-breaking inside SessionManager arbitrates to keep a single valid session.
 	t.Logf("[TIE-BREAK] Simultaneous dials completed. Alice err: %v, Bob err: %v", aliceDialErr, bobDialErr)
 
-	// Allow arbitration to settle
+	// ConnectPeer deliberately starts its dial in the background.  The first
+	// online session can therefore be the non-canonical half of a simultaneous
+	// dial and may be replaced immediately.  Require a quiet window after the
+	// last authenticated connection event before exercising the retained route.
 	settleDeadline := time.Now().Add(2 * time.Second)
+	lastConnectionChange := time.Now()
+	settled := false
 	for time.Now().Before(settleDeadline) {
-		if alice.IsPeerOnline(bobFP) && bob.IsPeerOnline(aliceFP) {
+		select {
+		case <-connectionChanged:
+			lastConnectionChange = time.Now()
+		default:
+		}
+		if alice.IsPeerOnline(bobFP) && bob.IsPeerOnline(aliceFP) && time.Since(lastConnectionChange) >= 250*time.Millisecond {
+			settled = true
 			break
 		}
-		time.Sleep(20 * time.Millisecond)
+		time.Sleep(10 * time.Millisecond)
+	}
+	if !settled {
+		t.Fatal("simultaneous connection arbitration did not reach a stable online state")
 	}
 
 	// 3. Verify bidirectional messaging works reliably after race resolution
