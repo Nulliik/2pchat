@@ -29,6 +29,8 @@ class PeerEndpointStoreInstrumentedTest {
         try {
             assertTrue("Fresh Go/JNI library must load with the endpoint-result callback", NativeBridge.isLoaded)
             assertEquals(2, PeerEndpointStore.candidates(context, name, fp, false, now).size)
+            assertEquals("The profile history exposes the same persisted routes", setOf(direct, onion),
+                PeerEndpointStore.history(context, name, fp, now).map { it.endpoint }.toSet())
             prefs.edit().remove(P2PPreferences.lastEndpoint(name)).commit()
             assertEquals("Routes survive removal of the legacy projection", 2,
                 PeerEndpointStore.candidates(context, name, fp, false, now).size)
@@ -43,6 +45,7 @@ class PeerEndpointStoreInstrumentedTest {
             assertEquals(listOf(onion), PeerEndpointStore.candidates(context, name, fp, true, future))
             PeerEndpointStore.result(context, name, fp, onion, true, future)
             PeerEndpointStore.disconnected(fp)
+            assertEquals(onion, PeerEndpointStore.history(context, name, fp, future).first().endpoint)
             assertEquals(listOf(onion), PeerEndpointStore.candidates(context, name, fp, false, future))
             // Old callback delivery cannot turn a successful route into a failed one.
             PeerEndpointStore.result(context, name, fp, onion, false, future - 1)
