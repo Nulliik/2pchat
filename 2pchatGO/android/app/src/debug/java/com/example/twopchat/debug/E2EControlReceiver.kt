@@ -69,6 +69,7 @@ class E2EControlReceiver : BroadcastReceiver() {
                         result.put("info_hash", hash)
                     }
                     ACTION_PROXY -> {
+                        P2PPreferences.prefs(context).edit().putBoolean("settings_yggdrasil", true).commit()
                         P2PPreferences.setYggdrasilMode(context, P2PPreferences.YggdrasilMode.PROXY)
                         YggdrasilCoordinator.start(context, P2PPreferences.YggdrasilMode.PROXY)
                         result.put("mode", "proxy")

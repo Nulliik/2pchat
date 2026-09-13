@@ -20,7 +20,8 @@ class YggStateReceiver(var receiver: StateReceiver): BroadcastReceiver() {
     override fun onReceive(context: Context?, intent: Intent?) {
         if (context == null) return
 
-        val state = when (intent?.getStringExtra("state")) {
+        val stateValue = intent?.getStringExtra("state")
+        val state = when (stateValue) {
             STATE_ENABLED -> State.Enabled
             STATE_DISABLED -> State.Disabled
             STATE_CONNECTED -> State.Connected
@@ -35,6 +36,16 @@ class YggStateReceiver(var receiver: StateReceiver): BroadcastReceiver() {
         if (!proxyAddr.isNullOrBlank()) {
             val mode = com.example.twopchat.config.P2PPreferences.getYggdrasilMode(context)
             com.example.twopchat.NativeBridge.setYggdrasilConfig(mode.id, proxyAddr)
+        }
+        // Encrypted preferences are cached per process. The Yggdrasil engine
+        // runs in :yggdrasil, so commit the live route in the main process
+        // from its package-scoped state broadcast.
+        if (stateValue in setOf(STATE_ENABLED, STATE_CONNECTED, STATE_RECONNECTING, STATE_DISABLED)) {
+            val runtimeIp = intent?.getStringExtra("ip").orEmpty()
+            com.example.twopchat.config.P2PPreferences.prefs(context).edit()
+                .putString("yggdrasil_runtime_state", stateValue)
+                .apply { if (runtimeIp.isNotBlank()) putString("yggdrasil_runtime_ip", runtimeIp) }
+                .apply()
         }
 
         receiver.onStateChange(state)

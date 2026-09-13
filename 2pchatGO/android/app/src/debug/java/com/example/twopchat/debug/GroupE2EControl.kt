@@ -62,6 +62,16 @@ internal object GroupE2EControl {
                 val fp = P2PPreferences.getPeerFingerprint(context, arg("name"))
                 com.example.twopchat.bridge.P2PBridgeProvider.get(context).searchPeers(arg("name"), arg("name"), fp, null)
             }
+            "announce" -> {
+                val prefs = P2PPreferences.prefs(context)
+                result.put("accepted", com.example.twopchat.bridge.P2PBridgeProvider.get(context).announceSelf(
+                    prefs.getString("username_profile", "").orEmpty(),
+                    NativeBridge.getLocalIdentity()?.fingerprint.orEmpty(),
+                    P2PMessageRelay.listenerPort(context),
+                    force = true,
+                    rendezvousCode = P2PPreferences.getRendezvousCode(context),
+                ))
+            }
             "network_status" -> {
                 val prefs = P2PPreferences.prefs(context)
                 result.put("ygg", P2PMessageRelay.getYggdrasilAddress())

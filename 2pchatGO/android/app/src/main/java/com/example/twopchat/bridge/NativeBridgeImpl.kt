@@ -518,7 +518,18 @@ class NativeBridgeImpl(
         }
         if (fingerprint.isNotBlank()) hashes.add(legacyDiscoveryInfoHash(fingerprint))
 
-        return NativeBridge.startDiscovery(trackers, hashes.toList(), port, replaceSelf = true)
+        val started = NativeBridge.startDiscovery(trackers, hashes.toList(), port, replaceSelf = true)
+        // A new Yggdrasil or Tor route may appear while an authenticated
+        // session is already established.  Tracker announcements do not
+        // convey our private route list, so refresh it over those existing
+        // encrypted sessions as soon as discovery accepted the update.
+        if (started) {
+            onlinePeers.filterValues { it }.keys
+                .map { nameToFpMap[it] ?: it }
+                .distinct()
+                .forEach(::sendAuthenticatedRouteUpdate)
+        }
+        return started
     }
 
     override suspend fun sendP2pMessage(peerName: String, endpoint: String, payload: String, expectedFingerprint: String?): Boolean = withContext(Dispatchers.IO) {

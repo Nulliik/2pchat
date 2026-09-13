@@ -68,10 +68,10 @@ func TestPolicyFlags_UnknownOrInvalidComboRejected(t *testing.T) {
 		t.Fatalf("Expected DirectOnly with LocalDNS to be valid, got: %v", err)
 	}
 
-	// Contact YggdrasilOnly: AllowYggdrasil with overlay/local or onion
-	// But standalone Yggdrasil without LAN, WAN, or Onion is rejected because listener cannot accept incoming Ygg on loopback without TUN
-	if err := ValidateFlags(PolicyFlagAllowYggdrasil); err == nil {
-		t.Fatalf("Expected standalone Yggdrasil without LAN/WAN/Onion to be rejected")
+	// Contact YggdrasilOnly is valid. Proxy mode routes it through the local
+	// SOCKS relay, so it does not need a LAN/WAN fallback.
+	if err := ValidateFlags(PolicyFlagAllowYggdrasil); err != nil {
+		t.Fatalf("Expected standalone Yggdrasil to be valid, got: %v", err)
 	}
 
 	// Unknown bit (e.g. 1 << 6 = 64) must be rejected

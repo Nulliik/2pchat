@@ -407,6 +407,7 @@ open class PacketTunnelProvider: VpnService() {
 
         val intent = Intent(YGG_STATE_INTENT)
         intent.putExtra("state", STATE_ENABLED)
+        intent.putExtra("ip", address)
         intent.setPackage(packageName)
         sendBroadcast(intent)
     }
@@ -537,6 +538,7 @@ open class PacketTunnelProvider: VpnService() {
                 }
                 updateRuntimeState(ygg.addressString, state, peerCount, routes, treeNodes, ygg.peersJSON)
                 intent.putExtra("state", state)
+                intent.putExtra("ip", ygg.addressString)
                 intent.setPackage(packageName)
                 sendBroadcast(intent)
                 lastStateUpdate = curTime

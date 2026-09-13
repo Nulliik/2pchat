@@ -158,8 +158,5 @@ func ValidateFlags(flags int) error {
 	if p.AllowWAN && !p.AllowLAN {
 		return fmt.Errorf("%w: AllowWAN without AllowLAN is invalid", ErrInvalidPolicyFlags)
 	}
-	if p.AllowYggdrasil && !p.AllowLAN && !p.AllowWAN && !p.AllowOnion {
-		return fmt.Errorf("%w: standalone Yggdrasil without overlay or clearnet transport is unsupported", ErrInvalidPolicyFlags)
-	}
 	return nil
 }
