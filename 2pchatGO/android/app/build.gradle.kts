@@ -132,6 +132,9 @@ android {
         excludes += "/META-INF/{AL2.0,LGPL2.1}"
       }
       jniLibs {
+        // Tor executes its bundled native binary from nativeLibraryDir. Legacy
+        // packaging extracts it there; all bundled arm64 ELF segments have
+        // 16 KiB PT_LOAD alignment for 16 KiB devices.
         useLegacyPackaging = true
         keepDebugSymbols.add("**/libgojni.so")
         keepDebugSymbols.add("**/liblyrebird.so")
