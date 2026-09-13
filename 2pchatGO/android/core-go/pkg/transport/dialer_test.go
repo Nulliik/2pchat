@@ -140,3 +140,51 @@ func TestFindAvailablePort(t *testing.T) {
 		t.Fatalf("Expected different free port from occupied %d, got %d", occupiedPort, freePort)
 	}
 }
+
+func TestAdaptiveDialer_TorContextDialerCancellation(t *testing.T) {
+	// Create an AdaptiveDialer with a non-responsive local proxy address
+	dialer := NewAdaptiveDialer("127.0.0.1:59997", true, 5*time.Second)
+	v3Onion := "expyuz5wqlgah2inqqdu42q5755hkgy2ec2sp7z5bvhz2e6p3mndnxyd.onion:50001"
+
+	// Short context that cancels within 50ms
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	start := time.Now()
+	conn, err := dialer.DialContext(ctx, "tcp", v3Onion)
+	elapsed := time.Since(start)
+
+	if conn != nil {
+		conn.Close()
+		t.Fatal("expected connection to fail")
+	}
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	// Verify that the context canceled promptly and did not hang for OS connect timeout
+	if elapsed > 1*time.Second {
+		t.Fatalf("DialContext did not respect context deadline; took %v", elapsed)
+	}
+}
+
+func TestAdaptiveDialer_DialWithRelayFallback_TorSeparation(t *testing.T) {
+	dialer := NewAdaptiveDialer("127.0.0.1:9050", false, 5*time.Second)
+	v3Onion := "expyuz5wqlgah2inqqdu42q5755hkgy2ec2sp7z5bvhz2e6p3mndnxyd.onion:50001"
+
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+
+	var sessionID [16]byte
+	// Mix fast invalid direct endpoints and onion endpoint with no blind relays configured.
+	// Fast endpoints should fail/timeout within 50ms and return relay failure without hanging on onion.
+	_, _, err := dialer.DialWithRelayFallback(
+		ctx,
+		[]string{"127.0.0.1:59998", v3Onion},
+		"testfingerprint",
+		sessionID,
+		50*time.Millisecond,
+	)
+	if err == nil {
+		t.Fatal("expected error when no relays are available and direct dials fail")
+	}
+}

@@ -172,14 +172,22 @@ func (d *AdaptiveDialer) SetResolver(r *net.Resolver) {
 }
 
 func (d *AdaptiveDialer) initTorDialer() {
-	dialer, err := proxy.SOCKS5("tcp", d.torProxyAddr, nil, proxy.Direct)
+	baseDialer := &net.Dialer{
+		Timeout:   10 * time.Second,
+		KeepAlive: 30 * time.Second,
+	}
+	dialer, err := proxy.SOCKS5("tcp", d.torProxyAddr, nil, baseDialer)
 	if err == nil {
 		d.torDialer = dialer
 	}
 }
 
 func (d *AdaptiveDialer) initYggDialer() {
-	dialer, err := proxy.SOCKS5("tcp", d.yggProxyAddr, nil, proxy.Direct)
+	baseDialer := &net.Dialer{
+		Timeout:   10 * time.Second,
+		KeepAlive: 30 * time.Second,
+	}
+	dialer, err := proxy.SOCKS5("tcp", d.yggProxyAddr, nil, baseDialer)
 	if err == nil {
 		d.yggDialer = dialer
 	}
@@ -442,6 +450,10 @@ func (d *AdaptiveDialer) DialContext(ctx context.Context, network, address strin
 			return nil, fmt.Errorf("tor SOCKS5 dialer is uninitialized (proxy: %s)", torProxyAddr)
 		}
 
+		if cd, ok := torDialer.(proxy.ContextDialer); ok {
+			return cd.DialContext(ctx, "tcp", address)
+		}
+
 		type dialResult struct {
 			conn net.Conn
 			err  error
@@ -480,6 +492,10 @@ func (d *AdaptiveDialer) DialContext(ctx context.Context, network, address strin
 		if yggMode == YggdrasilModeProxy {
 			if yggDialer == nil {
 				return nil, fmt.Errorf("yggdrasil SOCKS5 dialer is uninitialized (proxy: %s)", yggAddr)
+			}
+
+			if cd, ok := yggDialer.(proxy.ContextDialer); ok {
+				return cd.DialContext(ctx, "tcp", address)
 			}
 
 			type dialResult struct {
@@ -594,31 +610,50 @@ func (d *AdaptiveDialer) DialWithRelayFallback(
 
 	// 1. Try direct endpoints first with a bounded timeout
 	if len(directEndpoints) > 0 {
-		directCtx, directCancel := context.WithTimeout(ctx, directTimeout)
-		defer directCancel()
-
-		type dialRes struct {
-			conn net.Conn
-			ep   string
-			err  error
-		}
-		resChan := make(chan dialRes, len(directEndpoints))
-
+		var fastEndpoints []string
+		var torEndpoints []string
 		for _, ep := range directEndpoints {
-			go func(endpoint string) {
-				conn, err := d.DialContext(directCtx, "tcp", endpoint)
-				resChan <- dialRes{conn: conn, ep: endpoint, err: err}
-			}(ep)
+			if class, _ := d.ClassifyEndpoint(ep); class == TransportTor {
+				torEndpoints = append(torEndpoints, ep)
+			} else {
+				fastEndpoints = append(fastEndpoints, ep)
+			}
 		}
 
-	DirectLoop:
-		for i := 0; i < len(directEndpoints); i++ {
-			select {
-			case <-directCtx.Done():
-				break DirectLoop
-			case res := <-resChan:
-				if res.err == nil && res.conn != nil {
-					return res.conn, res.ep, nil
+		endpointsToTry := fastEndpoints
+		attemptTimeout := directTimeout
+		if len(endpointsToTry) == 0 && len(torEndpoints) > 0 {
+			endpointsToTry = torEndpoints
+			attemptTimeout = DefaultTorDialTimeout
+		}
+
+		if len(endpointsToTry) > 0 {
+			directCtx, directCancel := context.WithTimeout(ctx, attemptTimeout)
+			defer directCancel()
+
+			type dialRes struct {
+				conn net.Conn
+				ep   string
+				err  error
+			}
+			resChan := make(chan dialRes, len(endpointsToTry))
+
+			for _, ep := range endpointsToTry {
+				go func(endpoint string) {
+					conn, err := d.DialContext(directCtx, "tcp", endpoint)
+					resChan <- dialRes{conn: conn, ep: endpoint, err: err}
+				}(ep)
+			}
+
+		DirectLoop:
+			for i := 0; i < len(endpointsToTry); i++ {
+				select {
+				case <-directCtx.Done():
+					break DirectLoop
+				case res := <-resChan:
+					if res.err == nil && res.conn != nil {
+						return res.conn, res.ep, nil
+					}
 				}
 			}
 		}

@@ -993,11 +993,11 @@ object TorManager {
 
     @Synchronized
     fun init(context: Context) {
+        lastAppContext = context.applicationContext
         if (!isAppInForeground()) {
             SafeLog.w(TAG, "Suppressed TorManager.init: process is in background/headless execution")
             return
         }
-        lastAppContext = context.applicationContext
     }
 
     @Synchronized
@@ -1011,9 +1011,9 @@ object TorManager {
             bootstrapRetryCount = 0
         }
 
-        if (!isAppInForeground()) {
+        if (!isUserInitiated && !isAppInForeground()) {
             startTorSuppressedCount++
-            SafeLog.w(TAG, "Suppressed start of Tor daemon: process is in background/headless execution")
+            SafeLog.w(TAG, "Suppressed start of Tor daemon: process is in background/headless execution (non-user initiated)")
             return
         }
 
@@ -1025,6 +1025,12 @@ object TorManager {
         lastAppContext = context.applicationContext
         if (_onionAddress.value == null) {
             _onionAddress.value = P2PPreferences.getTorOnionHostname(context)
+        }
+        _onionAddress.value?.let { cachedOnion ->
+            try {
+                NativeBridge.setOnionAddress(cachedOnion)
+            } catch (_: Throwable) {
+            }
         }
         val bridgeConfiguration = parseBridgeLines(bridges)
         if (bridgeConfiguration.error != null) {
@@ -1066,6 +1072,7 @@ object TorManager {
     ) {
         var process: Process? = null
         var logReaderJob: Job? = null
+        var earlyOnionPollerJob: Job? = null
         val failureHint = AtomicReference<String?>(null)
         try {
             val appTorDir = File(context.filesDir, "app_tor")
@@ -1121,6 +1128,17 @@ object TorManager {
                         SafeLog.w(TAG, "[TOR] Deterministic onion enabled but key derivation failed; falling back to ephemeral HS")
                     }
                 }
+            }
+
+            val preExistingHostname = readOnionHostname(hsDir)
+            if (preExistingHostname != null) {
+                _onionAddress.value = preExistingHostname
+                try {
+                    P2PPreferences.setTorOnionHostname(context, preExistingHostname)
+                    NativeBridge.setOnionAddress(preExistingHostname)
+                } catch (_: Throwable) {
+                }
+                SafeLog.i(TAG, "[TOR] Hidden service hostname ready before start: $preExistingHostname")
             }
 
             // Check ports and free stale instances before generating torrc
@@ -1182,6 +1200,24 @@ object TorManager {
                 return
             }
             SafeLog.i(TAG, "Started embedded Tor process")
+
+            earlyOnionPollerJob = scope.launch(Dispatchers.IO) {
+                for (attempt in 0 until 25) { // Poll every 200ms up to 5s
+                    if (!isActive || !runGate.isCurrent(runId)) break
+                    val host = readOnionHostname(hsDir)
+                    if (host != null) {
+                        _onionAddress.value = host
+                        try {
+                            P2PPreferences.setTorOnionHostname(context, host)
+                            NativeBridge.setOnionAddress(host)
+                        } catch (_: Throwable) {
+                        }
+                        SafeLog.i(TAG, "[TOR] Hidden service hostname published early: $host")
+                        break
+                    }
+                    delay(200)
+                }
+            }
 
             logReaderJob = scope.launch {
                 try {
@@ -1262,6 +1298,19 @@ object TorManager {
                     }
                 }
 
+                if (_onionAddress.value == null) {
+                    val host = readOnionHostname(hsDir)
+                    if (host != null) {
+                        _onionAddress.value = host
+                        try {
+                            P2PPreferences.setTorOnionHostname(context, host)
+                            NativeBridge.setOnionAddress(host)
+                        } catch (_: Throwable) {
+                        }
+                        SafeLog.i(TAG, "[TOR] Hidden service hostname discovered during bootstrap: $host")
+                    }
+                }
+
                 delay(300)
             }
 
@@ -1315,6 +1364,7 @@ object TorManager {
                 disableTorProxy(context, runId)
             }
         } finally {
+            earlyOnionPollerJob?.cancel()
             logReaderJob?.cancel()
             terminateProcess(process)
             finishRun(runId, process)
