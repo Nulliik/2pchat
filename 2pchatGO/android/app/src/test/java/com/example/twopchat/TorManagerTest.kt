@@ -568,6 +568,103 @@ class TorManagerTest {
             tempDir.deleteRecursively()
         }
     }
+
+    @Test
+    fun testTorStartSuppressionLogic() {
+        val prefMap = mutableMapOf<String, Any?>()
+        val fakePrefs = TestSharedPreferences(prefMap)
+        P2PPreferences.setCachedPrefsForTesting(fakePrefs)
+        val testFilesDir = File.createTempFile("tor_suppress_test", "").apply {
+            delete()
+            mkdirs()
+        }
+        val context = object : android.content.ContextWrapper(null) {
+            override fun getApplicationContext(): android.content.Context = this
+            override fun getSharedPreferences(name: String?, mode: Int): android.content.SharedPreferences = fakePrefs
+            override fun getFilesDir(): File = testFilesDir
+            override fun getPackageName(): String = "com.example.twopchat"
+            override fun getApplicationInfo(): android.content.pm.ApplicationInfo = android.content.pm.ApplicationInfo().apply {
+                nativeLibraryDir = testFilesDir.absolutePath
+            }
+        }
+
+        try {
+            // Set app to headless / background
+            com.example.twopchat.yggdrasil.AppForegroundTracker.isForegroundOverride = false
+            TorManager.resetCountersForTesting()
+
+            // 1. Non-user-initiated start in headless execution MUST be suppressed
+            TorManager.startTor(context, isUserInitiated = false)
+            assertEquals(1, TorManager.startTorInvocationCount)
+            assertEquals(1, TorManager.startTorSuppressedCount)
+            assertFalse(TorManager.isTorRunning.value)
+
+            // 2. User-initiated start MUST NOT be suppressed even if headless/background
+            TorManager.startTor(context, isUserInitiated = true)
+            assertEquals(2, TorManager.startTorInvocationCount)
+            // startTorSuppressedCount should NOT increase
+            assertEquals(1, TorManager.startTorSuppressedCount)
+        } finally {
+            com.example.twopchat.yggdrasil.AppForegroundTracker.resetForTesting()
+            P2PPreferences.setCachedPrefsForTesting(null)
+            testFilesDir.deleteRecursively()
+        }
+    }
+
+    private class TestSharedPreferences(private val map: MutableMap<String, Any?>) : android.content.SharedPreferences, android.content.SharedPreferences.Editor {
+        override fun getAll(): Map<String, *> = HashMap(map)
+        override fun getString(key: String?, defValue: String?): String? = (map[key] as? String) ?: defValue
+        override fun getStringSet(key: String?, defValues: Set<String>?): Set<String>? {
+            val v = map[key]
+            return if (v is Set<*>) {
+                @Suppress("UNCHECKED_CAST")
+                v as Set<String>
+            } else defValues
+        }
+        override fun getInt(key: String?, defValue: Int): Int = (map[key] as? Int) ?: defValue
+        override fun getLong(key: String?, defValue: Long): Long = (map[key] as? Long) ?: defValue
+        override fun getFloat(key: String?, defValue: Float): Float = (map[key] as? Float) ?: defValue
+        override fun getBoolean(key: String?, defValue: Boolean): Boolean = (map[key] as? Boolean) ?: defValue
+        override fun contains(key: String?): Boolean = map.containsKey(key)
+        override fun edit(): android.content.SharedPreferences.Editor = this
+        override fun registerOnSharedPreferenceChangeListener(listener: android.content.SharedPreferences.OnSharedPreferenceChangeListener?) {}
+        override fun unregisterOnSharedPreferenceChangeListener(listener: android.content.SharedPreferences.OnSharedPreferenceChangeListener?) {}
+
+        override fun putString(key: String?, value: String?): android.content.SharedPreferences.Editor {
+            if (key != null) map[key] = value
+            return this
+        }
+        override fun putStringSet(key: String?, values: Set<String>?): android.content.SharedPreferences.Editor {
+            if (key != null) map[key] = values?.toSet()
+            return this
+        }
+        override fun putInt(key: String?, value: Int): android.content.SharedPreferences.Editor {
+            if (key != null) map[key] = value
+            return this
+        }
+        override fun putLong(key: String?, value: Long): android.content.SharedPreferences.Editor {
+            if (key != null) map[key] = value
+            return this
+        }
+        override fun putFloat(key: String?, value: Float): android.content.SharedPreferences.Editor {
+            if (key != null) map[key] = value
+            return this
+        }
+        override fun putBoolean(key: String?, value: Boolean): android.content.SharedPreferences.Editor {
+            if (key != null) map[key] = value
+            return this
+        }
+        override fun remove(key: String?): android.content.SharedPreferences.Editor {
+            if (key != null) map.remove(key)
+            return this
+        }
+        override fun clear(): android.content.SharedPreferences.Editor {
+            map.clear()
+            return this
+        }
+        override fun commit(): Boolean = true
+        override fun apply() {}
+    }
 }
 
 
