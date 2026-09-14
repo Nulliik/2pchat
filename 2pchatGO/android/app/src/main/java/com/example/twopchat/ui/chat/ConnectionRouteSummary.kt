@@ -23,6 +23,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -41,6 +42,7 @@ import com.example.twopchat.relay.PeerEndpointStore
 import com.example.twopchat.relay.canonicalEndpointFingerprint
 import com.example.twopchat.relay.connectionTransportLabel
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -60,6 +62,8 @@ internal fun ConnectionRouteSummary(
     val isOnline = P2PMessageRelay.peerSessionStates[peerName] == true
     val activeEndpoint = P2PMessageRelay.peerEndpoints[peerName].orEmpty()
     val activeTransport = P2PMessageRelay.peerConnectionTransports[peerName]
+    val coroutineScope = rememberCoroutineScope()
+    var isRefreshing by remember { mutableStateOf(false) }
     var reloadVersion by remember(peerName) { mutableIntStateOf(0) }
     var history by remember(peerName) { mutableStateOf<List<EndpointRecord>>(emptyList()) }
     var historyLoaded by remember(peerName) { mutableStateOf(false) }
@@ -109,13 +113,28 @@ internal fun ConnectionRouteSummary(
                     )
                 }
                 Text(
-                    text = Localizations.tr(appLanguage, "Обновить", "Refresh"),
+                    text = if (isRefreshing) "…" else Localizations.tr(appLanguage, "Обновить", "Refresh"),
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Medium,
                     color = primaryColor,
                     modifier = Modifier
                         .padding(8.dp)
-                        .clickable { reloadVersion++ },
+                        .clickable(enabled = !isRefreshing) {
+                            coroutineScope.launch {
+                                isRefreshing = true
+                                try {
+                                    withContext(Dispatchers.IO) {
+                                        PeerEndpointStore.resetCooldowns(context, fingerprint)
+                                    }
+                                    P2PMessageRelay.resetPeerBackoffs(peerName)
+                                    fingerprint?.let { P2PMessageRelay.resetPeerBackoffs(it) }
+                                    P2PMessageRelay.triggerImmediateReconnect(context).join()
+                                } finally {
+                                    reloadVersion++
+                                    isRefreshing = false
+                                }
+                            }
+                        },
                 )
             }
 
@@ -166,7 +185,24 @@ internal fun ConnectionRouteSummary(
                     color = onSurfaceVariant,
                 )
                 else -> history.take(8).forEachIndexed { index, record ->
-                    EndpointHistoryRow(record, activeEndpoint, isOnline, appLanguage, onSurfaceColor, onSurfaceVariant)
+                    EndpointHistoryRow(
+                        record = record,
+                        activeEndpoint = activeEndpoint,
+                        isOnline = isOnline,
+                        appLanguage = appLanguage,
+                        onSurfaceColor = onSurfaceColor,
+                        onSurfaceVariant = onSurfaceVariant,
+                        onClick = {
+                            coroutineScope.launch {
+                                withContext(Dispatchers.IO) {
+                                    PeerEndpointStore.resetCooldowns(context, fingerprint)
+                                }
+                                com.example.twopchat.bridge.P2PBridgeProvider.get(context)
+                                    .reconnectPeerSession(peerName, record.endpoint, fingerprint)
+                                reloadVersion++
+                            }
+                        },
+                    )
                     if (index != minOf(history.size, 8) - 1) Spacer(modifier = Modifier.height(12.dp))
                 }
             }
@@ -182,6 +218,7 @@ private fun EndpointHistoryRow(
     appLanguage: String,
     onSurfaceColor: Color,
     onSurfaceVariant: Color,
+    onClick: (() -> Unit)? = null,
 ) {
     val active = isOnline && record.endpoint == activeEndpoint
     val (color, state) = when {
@@ -203,7 +240,7 @@ private fun EndpointHistoryRow(
         if (activityAt > 0) append(" · ").append(connectionRouteTime(activityAt))
         if (record.failures > 1) append(" · ").append(record.failures).append("×")
     }
-    RouteStatusRow(color, state, detail, record.endpoint, onSurfaceColor, onSurfaceVariant)
+    RouteStatusRow(color, state, detail, record.endpoint, onSurfaceColor, onSurfaceVariant, onClick)
 }
 
 @Composable
@@ -214,8 +251,18 @@ private fun RouteStatusRow(
     endpoint: String?,
     onSurfaceColor: Color,
     onSurfaceVariant: Color,
+    onClick: (() -> Unit)? = null,
 ) {
-    Row(verticalAlignment = Alignment.Top) {
+    Row(
+        verticalAlignment = Alignment.Top,
+        modifier = if (onClick != null) {
+            Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onClick)
+        } else {
+            Modifier.fillMaxWidth()
+        },
+    ) {
         Spacer(
             modifier = Modifier
                 .padding(top = 5.dp)

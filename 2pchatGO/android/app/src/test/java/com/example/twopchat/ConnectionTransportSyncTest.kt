@@ -90,6 +90,24 @@ class ConnectionTransportSyncTest {
     }
 
     @Test
+    fun testIsYggdrasilEndpointAcrossFull200Range() {
+        // Full 0200::/7 (0x0200..0x03ff) addresses must all be recognized
+        org.junit.Assert.assertTrue(com.example.twopchat.config.P2PPreferences.isYggdrasilEndpoint("[200:1234::1]:50001"))
+        org.junit.Assert.assertTrue(com.example.twopchat.config.P2PPreferences.isYggdrasilEndpoint("[201:e59e:412d:f8f7:d6e6:bcd7:80e5:a58f]:50001"))
+        org.junit.Assert.assertTrue(com.example.twopchat.config.P2PPreferences.isYggdrasilEndpoint("[21e:6565:9c87:a49d:dafa:92c1:b33f:f21]:1337"))
+        org.junit.Assert.assertTrue(com.example.twopchat.config.P2PPreferences.isYggdrasilEndpoint("[300:cafe:babe::1]:50001"))
+        org.junit.Assert.assertTrue(com.example.twopchat.config.P2PPreferences.isYggdrasilEndpoint("[316:c51a:62a3:8b9::5]:50001"))
+        org.junit.Assert.assertTrue(com.example.twopchat.config.P2PPreferences.isYggdrasilEndpoint("201:e59e:412d:f8f7:d6e6:bcd7:80e5:a58f"))
+
+        // Non-Yggdrasil addresses must be rejected
+        org.junit.Assert.assertFalse(com.example.twopchat.config.P2PPreferences.isYggdrasilEndpoint("2001:db8::1:50001"))
+        org.junit.Assert.assertFalse(com.example.twopchat.config.P2PPreferences.isYggdrasilEndpoint("192.168.1.1:50001"))
+        org.junit.Assert.assertFalse(com.example.twopchat.config.P2PPreferences.isYggdrasilEndpoint("212.32.192.168:50001"))
+        org.junit.Assert.assertFalse(com.example.twopchat.config.P2PPreferences.isYggdrasilEndpoint("qejunu53yhipnn2lxfdq7bf2xrpwos2sjwcwpsf.onion:50001"))
+        org.junit.Assert.assertFalse(com.example.twopchat.config.P2PPreferences.isYggdrasilEndpoint("::1"))
+    }
+
+    @Test
     fun testResolveTransportType() {
         // Offline always produces DISCONNECTED
         assertEquals(

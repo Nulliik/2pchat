@@ -1001,6 +1001,16 @@ object P2PPreferences : com.example.twopchat.security.SensitiveMemoryHolder {
             combined.add(savedOnion)
         }
 
+        val fp = getPeerFingerprint(context, peerName) ?: canonicalEndpointFingerprint(peerName)
+        if (!fp.isNullOrBlank()) {
+            val storeCandidates = runCatching {
+                PeerEndpointStore.candidates(context, peerName, fp, includeReserve = true)
+            }.getOrNull().orEmpty()
+            for (ep in storeCandidates) {
+                if (ep !in combined) combined.add(ep)
+            }
+        }
+
         if (combined.isEmpty()) return ""
         val pref = getPeerTransportPreference(context, peerName)
         val filtered = filterEndpointsByPreference(combined, pref)
@@ -1017,8 +1027,17 @@ object P2PPreferences : com.example.twopchat.security.SensitiveMemoryHolder {
     }
 
     fun isYggdrasilEndpoint(endpoint: String): Boolean {
-        val clean = endpoint.trim().trim('[', ']').lowercase()
-        return clean.startsWith("200:") || clean.startsWith("300:") || clean.startsWith("0200:") || clean.startsWith("0300:")
+        val endpointValue = endpoint.trim()
+        val host = when {
+            endpointValue.startsWith("[") && "]" in endpointValue ->
+                endpointValue.substringAfter('[').substringBefore(']')
+            endpointValue.count { it == ':' } > 1 ->
+                endpointValue.substringBeforeLast(':', endpointValue)
+            else -> endpointValue.substringBeforeLast(':', endpointValue)
+        }.trim().trim('[', ']')
+        if (':' !in host) return false
+        val firstHextet = host.substringBefore(':').substringBefore('%').toIntOrNull(16) ?: return false
+        return firstHextet in 0x0200..0x03ff
     }
 
     fun filterEndpointsByPreference(endpoints: List<String>, pref: PeerTransportPreference): List<String> {
