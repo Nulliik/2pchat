@@ -203,18 +203,37 @@ internal class IncomingMessageRouter(
                             val formatted = com.example.twopchat.ui.main.formatInviteEndpoint(rawOnion, onionPort)
                                 ?: if (rawOnion.contains(":")) rawOnion else "$rawOnion:$onionPort"
                             P2PPreferences.setPeerOnionAddress(context, effectiveName, formatted)
+                            // Prefer the stored fingerprint; fall back to the raw sender value
+                            // if it looks like a cryptographic fingerprint (new contact whose
+                            // fingerprint was not yet persisted to SharedPreferences).
+                            // Without a fingerprint PeerEndpointStore.observe() is skipped
+                            // inside rememberAuthenticatedPeerEndpoint, so the reconnect
+                            // scheduler would never learn this Tor address.
                             val fp = P2PPreferences.prefs(context).getString("peer_fingerprint_$effectiveName", null)
+                                ?: canonicalEndpointFingerprint(sender)
                             ChatDatabaseHelper.getInstance(context).savePeerOnionAddress(
                                 peerName = effectiveName,
                                 onionAddress = formatted,
                                 fingerprint = fp,
                                 endpoint = formatted,
                             )
-                            P2PMessageRelay.rememberAuthenticatedPeerEndpoint(effectiveName, formatted)
+                            if (fp != null) {
+                                // Persist to EndpointStore directly so the background reconnect
+                                // scheduler can pick it up even before the first successful dial.
+                                try {
+                                    PeerEndpointStore.observe(
+                                        context, effectiveName, fp,
+                                        listOf(formatted),
+                                        EndpointSource.AUTHENTICATED,
+                                    )
+                                } catch (_: Exception) { /* non-critical */ }
+                            }
+                            P2PMessageRelay.rememberAuthenticatedPeerEndpoint(effectiveName, formatted, context, EndpointSource.AUTHENTICATED)
                             log(context, "Saved Tor .onion endpoint from onion_address_share for $effectiveName: $formatted", "INFO", null)
                         }
                         return
                     }
+
                     "heartbeat" -> {
                         val transport = P2PMessageRelay.peerConnectionTransports[sender]
                         presenceManager.publishPeerOnline(sender, transport) { /* endpoint */ }

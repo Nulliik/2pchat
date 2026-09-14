@@ -378,6 +378,11 @@ object P2PMessageRelay {
     fun clearAvatarShareCooldown(peerKey: String) {
         lastAvatarShareAt.remove(peerKey)
         avatarSharesInFlight.remove(peerKey)
+        // Also reset the onion-share cooldown so that a new .onion address
+        // (e.g. after Tor restart) is sent to the peer on the very next
+        // session establishment, even if the 30-second window has not elapsed.
+        lastOnionShareAt.remove(peerKey)
+        onionSharesInFlight.remove(peerKey)
     }
 
     private const val MAX_TRACKED_PEER_ENDPOINTS = 512
@@ -3074,16 +3079,22 @@ object P2PMessageRelay {
         val shareKey = fingerprint ?: peerName
         val now = System.currentTimeMillis()
         if (!onionSharesInFlight.add(shareKey)) return
-        if (now - (lastOnionShareAt[shareKey] ?: 0L) < 30_000L) {
-            onionSharesInFlight.remove(shareKey)
-            return
-        }
         relayScope.launch {
             try {
                 val onionHost = TorManager.onionAddress.value?.takeIf { it.isNotBlank() }
                     ?: prefs.getString(P2PPreferences.TOR_ONION_HOSTNAME, null)?.takeIf { it.isNotBlank() }
                 if (onionHost.isNullOrBlank()) {
                     log(context, "Local Tor onion address is not available; skipping onion share")
+                    return@launch
+                }
+                // If the onion address has not changed, apply the 30-second cooldown to
+                // avoid redundant traffic. If it *has* changed (e.g. Tor restarted and
+                // produced a new hidden service key) always send immediately so the peer
+                // learns the new address without waiting for the cooldown to expire.
+                val peerKnownOnion = P2PPreferences.getPeerOnionAddress(context, peerName)
+                val onionChanged = !onionHost.equals(peerKnownOnion?.substringBefore(':'), ignoreCase = true)
+                if (!onionChanged && now - (lastOnionShareAt[shareKey] ?: 0L) < 30_000L) {
+                    log(context, "Onion share suppressed (cooldown active, address unchanged)")
                     return@launch
                 }
                 val json = JSONObject().apply {

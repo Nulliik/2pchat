@@ -232,6 +232,12 @@ internal class RelayMaintenanceCoordinator(
                         val yggAddr = P2PMessageRelay.getYggdrasilAddress()
                         val yggReady = prefs.getBoolean("settings_yggdrasil", false) &&
                             yggAddr.isNotBlank() && yggAddr != "N/A" && yggAddr != "unavailable"
+                        val onionHost = if (P2PPreferences.isTorEnabled(appContext)) {
+                            com.example.twopchat.tor.TorManager.onionAddress.value
+                                ?.takeIf { it.isNotBlank() }
+                                ?: P2PPreferences.getTorOnionHostname(appContext)
+                                    ?.takeIf { it.isNotBlank() }
+                        } else null
                         val addresses = buildList {
                             if (prefs.getBoolean("settings_ipv4", true)) {
                                 val localIp = P2PMessageRelay.getLocalIpAddress(appContext)
@@ -240,7 +246,13 @@ internal class RelayMaintenanceCoordinator(
                                 }
                             }
                             if (yggReady) yggAddr.takeIf { it.isNotBlank() }?.let(::add)
+                            // Include the current Tor .onion address so that a change
+                            // (e.g. after Tor restart with a new key) triggers a fresh
+                            // announce and onNetworkChanged(), ensuring peers get the
+                            // updated endpoint without waiting for the next poll interval.
+                            onionHost?.let(::add)
                         }.distinct().sorted()
+
                         val now = System.currentTimeMillis()
                         val networkChanged = addresses != lastAddresses && lastIdentity != null
                         val identity = listOf(username, fingerprint, port.toString(), P2PPreferences.getRendezvousCode(appContext).orEmpty())
