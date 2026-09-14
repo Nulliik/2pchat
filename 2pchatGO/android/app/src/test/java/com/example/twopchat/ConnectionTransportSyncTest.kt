@@ -87,6 +87,14 @@ class ConnectionTransportSyncTest {
             ConnectionTransportKind.YGGDRASIL,
             connectionTransportKind("ygg_mesh", "127.0.0.1:9053")
         )
+        assertEquals(
+            "Yggdrasil",
+            canonicalConnectionTransport("Direct P2P", "[200:1234:5678::1]:50001")
+        )
+        assertEquals(
+            "Tor Onion",
+            canonicalConnectionTransport("Direct P2P", "vww6ybal4bd7szmgncyruucpgfkqahzddi37ktceo3ah7ngmcopnpyyd.onion:50001")
+        )
     }
 
     @Test

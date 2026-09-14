@@ -36,6 +36,8 @@ import androidx.compose.ui.unit.sp
 import com.example.twopchat.config.P2PPreferences
 import com.example.twopchat.data.Localizations
 import com.example.twopchat.relay.EndpointRecord
+import com.example.twopchat.relay.EndpointKind
+import com.example.twopchat.relay.EndpointRetention
 import com.example.twopchat.relay.EndpointSource
 import com.example.twopchat.relay.P2PMessageRelay
 import com.example.twopchat.relay.PeerEndpointStore
@@ -67,8 +69,9 @@ internal fun ConnectionRouteSummary(
     var reloadVersion by remember(peerName) { mutableIntStateOf(0) }
     var history by remember(peerName) { mutableStateOf<List<EndpointRecord>>(emptyList()) }
     var historyLoaded by remember(peerName) { mutableStateOf(false) }
+    var showFullHistory by remember(peerName) { mutableStateOf(false) }
 
-    LaunchedEffect(peerName, fingerprint, activeEndpoint, isOnline, reloadVersion) {
+    LaunchedEffect(peerName, fingerprint, reloadVersion) {
         historyLoaded = false
         history = withContext(Dispatchers.IO) {
             fingerprint?.let { PeerEndpointStore.history(context, peerName, it) }.orEmpty()
@@ -162,7 +165,7 @@ internal fun ConnectionRouteSummary(
 
             Spacer(modifier = Modifier.height(16.dp))
             Text(
-                text = Localizations.tr(appLanguage, "Проверенные адреса", "Checked endpoints"),
+                text = Localizations.tr(appLanguage, "Адреса подключения", "Connection endpoints"),
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Bold,
                 color = onSurfaceVariant,
@@ -184,26 +187,44 @@ internal fun ConnectionRouteSummary(
                     fontSize = 12.sp,
                     color = onSurfaceVariant,
                 )
-                else -> history.take(8).forEachIndexed { index, record ->
-                    EndpointHistoryRow(
-                        record = record,
-                        activeEndpoint = activeEndpoint,
-                        isOnline = isOnline,
-                        appLanguage = appLanguage,
-                        onSurfaceColor = onSurfaceColor,
-                        onSurfaceVariant = onSurfaceVariant,
-                        onClick = {
-                            coroutineScope.launch {
-                                withContext(Dispatchers.IO) {
-                                    PeerEndpointStore.resetCooldowns(context, fingerprint)
+                else -> {
+                    val displayedHistory = if (showFullHistory) history else history.take(3)
+                    displayedHistory.forEachIndexed { index, record ->
+                        EndpointHistoryRow(
+                            record = record,
+                            activeEndpoint = activeEndpoint,
+                            isOnline = isOnline,
+                            appLanguage = appLanguage,
+                            onSurfaceColor = onSurfaceColor,
+                            onSurfaceVariant = onSurfaceVariant,
+                            onClick = {
+                                coroutineScope.launch {
+                                    withContext(Dispatchers.IO) {
+                                        PeerEndpointStore.resetCooldowns(context, fingerprint)
+                                    }
+                                    com.example.twopchat.bridge.P2PBridgeProvider.get(context)
+                                        .reconnectPeerSession(peerName, record.endpoint, fingerprint)
+                                    reloadVersion++
                                 }
-                                com.example.twopchat.bridge.P2PBridgeProvider.get(context)
-                                    .reconnectPeerSession(peerName, record.endpoint, fingerprint)
-                                reloadVersion++
-                            }
-                        },
-                    )
-                    if (index != minOf(history.size, 8) - 1) Spacer(modifier = Modifier.height(12.dp))
+                            },
+                        )
+                        if (index != displayedHistory.lastIndex) Spacer(modifier = Modifier.height(12.dp))
+                    }
+                    if (history.size > 3) {
+                        Text(
+                            text = if (showFullHistory) {
+                                Localizations.tr(appLanguage, "Свернуть", "Show less")
+                            } else {
+                                Localizations.tr(appLanguage, "Все адреса (${history.size})", "All endpoints (${history.size})")
+                            },
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = primaryColor,
+                            modifier = Modifier
+                                .padding(top = 12.dp, bottom = 4.dp)
+                                .clickable { showFullHistory = !showFullHistory },
+                        )
+                    }
                 }
             }
         }
@@ -236,6 +257,8 @@ private fun EndpointHistoryRow(
         EndpointSource.MIGRATED -> Localizations.tr(appLanguage, "сохранён ранее", "saved previously")
     }
     val detail = buildString {
+        append(endpointNetworkLabel(record.endpoint, appLanguage))
+        append(" · ")
         append(source)
         if (activityAt > 0) append(" · ").append(connectionRouteTime(activityAt))
         if (record.failures > 1) append(" · ").append(record.failures).append("×")
@@ -294,4 +317,14 @@ private fun connectionRouteTime(value: Long): String =
 private fun isTorLoopbackSocket(endpoint: String): Boolean {
     val value = endpoint.trim().lowercase()
     return value.startsWith("127.0.0.1:") || value.startsWith("[::1]:")
+}
+
+private fun endpointNetworkLabel(endpoint: String, appLanguage: String): String {
+    val isIpv6 = endpoint.substringBeforeLast(':').contains(':')
+    return when (EndpointRetention.kind(endpoint)) {
+        EndpointKind.YGGDRASIL -> "Yggdrasil IPv6"
+        EndpointKind.TOR -> "Tor Onion"
+        EndpointKind.LAN -> Localizations.tr(appLanguage, if (isIpv6) "Локальная IPv6" else "Локальная IPv4", if (isIpv6) "Local IPv6" else "Local IPv4")
+        EndpointKind.PUBLIC -> Localizations.tr(appLanguage, if (isIpv6) "Direct IPv6" else "Direct IPv4", if (isIpv6) "Direct IPv6" else "Direct IPv4")
+    }
 }
