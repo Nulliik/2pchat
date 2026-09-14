@@ -21,7 +21,9 @@ const (
 	ActionScrape         = int32(2)
 	ActionError          = int32(3)
 
-	DefaultTrackerTimeout = 3 * time.Second
+	// Five seconds accommodates slow Tor/Yggdrasil paths without changing the
+	// scheduler's announce cadence or failure backoff.
+	DefaultTrackerTimeout = 5 * time.Second
 )
 
 var (

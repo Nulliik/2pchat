@@ -4,6 +4,7 @@ import com.example.twopchat.relay.ConnectionTransportKind
 import com.example.twopchat.relay.TransportType
 import com.example.twopchat.relay.canonicalConnectionTransport
 import com.example.twopchat.relay.connectionTransportKind
+import com.example.twopchat.relay.incomingConnectionTransport
 import com.example.twopchat.relay.resolveTransportType
 import org.json.JSONArray
 import org.json.JSONObject
@@ -56,6 +57,14 @@ class ConnectionTransportSyncTest {
             ConnectionTransportKind.ONION,
             connectionTransportKind("TOR", null)
         )
+    }
+
+    @Test
+    fun testIncomingOnionServiceLoopbackIsNotPresentedAsDirect() {
+        assertEquals("Tor Onion", incomingConnectionTransport("127.0.0.1:41382", localOnionServiceConfigured = true))
+        assertEquals("Tor Onion", incomingConnectionTransport("[::1]:41382", localOnionServiceConfigured = true))
+        assertEquals("Direct P2P", incomingConnectionTransport("127.0.0.1:41382", localOnionServiceConfigured = false))
+        assertEquals("Direct P2P", incomingConnectionTransport("192.168.1.20:50001", localOnionServiceConfigured = true))
     }
 
     @Test

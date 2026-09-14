@@ -169,6 +169,23 @@ internal object PeerEndpointStore {
         }
     }
 
+    /** A bounded, local-only view for the contact profile. It never probes or
+     * changes a route; the initial import simply preserves the same legacy
+     * route migration used by [candidates]. */
+    @Synchronized @WorkerThread
+    fun history(context: Context, peerName: String, fingerprint: String,
+                now: Long = System.currentTimeMillis()): List<EndpointRecord> {
+        val fp = canonicalEndpointFingerprint(fingerprint) ?: return emptyList()
+        return ChatDatabaseHelper.getInstance(context).endpointTransaction { db ->
+            importOnce(db, context, peerName, fp, now)
+            read(db, fp)
+                .sortedWith(compareByDescending<EndpointRecord> { active[fp] == it.endpoint }
+                    .thenByDescending { maxOf(it.lastSuccess, it.lastFailure, it.lastSeen) }
+                    .thenBy { it.endpoint })
+                .take(EndpointRetention.MAX_PER_PEER)
+        }
+    }
+
     private fun trimIfNeeded(db: SQLiteDatabase, now: Long, force: Boolean = false) {
         val count = db.rawQuery("SELECT COUNT(*) FROM $TABLE", null).use { it.moveToFirst(); it.getLong(0) }
         if (!force && count <= EndpointRetention.MAX_CACHE_RECORDS) return

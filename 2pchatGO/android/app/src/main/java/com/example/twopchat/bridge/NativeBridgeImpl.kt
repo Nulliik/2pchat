@@ -7,7 +7,6 @@ import com.example.twopchat.BuildConfig
 import com.example.twopchat.logging.SafeLog
 import com.example.twopchat.NativeBridge
 import com.example.twopchat.relay.P2PMessageRelay
-import com.example.twopchat.relay.canonicalConnectionTransport
 import com.example.twopchat.relay.isExpectedPeerFingerprint
 import com.example.twopchat.relay.isValidPeerEndpointList
 import com.example.twopchat.relay.PeerEndpointStore
@@ -262,11 +261,14 @@ class NativeBridgeImpl(
             if (resolvedName != peerFP) {
                 P2PMessageRelay.clearAvatarShareCooldown(resolvedName)
             }
-            // A TCP endpoint always has a ':' before its port. Determine the
-            // route from the host range instead of treating every host:port
-            // as Yggdrasil.
-            val transportHint = canonicalConnectionTransport(null, endpoint) ?: "Direct P2P"
             val appContext = com.example.twopchat.yggdrasil.GlobalApplication.appContext
+            // An incoming Tor onion service connection is accepted from the
+            // local Tor proxy. Its socket peer is loopback, so the endpoint
+            // alone otherwise looks like Direct P2P to Kotlin.
+            val transportHint = com.example.twopchat.relay.incomingConnectionTransport(
+                endpoint = endpoint,
+                localOnionServiceConfigured = !P2PPreferences.getTorOnionHostname(appContext).isNullOrBlank(),
+            )
             val isGroupInferred = runCatching {
                 com.example.twopchat.data.ChatDatabaseHelper.getInstance(appContext).isPeerGroupInferred(peerFP)
             }.getOrDefault(false)

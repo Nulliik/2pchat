@@ -146,3 +146,31 @@ func TestAnnounceWorkersAreGloballyBoundedAndCancellationDrains(t *testing.T) {
 		t.Fatal("worker leak or limit bypass")
 	}
 }
+
+func TestDiscoveryServiceDefaultTimeoutAcceptsSlowHTTPTracker(t *testing.T) {
+	var requests atomic.Int32
+	tracker := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		time.Sleep(3500 * time.Millisecond)
+		fmt.Fprint(w, "d8:intervali900e5:peers0:e")
+	}))
+	defer tracker.Close()
+
+	s := NewDiscoveryService("self", 50001, nil, false, nil, nil)
+	s.SetTrackers([]string{tracker.URL})
+	if err := s.SetSelfInfoHashes([]string{"self-hash"}, 50001); err != nil {
+		t.Fatal(err)
+	}
+	var workers sync.WaitGroup
+	s.dispatchDue(context.Background(), time.Now(), &workers)
+	workers.Wait()
+	if requests.Load() != 1 {
+		t.Fatalf("slow HTTP tracker received %d requests, want 1", requests.Load())
+	}
+	s.mu.RLock()
+	state := s.announces[announceKey{tracker: tracker.URL, hash: decodeInfoHash("self-hash")}]
+	s.mu.RUnlock()
+	if state == nil || state.failures != 0 {
+		t.Fatalf("slow HTTP tracker announcement failed: %+v", state)
+	}
+}

@@ -717,6 +717,17 @@ fun SharedMediaScreen(
                 }
             }
 
+            item {
+                ConnectionRouteSummary(
+                    peerName = currentPeerName,
+                    appLanguage = appLanguage,
+                    primaryColor = primaryColor,
+                    surfaceColor = cardBg,
+                    onSurfaceColor = onSurfaceColor,
+                    onSurfaceVariant = onSurfaceVariant,
+                )
+            }
+
             // Sticky Category Tab selector
             stickyHeader(key = "sticky_tabs") {
                 Box(

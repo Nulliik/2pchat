@@ -58,6 +58,26 @@ object TrackerPreferences {
             "udp://[201:23a4:4941:da9e:b18a:eb2a:c22c:c4a6]:6969/announce",
             "udp",
         ),
+        BuiltInTracker(
+            "Yggdrasil Jeff HTTP",
+            "http://[200:1e2f:e608:eb3a:2bf:1e62:87ba:e2f7]:80/announce",
+            "http",
+        ),
+        BuiltInTracker(
+            "Yggdrasil Opentracker HTTP",
+            "http://[21e:6565:9c87:a49d:dafa:92c1:b33f:f21]:1337/announce",
+            "http",
+        ),
+        BuiltInTracker(
+            "Yggdrasil YGGverse HTTP",
+            "http://[202:68d0:f0d5:b88d:1d1a:555e:2f6b:3148]:6969/announce",
+            "http",
+        ),
+        BuiltInTracker(
+            "Yggdrasil Retracker HTTP",
+            "http://[316:c51a:62a3:8b9::5]/announce",
+            "http",
+        ),
         BuiltInTracker("Qu.Ax UDP", "udp://tracker.qu.ax:6969/announce", "udp"),
         BuiltInTracker("Bittor UDP", "udp://tracker.bittor.pw:1337/announce", "udp"),
         BuiltInTracker("Torrent EU UDP", "udp://tracker.torrent.eu.org:451/announce", "udp"),

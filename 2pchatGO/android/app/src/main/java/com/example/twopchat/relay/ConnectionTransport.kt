@@ -64,6 +64,19 @@ internal fun canonicalConnectionTransport(
     ConnectionTransportKind.UNKNOWN -> null
 }
 
+/**
+ * The incoming side of a Tor onion service reaches the local listener through
+ * Tor's loopback proxy. JNI reports the socket peer address, so it is
+ * `127.0.0.1` or `[::1]`, not the remote onion hostname. Keep this aligned
+ * with Go's session.Manager.handleIncomingConnection classification.
+ */
+internal fun incomingConnectionTransport(endpoint: String, localOnionServiceConfigured: Boolean): String {
+    val normalized = endpoint.trim().lowercase()
+    val isTorLoopback = normalized.startsWith("127.0.0.1:") || normalized.startsWith("[::1]:")
+    if (localOnionServiceConfigured && isTorLoopback) return "Tor Onion"
+    return canonicalConnectionTransport(null, endpoint) ?: "Direct P2P"
+}
+
 fun resolveTransportType(
     rawTransport: String?,
     endpoint: String? = null,
