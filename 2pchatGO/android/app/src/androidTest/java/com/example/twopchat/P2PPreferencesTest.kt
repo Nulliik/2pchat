@@ -70,11 +70,17 @@ class P2PPreferencesTest {
 
     @Test
     fun appLanguagePersistsCorrectly() {
-        assertTrue(P2PPreferences.setAppLanguage(context, "Русский"))
-        assertEquals("Русский", P2PPreferences.getAppLanguage(context))
+        val prefs = P2PPreferences.prefs(context)
 
-        assertTrue(P2PPreferences.setAppLanguage(context, "English"))
+        P2PPreferences.setAppLanguage(context, "Русский")
+        assertEquals("Русский", P2PPreferences.getAppLanguage(context))
+        assertEquals("Русский", prefs.getString("app_language", null))
+        assertEquals("Русский", prefs.getString("settings_language", null))
+
+        P2PPreferences.setAppLanguage(context, "English")
         assertEquals("English", P2PPreferences.getAppLanguage(context))
+        assertEquals("English", prefs.getString("app_language", null))
+        assertEquals("English", prefs.getString("settings_language", null))
     }
 
     @Test

@@ -342,11 +342,11 @@ object P2PPreferences : com.example.twopchat.security.SensitiveMemoryHolder {
         return if (java.util.Locale.getDefault().language == "ru") "Русский" else "English"
     }
 
-    fun setAppLanguage(context: Context, lang: String): Boolean {
-        return prefs(context).edit()
+    fun setAppLanguage(context: Context, lang: String) {
+        prefs(context).edit()
             .putString("app_language", lang)
             .putString("settings_language", lang)
-            .commit()
+            .apply()
     }
 
     fun getTorBridgeLines(context: Context): List<String> =

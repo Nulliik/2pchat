@@ -22,6 +22,8 @@ import kotlinx.coroutines.sync.withLock
 internal class P2POutboundMessenger(
     private val peerEndpoints: Map<String, String>,
     private val log: (Context, String, String, Throwable?) -> Unit,
+    private val bridgeProvider: (Context) -> com.example.twopchat.bridge.IP2PBridge =
+        com.example.twopchat.bridge.P2PBridgeProvider::get,
     private val onMessageStatusChanged: (String, String, String) -> Unit,
 ) {
     private val processingOfflineQueues = ConcurrentHashMap.newKeySet<String>()
@@ -46,7 +48,7 @@ internal class P2POutboundMessenger(
         peerName.trim().lowercase()
 
     private fun getBridge(context: Context): com.example.twopchat.bridge.IP2PBridge =
-        com.example.twopchat.bridge.P2PBridgeProvider.get(context)
+        bridgeProvider(context)
 
     private fun getPeerLock(peerName: String): Mutex =
         peerSendLocks.computeIfAbsent(normalizePeerKey(peerName)) { Mutex() }
@@ -761,6 +763,7 @@ internal class P2POutboundMessenger(
                 if (sent && deleteAfterSend) db.deletePendingControl(controlId)
                 postResult(onResult, sent)
             } catch (error: Exception) {
+                if (error is CancellationException) throw error
                 log(appContext, "Failed to queue/send $type control", "ERROR", error)
                 postResult(onResult, false)
             }
