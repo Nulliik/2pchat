@@ -18,12 +18,62 @@ import java.io.File
 
 /** Test-only commands additionally restricted to the isolated QA application ID. */
 internal object GroupE2EControl {
-    fun execute(context: Context, intent: Intent, result: JSONObject) = runBlocking {
+    fun execute(context: Context, intent: Intent, result: JSONObject): Unit = runBlocking {
         check(context.packageName == "com.example.twopchat.groupqa")
         fun arg(name: String) = intent.getStringExtra(name).orEmpty()
         val group = arg("group")
         Groups.initialize(context)
         when (arg("op")) {
+            "batch" -> {
+                // Runs several ops in one broadcast to cut adb round-trips in E2E.
+                // Depth 1 only: nested batches are rejected to keep failure traces flat.
+                // ops_b64 carries the steps JSON base64-encoded to survive adb quoting.
+                val raw = arg("ops_b64").ifBlank {
+                    android.util.Base64.encodeToString(arg("ops").toByteArray(), android.util.Base64.NO_WRAP)
+                }
+                val steps = JSONArray(String(android.util.Base64.decode(raw, android.util.Base64.NO_WRAP)))
+                check(steps.length() in 1..20) { "batch size must be 1..20" }
+                val results = JSONArray()
+                for (i in 0 until steps.length()) {
+                    val step = steps.optJSONObject(i) ?: error("batch step $i is not an object")
+                    val stepOp = step.optString("op")
+                    check(stepOp != "batch") { "nested batch is not allowed" }
+                    val nested = Intent(intent).apply {
+                        putExtra("op", stepOp)
+                        for (key in step.keys()) putExtra(key, step.optString(key))
+                    }
+                    val stepResult = JSONObject().put("action", intent.action.orEmpty())
+                    try {
+                        // execute() does not set ok; onReceive does that for top-level
+                        // broadcasts only. A normal return here means the step passed.
+                        execute(context, nested, stepResult)
+                        stepResult.put("ok", true)
+                    } catch (t: Throwable) {
+                        throw IllegalStateException(
+                            "batch step $i ($stepOp) failed: ${t.message ?: t.javaClass.simpleName}", t,
+                        )
+                    }
+                    results.put(stepResult)
+                }
+                result.put("results", results)
+            }
+            "state" -> {
+                // One-call snapshot of everything a host test usually polls for.
+                val name = arg("name")
+                if (name.isNotBlank()) {
+                    val prefs = P2PPreferences.prefs(context)
+                    val fp = prefs.getString(P2PPreferences.peerFingerprint(name), "").orEmpty()
+                    result.put("online", NativeBridge.isPeerOnline(fp))
+                    val db = com.example.twopchat.data.ChatDatabaseHelper.getInstance(context)
+                    result.put("messages", JSONArray(db.getMessagesForPeer(name).map {
+                        JSONObject().put("id", it.id).put("text", it.text)
+                    }))
+                }
+                result.put("groups", JSONArray(Groups.summaries.value.map { it.groupId }))
+                result.put("peers", JSONObject(P2PMessageRelay.peerSessionStates.toMap()))
+                result.put("ygg", P2PMessageRelay.getYggdrasilAddress())
+                result.put("tor_running", com.example.twopchat.tor.TorManager.isTorRunning.value)
+            }
             "peer_seed" -> {
                 val prefs = P2PPreferences.prefs(context)
                 prefs.edit().putString(P2PPreferences.peerFingerprint(arg("name")), arg("fingerprint"))
