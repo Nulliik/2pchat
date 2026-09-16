@@ -87,6 +87,12 @@ fun YggdrasilPeerSettingsPage(
     var yggdrasilRouting by remember {
         mutableStateOf(sharedPrefs.getBoolean("settings_yggdrasil", false))
     }
+    var multicastBeaconEnabled by remember {
+        mutableStateOf(P2PPreferences.isYggdrasilMulticastBeaconEnabled(context))
+    }
+    var limitBackgroundEnabled by remember {
+        mutableStateOf(P2PPreferences.isYggdrasilLimitBackgroundEnabled(context))
+    }
 
     val vpnLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult(),
@@ -97,6 +103,7 @@ fun YggdrasilPeerSettingsPage(
                 YggdrasilCoordinator.start(context, P2PPreferences.YggdrasilMode.VPN)
                 yggdrasilRouting = true
                 sharedPrefs.edit().putBoolean("settings_yggdrasil", true).apply()
+                P2PPreferences.setYggdrasilEverEnabled(context, true)
             } else {
                 // User declined system VPN permission dialog - revert to Proxy mode
                 currentMode = P2PPreferences.YggdrasilMode.PROXY
@@ -216,11 +223,13 @@ fun YggdrasilPeerSettingsPage(
                                                     YggdrasilCoordinator.start(context, P2PPreferences.YggdrasilMode.VPN)
                                                     yggdrasilRouting = true
                                                     sharedPrefs.edit().putBoolean("settings_yggdrasil", true).apply()
+                                                    P2PPreferences.setYggdrasilEverEnabled(context, true)
                                                 }
                                             } else {
                                                 YggdrasilCoordinator.start(context, P2PPreferences.YggdrasilMode.PROXY)
                                                 yggdrasilRouting = true
                                                 sharedPrefs.edit().putBoolean("settings_yggdrasil", true).apply()
+                                                    P2PPreferences.setYggdrasilEverEnabled(context, true)
                                             }
                                         } else {
                                             YggdrasilCoordinator.stop(context)
@@ -339,6 +348,42 @@ fun YggdrasilPeerSettingsPage(
                                 applyPeerSettings()
                             },
                         )
+                    }
+                }
+
+                item(key = "battery_toggles") {
+                    PeerSettingsCard(surfaceColor, onSurfaceColor) {
+                        Column(modifier = Modifier.padding(14.dp)) {
+                            PeerToggleContent(
+                                title = Localizations.getString("yggdrasil_no_beacon", appLanguage),
+                                subtitle = Localizations.getString("yggdrasil_no_beacon_desc", appLanguage),
+                                checked = multicastBeaconEnabled,
+                                onSurfaceColor = onSurfaceColor,
+                                onSurfaceVariant = onSurfaceVariant,
+                                onCheckedChange = { isChecked ->
+                                    multicastBeaconEnabled = isChecked
+                                    P2PPreferences.setYggdrasilMulticastBeaconEnabled(context, isChecked)
+                                    if (yggdrasilRouting) {
+                                        YggdrasilCoordinator.reloadPeers(context)
+                                    }
+                                },
+                            )
+                            HorizontalDivider(
+                                modifier = Modifier.padding(vertical = 10.dp),
+                                color = onSurfaceColor.copy(alpha = 0.05f)
+                            )
+                            PeerToggleContent(
+                                title = Localizations.getString("yggdrasil_limit_background", appLanguage),
+                                subtitle = Localizations.getString("yggdrasil_limit_background_desc", appLanguage),
+                                checked = limitBackgroundEnabled,
+                                onSurfaceColor = onSurfaceColor,
+                                onSurfaceVariant = onSurfaceVariant,
+                                onCheckedChange = { isChecked ->
+                                    limitBackgroundEnabled = isChecked
+                                    P2PPreferences.setYggdrasilLimitBackgroundEnabled(context, isChecked)
+                                },
+                            )
+                        }
                     }
                 }
 

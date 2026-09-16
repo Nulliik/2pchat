@@ -221,6 +221,7 @@ open class PacketTunnelProvider: VpnService() {
                     stop(stopService = false)
                 }
                 config.applyPeerPreferences()
+                config.applyMulticastBeacon()
                 if (restart) {
                     start()
                     START_STICKY

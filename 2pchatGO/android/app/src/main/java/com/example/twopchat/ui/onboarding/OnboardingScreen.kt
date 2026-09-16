@@ -2,11 +2,9 @@ package com.example.twopchat.ui.onboarding
 
 import com.example.twopchat.logging.SafeLog
 
-import android.app.Activity
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.net.VpnService
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -79,8 +77,14 @@ fun OnboardingScreen(
         showYggdrasilDialog = false
         sharedPrefs.edit().putBoolean("settings_yggdrasil", enableYggdrasil).apply()
         if (enableYggdrasil) {
+            // Onboarding always starts Yggdrasil in PROXY mode: it needs no VPN
+            // permission and never shows the system VPN consent during onboarding.
+            // The user can switch to VPN later from Settings, where the consent
+            // dialog is shown at that point.
+            P2PPreferences.setYggdrasilMode(context, P2PPreferences.YggdrasilMode.PROXY)
+            P2PPreferences.setYggdrasilEverEnabled(context, true)
             try {
-                com.example.twopchat.yggdrasil.YggdrasilCoordinator.start(context)
+                com.example.twopchat.yggdrasil.YggdrasilCoordinator.start(context, P2PPreferences.YggdrasilMode.PROXY)
             } catch (error: Exception) {
                 SafeLog.e("OnboardingScreen", "Unable to start Yggdrasil service", error)
                 sharedPrefs.edit().putBoolean("settings_yggdrasil", false).apply()
@@ -96,17 +100,6 @@ fun OnboardingScreen(
             }
         } else {
             null
-        }
-    }
-
-    val vpnPermissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.StartActivityForResult(),
-    ) { result ->
-        if (result.resultCode == Activity.RESULT_OK) {
-            startYggdrasilAndComplete(enableYggdrasil = true)
-        } else {
-            // User dismissed or denied VPN prompt, proceed into app with Yggdrasil disabled
-            startYggdrasilAndComplete(enableYggdrasil = false)
         }
     }
 
@@ -175,22 +168,11 @@ fun OnboardingScreen(
             confirmButton = {
                 Button(
                     onClick = {
-                        showYggdrasilDialog = false
-                        val vpnPrepareIntent = try {
-                            VpnService.prepare(context)
-                        } catch (e: Exception) {
-                            null
-                        }
-                        if (vpnPrepareIntent != null) {
-                            try {
-                                vpnPermissionLauncher.launch(vpnPrepareIntent)
-                            } catch (e: Exception) {
-                                SafeLog.e("OnboardingScreen", "Failed to launch VPN permission intent", e)
-                                startYggdrasilAndComplete(enableYggdrasil = false)
-                            }
-                        } else {
-                            startYggdrasilAndComplete(enableYggdrasil = true)
-                        }
+                        // Onboarding enables Yggdrasil in PROXY mode directly,
+                        // without showing the system VPN consent dialog. The VPN
+                        // consent is only requested later when the user enables
+                        // VPN mode from Settings.
+                        startYggdrasilAndComplete(enableYggdrasil = true)
                     },
                     colors = ButtonDefaults.buttonColors(
                         containerColor = primaryColor,

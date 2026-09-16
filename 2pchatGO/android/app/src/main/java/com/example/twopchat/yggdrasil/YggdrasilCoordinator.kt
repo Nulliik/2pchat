@@ -23,6 +23,9 @@ object YggdrasilCoordinator {
 
     fun start(context: Context, requestedMode: YggdrasilMode? = null) {
         pendingStartJob?.cancel()
+        // Keep the boot-autostart eligibility adjacent to the single service
+        // start entry point so every explicit enable path is covered.
+        P2PPreferences.setYggdrasilEverEnabled(context, true)
         val mode = requestedMode ?: P2PPreferences.getYggdrasilMode(context)
         val yggAddr = com.example.twopchat.relay.P2PMessageRelay.getYggdrasilAddress()
         com.example.twopchat.AppLog.append(

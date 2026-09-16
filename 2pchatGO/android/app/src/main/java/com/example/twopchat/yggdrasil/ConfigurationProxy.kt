@@ -109,19 +109,29 @@ class ConfigurationProxy(applicationContext: Context) {
             json.put("IfName", "none")
             json.put("IfMTU", 65535)
 
-            // Multicast config
+            // Multicast config. Beacon (advertising) is off by default to save
+            // battery/radio wakeups; Listen stays on so local peer discovery keeps
+            // working. The user can re-enable the beacon from Settings.
+            val beaconEnabled = P2PPreferences.isYggdrasilMulticastBeaconEnabled(appContext)
             val multicastInterfaces = json.optJSONArray("MulticastInterfaces")
             if (multicastInterfaces == null || multicastInterfaces.length() == 0 || multicastInterfaces.get(0) is String) {
                 val ar = JSONArray()
                 ar.put(0, JSONObject("""
                     {
                         "Regex": ".*",
-                        "Beacon": true,
+                        "Beacon": $beaconEnabled,
                         "Listen": true,
                         "Password": ""
                     }
                 """.trimIndent()))
                 json.put("MulticastInterfaces", ar)
+            } else {
+                // A configuration can contain more than one interface rule.
+                // Apply the privacy default to each rule rather than leaving a
+                // later rule advertising merely because it was already present.
+                for (index in 0 until multicastInterfaces.length()) {
+                    multicastInterfaces.optJSONObject(index)?.put("Beacon", beaconEnabled)
+                }
             }
 
             // Seed once from the embedded, offline public-peer snapshot. On
@@ -175,6 +185,23 @@ class ConfigurationProxy(applicationContext: Context) {
                 "Peers",
                 JSONArray(YggdrasilPeerPreferences.effectivePeerUris(appContext, publicPeers)),
             )
+        }
+    }
+
+    /**
+     * Re-apply the multicast-beacon setting from preferences to the on-disk
+     * config. Used on peer reload so a beacon toggle in Settings takes effect
+     * without waiting for a full service restart.
+     */
+    fun applyMulticastBeacon() {
+        val beaconEnabled = P2PPreferences.isYggdrasilMulticastBeaconEnabled(appContext)
+        updateJSON { config ->
+            val multicastInterfaces = config.optJSONArray("MulticastInterfaces")
+            if (multicastInterfaces != null) {
+                for (index in 0 until multicastInterfaces.length()) {
+                    multicastInterfaces.optJSONObject(index)?.put("Beacon", beaconEnabled)
+                }
+            }
         }
     }
 
@@ -244,6 +271,15 @@ class ConfigurationProxy(applicationContext: Context) {
                 (json.getJSONArray("MulticastInterfaces").get(0) as JSONObject).put("Beacon", value)
             }
         }
+
+    /**
+     * Persist the multicast-beacon setting as a user preference and apply it to
+     * the on-disk config so the change survives restarts and a fresh file.
+     */
+    fun setMulticastBeaconEnabled(enabled: Boolean) {
+        P2PPreferences.setYggdrasilMulticastBeaconEnabled(appContext, enabled)
+        applyMulticastBeacon()
+    }
 
     var multicastPassword: String
         get() = (json.getJSONArray("MulticastInterfaces").get(0) as JSONObject).optString("Password")

@@ -191,6 +191,7 @@ class YggdrasilProxyService : Service() {
                     stop(stopService = false)
                 }
                 config.applyPeerPreferences()
+                config.applyMulticastBeacon()
                 if (restart) {
                     start()
                     START_STICKY

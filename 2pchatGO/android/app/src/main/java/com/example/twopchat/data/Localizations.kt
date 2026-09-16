@@ -100,6 +100,10 @@ object Localizations {
         "wifi_discovery_desc" to "Scan local subnet for peers",
         "yggdrasil_routing" to "Yggdrasil Routing",
         "yggdrasil_routing_desc" to "Route over IPv6 mesh network",
+        "yggdrasil_no_beacon" to "Disable multicast beacon",
+        "yggdrasil_no_beacon_desc" to "Stop advertising presence on the local network to save battery. Peer discovery (Listen) stays on.",
+        "yggdrasil_limit_background" to "Limit background Yggdrasil activity",
+        "yggdrasil_limit_background_desc" to "Stop the mesh service while the app is in the background and restart it when you return.",
 
         // Passcode Translation Strings
         "set_passcode_title" to "Set Passcode",
@@ -392,6 +396,10 @@ object Localizations {
         "wifi_discovery_desc" to "Сканировать локальную сеть на наличие пиров",
         "yggdrasil_routing" to "Маршрутизация Yggdrasil",
         "yggdrasil_routing_desc" to "Шифровать и направлять пакеты через mesh IPv6",
+        "yggdrasil_no_beacon" to "Отключить multicast beacon",
+        "yggdrasil_no_beacon_desc" to "Перестать анонсировать присутствие в локальной сети для экономии батареи. Поиск пиров (Listen) остаётся включён.",
+        "yggdrasil_limit_background" to "Ограничить фоновую активность Yggdrasil",
+        "yggdrasil_limit_background_desc" to "Останавливать mesh-сервис, когда приложение в фоне, и перезапускать его при возврате в foreground.",
 
         // Passcode Translation Strings
         "set_passcode_title" to "Установка код-пароля",
@@ -684,6 +692,10 @@ object Localizations {
         "wifi_discovery_desc" to "Lokales Subnetz nach Peers scannen",
         "yggdrasil_routing" to "Yggdrasil-Routing",
         "yggdrasil_routing_desc" to "Über IPv6-Mesh-Netzwerk leiten",
+        "yggdrasil_no_beacon" to "Multicast-Beacon deaktivieren",
+        "yggdrasil_no_beacon_desc" to "Präsenz im lokalen Netzwerk nicht mehr ankündigen, um Akku zu sparen. Peer-Erkennung (Listen) bleibt aktiv.",
+        "yggdrasil_limit_background" to "Hintergrundaktivität von Yggdrasil begrenzen",
+        "yggdrasil_limit_background_desc" to "Mesh-Dienst im Hintergrund stoppen und beim Zurückkehren in den Vordergrund neu starten.",
 
         // Passcode Translation Strings
         "set_passcode_title" to "Sperrcode festlegen",
@@ -973,6 +985,10 @@ object Localizations {
         "wifi_discovery_desc" to "Escanear subred local en busca de pares",
         "yggdrasil_routing" to "Enrutamiento Yggdrasil",
         "yggdrasil_routing_desc" to "Enrutar a través de red mesh IPv6",
+        "yggdrasil_no_beacon" to "Desactivar baliza multicast",
+        "yggdrasil_no_beacon_desc" to "Dejar de anunciar presencia en la red local para ahorrar batería. La detección de pares (Listen) sigue activa.",
+        "yggdrasil_limit_background" to "Limitar actividad de Yggdrasil en segundo plano",
+        "yggdrasil_limit_background_desc" to "Detener el servicio mesh en segundo plano y reiniciarlo al volver al primer plano.",
 
         // Passcode Translation Strings
         "set_passcode_title" to "Establecer código",
@@ -1262,6 +1278,10 @@ object Localizations {
         "wifi_discovery_desc" to "Scanner le sous-réseau local pour trouver des pairs",
         "yggdrasil_routing" to "Routage Yggdrasil",
         "yggdrasil_routing_desc" to "Acheminer via le réseau mesh IPv6",
+        "yggdrasil_no_beacon" to "Désactiver la balise multicast",
+        "yggdrasil_no_beacon_desc" to "Cesser d'annoncer sa présence sur le réseau local pour économiser la batterie. La découverte de pairs (Listen) reste active.",
+        "yggdrasil_limit_background" to "Limiter l'activité Yggdrasil en arrière-plan",
+        "yggdrasil_limit_background_desc" to "Arrêter le service mesh en arrière-plan et le redémarrer au retour au premier plan.",
 
         // Passcode Translation Strings
         "set_passcode_title" to "Définir le code",
@@ -1551,6 +1571,10 @@ object Localizations {
         "wifi_discovery_desc" to "Escanear sub-rede local em busca de pares",
         "yggdrasil_routing" to "Roteamento Yggdrasil",
         "yggdrasil_routing_desc" to "Rotear através da rede mesh IPv6",
+        "yggdrasil_no_beacon" to "Desativar beacon multicast",
+        "yggdrasil_no_beacon_desc" to "Parar de anunciar presença na rede local para economizar bateria. A descoberta de pares (Listen) continua ativa.",
+        "yggdrasil_limit_background" to "Limitar atividade do Yggdrasil em segundo plano",
+        "yggdrasil_limit_background_desc" to "Parar o serviço mesh em segundo plano e reiniciá-lo ao voltar ao primeiro plano.",
 
         // Passcode Translation Strings
         "set_passcode_title" to "Definir Código",
@@ -1829,6 +1853,10 @@ object Localizations {
         "wifi_discovery_desc" to "Yerel alt ağı eşler için tarayın",
         "yggdrasil_routing" to "Yggdrasil Yönlendirmesi",
         "yggdrasil_routing_desc" to "IPv6 mesh ağı üzerinden yönlendirin",
+        "yggdrasil_no_beacon" to "Multicast beacon'ı kapat",
+        "yggdrasil_no_beacon_desc" to "Pil tasarrufu için yerel ağda varlığı duyurmayı durdur. Eş keşfi (Listen) açık kalır.",
+        "yggdrasil_limit_background" to "Yggdrasil arka plan etkinliğini sınırla",
+        "yggdrasil_limit_background_desc" to "Uygulama arka plandayken mesh hizmetini durdur ve ön plana dönünce yeniden başlat.",
         "set_passcode_title" to "PIN Kodu Belirleyin",
         "enter_passcode" to "Yeni 4 haneli PIN kodunu girin",
         "confirm_passcode" to "Yeni PIN kodunu onaylayın",

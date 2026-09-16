@@ -35,6 +35,12 @@ class BootUpReceiver : BroadcastReceiver() {
             SafeLog.i(TAG, "Yggdrasil disabled, not starting service")
             return
         }
+        // Only auto-start on boot if the user has previously enabled Yggdrasil
+        // (never on a fresh install / first launch).
+        if (!P2PPreferences.isYggdrasilEverEnabled(context)) {
+            SafeLog.i(TAG, "Yggdrasil never enabled by user, skipping boot autostart")
+            return
+        }
         SafeLog.i(TAG, "Yggdrasil enabled, starting service via coordinator")
 
         val mode = P2PPreferences.getYggdrasilMode(context)

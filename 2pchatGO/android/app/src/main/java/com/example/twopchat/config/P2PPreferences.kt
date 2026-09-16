@@ -81,6 +81,40 @@ object P2PPreferences : com.example.twopchat.security.SensitiveMemoryHolder {
     const val DEFAULT_YGGDRASIL_PROXY_PORT = 9053
     const val DEFAULT_YGGDRASIL_PROXY_HOST = "127.0.0.1"
 
+    // Whether the user has ever enabled Yggdrasil. Used to decide whether the
+    // mesh daemon may auto-start on device boot (never on a fresh install).
+    const val YGGDRASIL_EVER_ENABLED = "yggdrasil_ever_enabled"
+    // Multicast beacon (advertise presence on the local network). Default off to
+    // cut background radio wakeups; multicast Listen stays on for peer discovery.
+    const val YGGDRASIL_MULTICAST_BEACON = "yggdrasil_multicast_beacon"
+    // When enabled, the mesh service is stopped while the app is in the
+    // background and restarted when the app returns to the foreground.
+    const val YGGDRASIL_LIMIT_BACKGROUND = "yggdrasil_limit_background"
+
+    /** True once the user has ever explicitly enabled Yggdrasil. */
+    fun isYggdrasilEverEnabled(context: Context): Boolean =
+        prefs(context).getBoolean(YGGDRASIL_EVER_ENABLED, false)
+
+    fun setYggdrasilEverEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit().putBoolean(YGGDRASIL_EVER_ENABLED, enabled).apply()
+    }
+
+    /** Multicast beacon (advertising) toggle; defaults to off to reduce battery/radio use. */
+    fun isYggdrasilMulticastBeaconEnabled(context: Context): Boolean =
+        prefs(context).getBoolean(YGGDRASIL_MULTICAST_BEACON, false)
+
+    fun setYggdrasilMulticastBeaconEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit().putBoolean(YGGDRASIL_MULTICAST_BEACON, enabled).apply()
+    }
+
+    /** Limit background Yggdrasil activity: stop the mesh service when app backgrounds. */
+    fun isYggdrasilLimitBackgroundEnabled(context: Context): Boolean =
+        prefs(context).getBoolean(YGGDRASIL_LIMIT_BACKGROUND, false)
+
+    fun setYggdrasilLimitBackgroundEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit().putBoolean(YGGDRASIL_LIMIT_BACKGROUND, enabled).apply()
+    }
+
     fun findAvailablePort(preferredPort: Int = DEFAULT_YGGDRASIL_PROXY_PORT, host: String = DEFAULT_YGGDRASIL_PROXY_HOST): Int {
         if (preferredPort > 0) {
             try {

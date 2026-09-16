@@ -693,6 +693,7 @@ fun ChatConnectionErrorDialog(
                             if (mode == com.example.twopchat.config.P2PPreferences.YggdrasilMode.PROXY) {
                                 com.example.twopchat.yggdrasil.YggdrasilCoordinator.start(context, com.example.twopchat.config.P2PPreferences.YggdrasilMode.PROXY)
                                 com.example.twopchat.config.P2PPreferences.prefs(context).edit().putBoolean("settings_yggdrasil", true).apply()
+                                com.example.twopchat.config.P2PPreferences.setYggdrasilEverEnabled(context, true)
                                 Toast.makeText(context, if (appLanguage == "Русский") "Yggdrasil успешно включен!" else "Yggdrasil enabled successfully!", Toast.LENGTH_SHORT).show()
                             } else {
                                 val vpnIntent = VpnService.prepare(context)
@@ -701,6 +702,7 @@ fun ChatConnectionErrorDialog(
                                 } else {
                                     com.example.twopchat.yggdrasil.YggdrasilCoordinator.start(context, com.example.twopchat.config.P2PPreferences.YggdrasilMode.VPN)
                                     com.example.twopchat.config.P2PPreferences.prefs(context).edit().putBoolean("settings_yggdrasil", true).apply()
+                                    com.example.twopchat.config.P2PPreferences.setYggdrasilEverEnabled(context, true)
                                     Toast.makeText(context, if (appLanguage == "Русский") "Yggdrasil успешно включен!" else "Yggdrasil enabled successfully!", Toast.LENGTH_SHORT).show()
                                 }
                             }

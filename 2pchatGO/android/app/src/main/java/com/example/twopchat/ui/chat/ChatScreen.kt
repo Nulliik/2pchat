@@ -443,6 +443,7 @@ fun ChatScreen(
             if (result.resultCode == android.app.Activity.RESULT_OK) {
                 com.example.twopchat.yggdrasil.YggdrasilCoordinator.start(context)
                 sharedPrefs.edit { putBoolean("settings_yggdrasil", true) }
+                com.example.twopchat.config.P2PPreferences.setYggdrasilEverEnabled(context, true)
                 Toast.makeText(
                     context,
                     Localizations.tr(

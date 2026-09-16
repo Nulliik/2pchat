@@ -319,15 +319,54 @@ object AppForegroundTracker {
     var isForegroundOverride: Boolean? = null
         internal set
 
+    // Testable seam for the "limit background Yggdrasil activity" action. When
+    // set (unit tests), it is invoked with `true` on a foreground transition and
+    // `false` on a background transition, replacing the real stop/start logic.
+    @Volatile
+    var backgroundLimitAction: ((Boolean) -> Unit)? = null
+        internal set
+
     fun onActivityStarted() {
+        val wasBackground = startedActivities.get() == 0
         startedActivities.incrementAndGet()
+        if (wasBackground) {
+            onForegroundTransition()
+        }
     }
 
     fun onActivityStopped() {
         if (startedActivities.get() > 0) {
             startedActivities.decrementAndGet()
+            if (startedActivities.get() == 0) {
+                onBackgroundTransition()
+            }
         }
     }
+
+    private fun onForegroundTransition() {
+        backgroundLimitAction?.let { it(true); return }
+        val context = GlobalApplication.appContext ?: return
+        if (shouldLimitBackground(context) && !YggdrasilCoordinator.isRunning(context)) {
+            YggdrasilCoordinator.start(context)
+        }
+    }
+
+    private fun onBackgroundTransition() {
+        backgroundLimitAction?.let { it(false); return }
+        val context = GlobalApplication.appContext ?: return
+        if (shouldLimitBackground(context)) {
+            YggdrasilCoordinator.stop(context)
+        }
+    }
+
+    /**
+     * Whether the "limit background Yggdrasil activity" setting is active and
+     * Yggdrasil is currently enabled. When true, the mesh service is stopped
+     * while the app is backgrounded and restarted on return to the foreground.
+     */
+    fun shouldLimitBackground(context: Context): Boolean =
+        P2PPreferences.isYggdrasilLimitBackgroundEnabled(context) &&
+            yggdrasilPrefs(context).getBoolean(PREF_KEY_ENABLED, false)
 
     fun isAppInForeground(): Boolean {
         isForegroundOverride?.let { return it }
@@ -341,5 +380,6 @@ object AppForegroundTracker {
     fun resetForTesting() {
         startedActivities.set(0)
         isForegroundOverride = null
+        backgroundLimitAction = null
     }
 }
