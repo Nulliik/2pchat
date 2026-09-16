@@ -9,7 +9,7 @@ P2P-мессенджер: Android-клиент на Kotlin/Jetpack Compose с Go
 | [2pchatGO/android](2pchatGO/android/README.md) | Основной Android-клиент, цель релизного CI; Go-ядро в `core-go/` |
 | [messenger](messenger/README.md) | Python: CLI, Kivy GUI, FastAPI, протокол и тесты совместимости |
 | [docs](docs/README.md) | Протоколы, интеграция и отчёты |
-| [plans](plans/README.md) | Исторические планы и список замечаний |
+| [plans](plans/README.md) | Текущий список технического долга |
 | `scripts/` | Сборка desktop и публикация релизов |
 | `tools/` | Android E2E и вспомогательные инструменты |
 | [.agents/skills](.agents/skills/README.md) | Локальные инструкции для агентов |

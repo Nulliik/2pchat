@@ -21,4 +21,4 @@ Reviewed against repository sources on 2026-09-05. This is a capability inventor
 - MLS, true multi-device accounts, topics/threads and broadcast channels are not delivered by the current group protocol.
 - Serial/radio transports (Meshtastic/LoRa/Bluetooth), I2P and hardware-backed desktop key storage remain separate potential extensions.
 
-Historical UI plans and bug findings are indexed in [plans](../plans/README.md); verify them against the intended Android tree before implementation.
+Historical UI plans and the lint-era bug list were removed from the repository on 2026-09-16; their content remains recoverable from Git history. Do not treat those findings as current work items. A live Android technical-debt list is maintained in [plans](../plans/README.md).

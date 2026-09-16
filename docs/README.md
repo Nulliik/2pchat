@@ -54,10 +54,7 @@
 
 ## Планы
 
-- [plans/001-motion-enhancements.md](../plans/001-motion-enhancements.md)
-- [plans/002-motion-audit-improvements.md](../plans/002-motion-audit-improvements.md)
-- [plans/003-bug-list.md](../plans/003-bug-list.md)
-- [plans/README.md](../plans/README.md)
+- [plans/README.md](../plans/README.md) — живой список технического долга Android
 
 ## Совместимые точки входа
 
