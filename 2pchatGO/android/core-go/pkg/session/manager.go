@@ -377,14 +377,7 @@ func (m *Manager) handleIncomingConnection(conn net.Conn) {
 	m.mu.RUnlock()
 
 	endpoint := conn.RemoteAddr().String()
-	isTor := onion != "" && (strings.HasPrefix(endpoint, "127.0.0.1:") || strings.HasPrefix(endpoint, "[::1]:"))
-
-	var inboundClass transport.TransportClass
-	if isTor {
-		inboundClass = transport.TransportTor
-	} else {
-		inboundClass, _ = transport.ClassifyEndpoint(endpoint)
-	}
+	inboundClass, isTor := classifyInboundTransport(endpoint, onion)
 
 	// 4. Pre-handshake global transport policy guard (SEC-03)
 	// If global policy rejects this transport class (e.g. Tor Strict mode rejects clearnet connections),
@@ -445,6 +438,24 @@ func (m *Manager) handleIncomingConnection(conn net.Conn) {
 	m.RegisterSession(sess, peerFP, endpoint, false)
 }
 
+// classifyInboundTransport preserves the provenance of connections bridged by
+// the Android Yggdrasil user-space stack. That stack is the only producer of
+// 127.0.0.2: it binds that local source address before forwarding an already
+// received mesh stream to the core listener. It is intentionally distinct from
+// 127.0.0.1 (Tor's local onion-service proxy) and is never advertised or dialed.
+func classifyInboundTransport(endpoint, onion string) (transport.TransportClass, bool) {
+	isTor := onion != "" && (strings.HasPrefix(endpoint, "127.0.0.1:") || strings.HasPrefix(endpoint, "[::1]:"))
+	if isTor {
+		return transport.TransportTor, true
+	}
+	host, _, err := net.SplitHostPort(endpoint)
+	if err == nil && host == "127.0.0.2" {
+		return transport.TransportYggdrasil, false
+	}
+	class, _ := transport.ClassifyEndpoint(endpoint)
+	return class, false
+}
+
 // ConnectPeer dials a remote peer endpoint and establishes an encrypted X3DH session.
 // Handles single endpoints as well as comma-separated candidate lists (e.g. LAN, IPv6, and .onion).
 func (m *Manager) ConnectPeer(endpoint, expectedFingerprint string) (*Session, error) {
@@ -457,6 +468,20 @@ func (m *Manager) ConnectPeerWithPolicy(endpoint, expectedFingerprint string, co
 		m.SetPeerPolicy(expectedFingerprint, contactPolicy)
 	}
 	return m.connectPeerInternal(endpoint, expectedFingerprint, &contactPolicy)
+}
+
+// remainingCandidates excludes an endpoint whose authenticated handshake did
+// not complete. Tracker and discovery endpoints are only reachability hints:
+// an EOF, malformed response, or key mismatch on one candidate must not
+// prevent a later Yggdrasil/Tor candidate from proving the expected identity.
+func remainingCandidates(candidates []string, attempted string) []string {
+	remaining := make([]string, 0, len(candidates)-1)
+	for _, candidate := range candidates {
+		if candidate != attempted {
+			remaining = append(remaining, candidate)
+		}
+	}
+	return remaining
 }
 
 func (m *Manager) connectPeerInternal(endpoint, expectedFingerprint string, contactPolicy *transport.NetworkPolicy) (*Session, error) {
@@ -616,6 +641,18 @@ func (m *Manager) connectPeerInternal(endpoint, expectedFingerprint string, cont
 	)
 	if err != nil {
 		_ = conn.Close()
+		// A candidate list is a set of independent routes for the same pinned
+		// peer, not a fallback chain that is trusted after its first TCP success.
+		// Keep the expected fingerprint unchanged and try every remaining route;
+		// NewSession still rejects every identity that does not match that pin.
+		if expectedFingerprint != "" {
+			if callback := m.callbacksSnapshot().OnEndpointResult; callback != nil {
+				callback(expectedFingerprint, winEndpoint, false)
+			}
+			if remaining := remainingCandidates(candidates, winEndpoint); len(remaining) > 0 {
+				return m.connectPeerInternal(strings.Join(remaining, ","), expectedFingerprint, contactPolicy)
+			}
+		}
 		if diagnosticTimeout(err) {
 			observationOutcome = diagnostics.Timeout
 		}

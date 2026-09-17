@@ -505,7 +505,19 @@ func (m *SessionManager) ProbePeer(endpointsJSON, expectedFingerprint string) er
 		return errors.New("network manager not initialized")
 	}
 
+	// Auto policy reaches this method (rather than ProbePeerWithFlags). Keep
+	// its lifecycle identical: tracker replies and reconnect maintenance may
+	// arrive while a prior X3DH attempt is still running. Concurrent attempts
+	// for the same authenticated peer can replace a newly established session.
+	if expectedFingerprint != "" {
+		if _, loaded := m.probeInFlight.LoadOrStore(expectedFingerprint, struct{}{}); loaded {
+			return nil
+		}
+	}
 	go func() {
+		if expectedFingerprint != "" {
+			defer m.probeInFlight.Delete(expectedFingerprint)
+		}
 		endpointStr := strings.Join(endpoints, ",")
 		_, err := nm.ConnectPeer(endpointStr, expectedFingerprint)
 		if err != nil {

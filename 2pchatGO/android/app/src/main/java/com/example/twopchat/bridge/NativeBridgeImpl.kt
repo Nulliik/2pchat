@@ -85,6 +85,10 @@ class NativeBridgeImpl(
     private val flushJobs = ConcurrentHashMap<String, Job>()
     private val flushMutexes = ConcurrentHashMap<String, Mutex>()
     private val connectWaiters = ConcurrentHashMap<String, CompletableDeferred<Unit>>()
+    // Discovery can report several tracker endpoints in one callback. Do not
+    // let each candidate create a competing ratchet connection: a replacement
+    // connection may close the session that just authenticated.
+    private val reconnectsInFlight = ConcurrentHashMap.newKeySet<String>()
 
     @VisibleForTesting
     internal var sendNow: (peerFP: String, msg: PendingMessage) -> Boolean = { peerFP, msg ->
@@ -376,13 +380,14 @@ class NativeBridgeImpl(
                                         existingFingerprintForName = existingFingerprintForName,
                                         remoteNick = remoteNick,
                                         peerFP = peerFP,
+                                        hasActiveRoute = activeEndpoints[peerFP] != null || activeTransports[peerFP] != null,
                                     )
                                 ) {
                                     sessionListener?.onSessionEstablished(
                                         remoteNick,
                                         peerFP,
                                         activeEndpoints[peerFP].orEmpty(),
-                                        activeTransports[peerFP] ?: "Direct P2P",
+                                        activeTransports[peerFP].orEmpty(),
                                         "",
                                     )
                                 }
@@ -739,14 +744,40 @@ class NativeBridgeImpl(
 
     private fun scheduleReconnect(peerName: String, endpoint: String, fingerprint: String?, includeReserve: Boolean): Boolean {
         if (endpoint.isBlank() && fingerprint.isNullOrBlank()) return false
-        bridgeScope.launch(Dispatchers.IO) { reconnectWithRetainedRoutes(peerName, endpoint, fingerprint, includeReserve) }
+        val reconnectKey = fingerprint?.takeIf { it.isNotBlank() } ?: peerName
+        if (!reconnectsInFlight.add(reconnectKey)) {
+            SafeLog.d(TAG, "[GoCore] Reconnect already scheduled for ${SafeLog.fp(reconnectKey)}")
+            return true
+        }
+        bridgeScope.launch(Dispatchers.IO) {
+            try {
+                // Calls from discovery are coalesced so the bootstrap set can
+                // collect the tracker response before Go starts probing it.
+                if (!includeReserve) delay(250L)
+                reconnectWithRetainedRoutes(peerName, endpoint, fingerprint, includeReserve)
+            } finally {
+                reconnectsInFlight.remove(reconnectKey)
+            }
+        }
         return true
     }
 
     private fun retainedCandidates(peerName: String, fingerprint: String?, fallback: String, includeReserve: Boolean): List<String> {
         if (fingerprint.isNullOrBlank()) return fallback.split(',').mapNotNull(EndpointRetention::normalize).distinct().take(16)
         val context = com.example.twopchat.yggdrasil.GlobalApplication.appContext
-        return PeerEndpointStore.candidates(context, peerName, fingerprint, includeReserve, legacyEndpoints = fallback.split(','))
+        val bootstrap = P2PMessageRelay.bootstrapEndpointsForInitialHandshake(peerName)
+        // Do not feed the transient search result through legacy import: an
+        // unsigned route remains memory-only until the handshake authenticates
+        // it.  It nevertheless has to reach the first dial attempt even when
+        // an old contact already has a stored fingerprint.
+        val persisted = PeerEndpointStore.candidates(
+            context,
+            peerName,
+            fingerprint,
+            includeReserve,
+            legacyEndpoints = if (bootstrap.isEmpty()) fallback.split(',') else emptyList(),
+        )
+        return (bootstrap + persisted).distinct().take(16)
     }
 
     private fun dialRetainedCandidates(peerName: String, fingerprint: String?, candidates: List<String>, includeReserve: Boolean, policyFlags: Int = 0): Boolean {
@@ -758,8 +789,16 @@ class NativeBridgeImpl(
             P2PPreferences.PeerTransportPreference.DIRECT_ONLY -> 3
             P2PPreferences.PeerTransportPreference.AUTO -> 0
         }
-        val fresh = if (fingerprint.isNullOrBlank()) candidates else
-            PeerEndpointStore.candidates(context, peerName, fingerprint, includeReserve = false).filter { it in candidates }
+        val bootstrap = P2PMessageRelay.bootstrapEndpointsForInitialHandshake(peerName)
+        val fresh = if (fingerprint.isNullOrBlank()) {
+            candidates
+        } else {
+            val persistedFresh = PeerEndpointStore.candidates(context, peerName, fingerprint, includeReserve = false)
+            // The persistent cache deliberately does not contain an unsigned
+            // first-contact endpoint. Preserve that bounded, expiring route
+            // for this one initial handshake attempt.
+            candidates.filter { it in persistedFresh || it in bootstrap }
+        }
         val reserve = if (includeReserve) candidates.filter { it !in fresh } else emptyList()
         if (fresh.isEmpty() && reserve.isEmpty()) return false
         return NativeBridge.probePeer(fresh, fingerprint.orEmpty(), effectiveFlags, reserve)
@@ -770,6 +809,9 @@ class NativeBridgeImpl(
         if (!fingerprint.isNullOrBlank()) {
             peerNameMap[fingerprint] = peerName
             nameToFpMap[peerName] = fingerprint
+            // A queued tracker callback may run just after another candidate
+            // has authenticated. Never replace that live ratchet session.
+            if (NativeBridge.isPeerOnline(fingerprint)) return true
         }
         val context = com.example.twopchat.yggdrasil.GlobalApplication.appContext
         val pref = P2PPreferences.getPeerTransportPreference(context, peerName)
@@ -979,6 +1021,7 @@ class NativeBridgeImpl(
             waiter.cancel()
         }
         connectWaiters.clear()
+        reconnectsInFlight.clear()
         NativeBridge.stopDiscovery()
         NativeBridge.stopListener()
         onlinePeers.clear()
@@ -1145,9 +1188,10 @@ internal fun shouldPublishIdentitySessionEstablished(
     existingFingerprintForName: String?,
     remoteNick: String,
     peerFP: String,
-): Boolean = !wasNameOnline ||
+    hasActiveRoute: Boolean,
+): Boolean = hasActiveRoute && (!wasNameOnline ||
     existingNameForFingerprint != remoteNick ||
-    existingFingerprintForName != peerFP
+    existingFingerprintForName != peerFP)
 
 internal fun discoveryInfoHash(nickname: String, sharedCode: String): String {
     val normalizedNickname = nickname.trim().lowercase(java.util.Locale.ROOT)

@@ -63,6 +63,7 @@ class ConnectionTransportSyncTest {
     fun testIncomingOnionServiceLoopbackIsNotPresentedAsDirect() {
         assertEquals("Tor Onion", incomingConnectionTransport("127.0.0.1:41382", localOnionServiceConfigured = true))
         assertEquals("Tor Onion", incomingConnectionTransport("[::1]:41382", localOnionServiceConfigured = true))
+        assertEquals("Yggdrasil", incomingConnectionTransport("127.0.0.2:41382", localOnionServiceConfigured = true))
         assertEquals("Direct P2P", incomingConnectionTransport("127.0.0.1:41382", localOnionServiceConfigured = false))
         assertEquals("Direct P2P", incomingConnectionTransport("192.168.1.20:50001", localOnionServiceConfigured = true))
     }

@@ -7,6 +7,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.util.concurrent.atomic.AtomicLong
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.net.InetAddress
@@ -16,6 +17,28 @@ import java.net.InetSocketAddress
  * Unit tests for Yggdrasil Proxy Routing and SOCKS5 UserSpace Stack protocol integration.
  */
 class YggdrasilProxyRoutingTest {
+    @Test
+    fun receiveWindowBuffersOutOfOrderProfileSegmentsUntilContiguous() {
+        val window = com.example.twopchat.yggdrasil.TcpReceiveWindow(1001L)
+        val second = byteArrayOf(4, 5, 6)
+
+        assertTrue(window.accept(1004L, second).isEmpty())
+        val delivered = window.accept(1001L, byteArrayOf(1, 2, 3))
+
+        assertEquals(2, delivered.size)
+        org.junit.Assert.assertArrayEquals(byteArrayOf(1, 2, 3), delivered[0])
+        org.junit.Assert.assertArrayEquals(second, delivered[1])
+        assertEquals(1007L, window.expectedSequence())
+    }
+
+    @Test
+    fun outboundSynConsumesSequenceNumberBeforeHandshakePayload() {
+        val sequence = AtomicLong(1000L)
+
+        assertEquals(1000L, YggdrasilUserSpaceStack.consumeSynSequence(sequence))
+        assertEquals(1001L, sequence.get())
+    }
+
 
     @Test
     fun testYggdrasilIpv6CanonicalRangeValidation() {

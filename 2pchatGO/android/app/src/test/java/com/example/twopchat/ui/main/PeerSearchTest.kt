@@ -9,8 +9,33 @@ import org.junit.Test
 import com.example.twopchat.relay.orderedDirectEndpoints
 import com.example.twopchat.relay.selectExternalIpv4
 import com.example.twopchat.relay.P2PMessageRelay
+import kotlinx.coroutines.runBlocking
 
 class PeerSearchTest {
+    @Test
+    fun `first contact collects later Yggdrasil route before probing`() = runBlocking {
+        var nowNanos = 0L
+        var reads = 0
+
+        val endpoints = collectDiscoveryEndpoints(
+            candidateSource = {
+                reads++
+                if (reads < 2) listOf("203.0.113.10:50001")
+                else listOf("203.0.113.10:50001", "[201:e59e:412d::1]:50001")
+            },
+            collectionWindowMs = 500L,
+            pollIntervalMs = 250L,
+            monotonicNanos = { nowNanos },
+            wait = { delayMs -> nowNanos += delayMs * 1_000_000L },
+        )
+
+        assertEquals(
+            listOf("203.0.113.10:50001", "[201:e59e:412d::1]:50001"),
+            endpoints,
+        )
+        assertTrue(reads >= 2)
+    }
+
     @Test
     fun `splits searchable address into nickname and discovery code`() {
         assertEquals(

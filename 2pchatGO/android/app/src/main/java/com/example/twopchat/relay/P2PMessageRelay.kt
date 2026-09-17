@@ -180,6 +180,16 @@ object P2PMessageRelay {
         ConcurrentHashMap<String, CopyOnWriteArrayList<LocalPeerCandidate>>()
 
     /**
+     * An address selected from an unsigned search result may be used exactly
+     * for the first, user-initiated authenticated handshake.  It must not be
+     * promoted to the persistent route store merely because a contact already
+     * has a fingerprint (for example after restoring an old contact).
+     */
+    private data class BootstrapEndpointSet(val endpoints: List<String>, val expiresAtMs: Long)
+    private val bootstrapEndpointSets = ConcurrentHashMap<String, BootstrapEndpointSet>()
+    private const val BOOTSTRAP_ENDPOINT_TTL_MS = 30 * 60_000L
+
+    /**
      * A tracker result is only a reachability hint. Before a chat exists we keep
      * it in this short-lived lookup table so the search UI can show it, without
      * promoting an unauthenticated address into persistent endpoint storage.
@@ -212,6 +222,17 @@ object P2PMessageRelay {
 
     private fun localPeerCandidateKey(peerName: String): String =
         peerName.trim().lowercase(Locale.ROOT)
+
+    /** Returns only short-lived endpoints explicitly selected from search. */
+    internal fun bootstrapEndpointsForInitialHandshake(peerName: String, now: Long = System.currentTimeMillis()): List<String> {
+        val key = localPeerCandidateKey(peerName)
+        val routes = bootstrapEndpointSets[key] ?: return emptyList()
+        if (now >= routes.expiresAtMs) {
+            bootstrapEndpointSets.remove(key, routes)
+            return emptyList()
+        }
+        return routes.endpoints
+    }
 
     @Synchronized
     internal fun localDiscoveryEndpoints(peerName: String): List<String> {
@@ -283,6 +304,10 @@ object P2PMessageRelay {
             endpointParts.isEmpty() || !isValidPeerEndpointList(endpoints)) return false
         val joined = endpointParts.distinct().take(EndpointRetention.MAX_PER_PEER).joinToString(",")
         _peerEndpoints[normalizedName] = joined
+        bootstrapEndpointSets[localPeerCandidateKey(normalizedName)] = BootstrapEndpointSet(
+            endpoints = endpointParts.mapNotNull(EndpointRetention::normalize).distinct().take(EndpointRetention.MAX_PER_PEER),
+            expiresAtMs = System.currentTimeMillis() + BOOTSTRAP_ENDPOINT_TTL_MS,
+        )
         return true
     }
 
@@ -2831,7 +2856,13 @@ object P2PMessageRelay {
 
                             log(appContext, "Discovered endpoint $endpoint for $peerName via $source")
                             injectLocalDiscoveryCandidate(peerName, fp, endpoint)
-                            rememberAuthenticatedPeerEndpoint(peerName, endpoint, appContext, EndpointSource.DISCOVERY)
+
+                            // A BitTorrent tracker reports only a socket address for an
+                            // info-hash. It does not attest that the address still belongs
+                            // to this identity, so keep it in the bounded in-memory
+                            // candidate set until an authenticated handshake succeeds.
+                            // Persisting it here poisoned later automatic reconnects with
+                            // stale or third-party routes.
 
                             if (!getBridge(appContext).isPeerOnline(peerName, fp)) {
                                 getBridge(appContext).reconnectPeerSessionInBackground(peerName, endpoint, fp)

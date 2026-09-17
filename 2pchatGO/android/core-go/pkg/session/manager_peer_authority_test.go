@@ -12,6 +12,16 @@ import (
 	"twopchat/core/pkg/transport"
 )
 
+func TestRemainingCandidatesKeepsYggRouteAfterFailedTrackerHandshake(t *testing.T) {
+	wrongTrackerEndpoint := "31.58.79.18:50001"
+	yggEndpoint := "[200:8d58:6b6d:68fe:f874:8f64:4b8f:66ff]:50001"
+
+	got := remainingCandidates([]string{wrongTrackerEndpoint, yggEndpoint}, wrongTrackerEndpoint)
+	if len(got) != 1 || got[0] != yggEndpoint {
+		t.Fatalf("failed tracker candidate must not cancel the Ygg route: got %v", got)
+	}
+}
+
 func TestPeerAuthority_InternalReconnect_HonorsPeerPolicy(t *testing.T) {
 	aliceID, _ := crypto.GenerateIdentityKeyPair()
 	alicePrekeyPriv, alicePrekeyPub, _ := crypto.GenerateX25519Keypair()

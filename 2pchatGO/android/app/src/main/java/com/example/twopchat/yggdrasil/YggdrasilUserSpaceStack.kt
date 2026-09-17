@@ -15,12 +15,51 @@ import java.net.Socket
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.ConcurrentSkipListMap
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.concurrent.thread
 
 private const val TAG = "YggUserStack"
+
+/**
+ * Bounded receive window for the user-space TCP shim. Yggdrasil transports IP
+ * packets, not an ordered byte stream, so payload must never be handed to the
+ * local TCP socket before its predecessor has arrived.
+ */
+internal class TcpReceiveWindow(initialSequence: Long) {
+    private var nextSequence = initialSequence
+    private val pending = java.util.TreeMap<Long, ByteArray>()
+
+    @Synchronized
+    fun accept(sequence: Long, payload: ByteArray): List<ByteArray> {
+        if (payload.isEmpty() || sequence < nextSequence) return emptyList()
+        if (sequence > nextSequence) {
+            if (pending.size < MAX_REORDERED_SEGMENTS && pending.values.sumOf { it.size } + payload.size <= MAX_REORDERED_BYTES) {
+                pending.putIfAbsent(sequence, payload.copyOf())
+            }
+            return emptyList()
+        }
+
+        val ready = mutableListOf(payload)
+        nextSequence += payload.size
+        while (true) {
+            val following = pending.remove(nextSequence) ?: break
+            ready += following
+            nextSequence += following.size
+        }
+        return ready
+    }
+
+    @Synchronized
+    fun expectedSequence(): Long = nextSequence
+
+    private companion object {
+        const val MAX_REORDERED_SEGMENTS = 64
+        const val MAX_REORDERED_BYTES = 64 * 1024
+    }
+}
 
 /**
  * Pure Kotlin User-Space TCP/IP Stack & SOCKS5 Server for Yggdrasil Proxy Mode.
@@ -54,9 +93,23 @@ class YggdrasilUserSpaceStack(
         var clientOut: OutputStream? = null,
         var seqSent: AtomicLong = AtomicLong(1000L),
         var seqRecv: AtomicLong = AtomicLong(0L),
+        var receiveWindow: TcpReceiveWindow = TcpReceiveWindow(0L),
+        val unacknowledged: ConcurrentSkipListMap<Long, PendingSegment> = ConcurrentSkipListMap(),
         var isEstablished: AtomicBoolean = AtomicBoolean(false),
         var isClosed: AtomicBoolean = AtomicBoolean(false)
     )
+
+    private data class PendingSegment(
+        val dstIp: ByteArray,
+        val srcPort: Int,
+        val dstPort: Int,
+        val sequence: Long,
+        val payload: ByteArray,
+        @Volatile var lastSentAtMs: Long = System.currentTimeMillis(),
+        @Volatile var retries: Int = 0,
+    ) {
+        val endExclusive: Long get() = sequence + payload.size
+    }
 
     private val activeSessions = ConcurrentHashMap<String, StreamSession>()
     private val pendingHandshakes = ConcurrentHashMap<String, java.util.concurrent.CompletableFuture<Boolean>>()
@@ -99,6 +152,7 @@ class YggdrasilUserSpaceStack(
             meshReceiveLoop()
         }
         workerThreads.add(tRecv)
+        workerThreads.add(thread(name = "Ygg-TCP-Retransmit") { retransmitLoop() })
 
         SafeLog.i(TAG, "Yggdrasil User-Space Proxy Stack started on 127.0.0.1:$socksPort")
         runCatching {
@@ -255,7 +309,11 @@ class YggdrasilUserSpaceStack(
                 dstIp = targetIpBytes,
                 srcPort = localPort,
                 dstPort = targetPort,
-                seq = session.seqSent.get(),
+                // A SYN consumes one sequence number.  The ACK and the first
+                // application payload must therefore begin at SYN+1; reusing
+                // the SYN number makes the receiving user-space stack discard
+                // the X3DH bytes as out-of-order.
+                seq = consumeSynSequence(session.seqSent),
                 ack = 0L,
                 flags = 0x02 // SYN
             )
@@ -289,16 +347,7 @@ class YggdrasilUserSpaceStack(
                     val segLen = minOf(read - offset, MAX_TCP_PAYLOAD)
                     val chunk = buf.copyOfRange(offset, offset + segLen)
                     val currentSeq = session.seqSent.getAndAdd(segLen.toLong())
-                    sendTcpPacket(
-                        srcIp = localIp,
-                        dstIp = targetIpBytes,
-                        srcPort = localPort,
-                        dstPort = targetPort,
-                        seq = currentSeq,
-                        ack = session.seqRecv.get(),
-                        flags = 0x18, // PSH | ACK
-                        payload = chunk
-                    )
+                    sendTrackedPayload(session, targetIpBytes, localPort, targetPort, currentSeq, chunk)
                     offset += segLen
                 }
             }
@@ -400,8 +449,10 @@ class YggdrasilUserSpaceStack(
         // Check if this is a reply to our outbound SOCKS connection
         val outSession = activeSessions[sessionKeyOutbound]
         if (outSession != null) {
+            acknowledgeOutbound(outSession, ack)
             if (isSyn && isAck) {
                 outSession.seqRecv.set(seq + 1)
+                outSession.receiveWindow = TcpReceiveWindow(seq + 1)
                 outSession.isEstablished.set(true)
                 // Send ACK to complete handshake
                 sendTcpPacket(
@@ -426,10 +477,12 @@ class YggdrasilUserSpaceStack(
             }
 
             if (payloadLen > 0) {
-                outSession.seqRecv.addAndGet(payloadLen.toLong())
+                val payload = pkt.copyOfRange(payloadStart, packetEnd)
+                val inOrder = outSession.receiveWindow.accept(seq, payload)
+                outSession.seqRecv.set(outSession.receiveWindow.expectedSequence())
                 runCatching {
-                    outSession.clientOut?.write(pkt, payloadStart, payloadLen)
-                    outSession.clientOut?.flush()
+                    for (segment in inOrder) outSession.clientOut?.write(segment)
+                    if (inOrder.isNotEmpty()) outSession.clientOut?.flush()
                 }
                 // Send ACK
                 sendTcpPacket(
@@ -489,7 +542,13 @@ class YggdrasilUserSpaceStack(
     private fun handleInboundMeshConnection(srcIp: ByteArray, srcPort: Int, dstPort: Int, initialSeq: Long) {
         val sessionKey = "${bytesToHex(srcIp)}:$srcPort:$dstPort"
         try {
-            val localSocket = Socket("127.0.0.1", localTargetPort)
+            // Mark mesh-proxied inbound streams with a dedicated source
+            // address; the native listener otherwise sees only loopback and
+            // reports a false Direct P2P route to the UI.
+            val localSocket = Socket().apply {
+                bind(InetSocketAddress(InetAddress.getByName("127.0.0.2"), 0))
+                connect(InetSocketAddress("127.0.0.1", localTargetPort), LOCAL_CORE_CONNECT_TIMEOUT_MS)
+            }
             val session = StreamSession(
                 streamKey = sessionKey,
                 remoteIp = srcIp,
@@ -500,6 +559,7 @@ class YggdrasilUserSpaceStack(
                 clientOut = localSocket.getOutputStream(),
                 seqSent = AtomicLong(5000L),
                 seqRecv = AtomicLong(initialSeq + 1),
+                receiveWindow = TcpReceiveWindow(initialSeq + 1),
                 isEstablished = AtomicBoolean(true)
             )
             activeSessions[sessionKey] = session
@@ -527,16 +587,7 @@ class YggdrasilUserSpaceStack(
                     val segLen = minOf(read - offset, MAX_TCP_PAYLOAD)
                     val chunk = buf.copyOfRange(offset, offset + segLen)
                     val currentSeq = session.seqSent.getAndAdd(segLen.toLong())
-                    sendTcpPacket(
-                        srcIp = localIp,
-                        dstIp = srcIp,
-                        srcPort = dstPort,
-                        dstPort = srcPort,
-                        seq = currentSeq,
-                        ack = session.seqRecv.get(),
-                        flags = 0x18, // PSH | ACK
-                        payload = chunk
-                    )
+                    sendTrackedPayload(session, srcIp, dstPort, srcPort, currentSeq, chunk)
                     offset += segLen
                 }
             }
@@ -620,6 +671,50 @@ class YggdrasilUserSpaceStack(
         }
     }
 
+    private fun sendTrackedPayload(
+        session: StreamSession,
+        dstIp: ByteArray,
+        srcPort: Int,
+        dstPort: Int,
+        sequence: Long,
+        payload: ByteArray,
+    ) {
+        val pending = PendingSegment(dstIp.copyOf(), srcPort, dstPort, sequence, payload.copyOf())
+        session.unacknowledged[sequence] = pending
+        sendTcpPacket(localIp, pending.dstIp, srcPort, dstPort, sequence, session.seqRecv.get(), 0x18, pending.payload)
+    }
+
+    private fun acknowledgeOutbound(session: StreamSession, acknowledgedSequence: Long) {
+        if (acknowledgedSequence <= 0L) return
+        session.unacknowledged.entries.removeIf { (_, segment) -> segment.endExclusive <= acknowledgedSequence }
+    }
+
+    private fun retransmitLoop() {
+        while (running.get()) {
+            try {
+                Thread.sleep(RETRANSMIT_SCAN_MS)
+                val now = System.currentTimeMillis()
+                for (session in activeSessions.values) {
+                    for (segment in session.unacknowledged.values) {
+                        if (now - segment.lastSentAtMs < RETRANSMIT_AFTER_MS) continue
+                        if (segment.retries >= MAX_SEGMENT_RETRIES) {
+                            SafeLog.w(TAG, "Closing Ygg stream after unacknowledged segment seq=${segment.sequence}, bytes=${segment.payload.size}")
+                            session.isClosed.set(true)
+                            runCatching { session.clientSocket?.close() }
+                            break
+                        }
+                        segment.retries += 1
+                        segment.lastSentAtMs = now
+                        SafeLog.d(TAG, "Retransmitting Ygg segment seq=${segment.sequence}, retry=${segment.retries}")
+                        sendTcpPacket(localIp, segment.dstIp, segment.srcPort, segment.dstPort, segment.sequence, session.seqRecv.get(), 0x18, segment.payload)
+                    }
+                }
+            } catch (_: InterruptedException) {
+                if (!running.get()) return
+            }
+        }
+    }
+
     private fun sendUdpPacket(srcIp: ByteArray, dstIp: ByteArray, srcPort: Int, dstPort: Int, payload: ByteArray) {
         val udpLen = 8 + payload.size
         val raw = ByteBuffer.allocate(40 + udpLen).order(ByteOrder.BIG_ENDIAN).apply {
@@ -692,6 +787,9 @@ class YggdrasilUserSpaceStack(
         address.size == 16 && (address[0].toInt() and 0xFF) in 0x02..0x03
 
     companion object {
+        /** Atomically reserves the sequence number occupied by an outbound SYN. */
+        internal fun consumeSynSequence(sequence: AtomicLong): Long = sequence.getAndIncrement()
+
         /**
          * Maximum TCP segment payload size for Yggdrasil mesh link.
          * Minimum IPv6 MTU is 1280 bytes.
@@ -699,6 +797,10 @@ class YggdrasilUserSpaceStack(
          * Prevents dropping packets exceeding link MTU when sending avatars or large metadata frames.
          */
         const val MAX_TCP_PAYLOAD = 1200
+        private const val LOCAL_CORE_CONNECT_TIMEOUT_MS = 5_000
+        private const val RETRANSMIT_SCAN_MS = 150L
+        private const val RETRANSMIT_AFTER_MS = 450L
+        private const val MAX_SEGMENT_RETRIES = 8
 
         fun segmentPayload(data: ByteArray, maxSegSize: Int = MAX_TCP_PAYLOAD): List<ByteArray> {
             if (data.isEmpty()) return emptyList()

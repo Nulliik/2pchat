@@ -29,6 +29,7 @@ class IdentitySessionNotificationGuardTest {
                 existingFingerprintForName = fingerprint,
                 remoteNick = nickname,
                 peerFP = fingerprint,
+                hasActiveRoute = true,
             )
         )
     }
@@ -42,6 +43,7 @@ class IdentitySessionNotificationGuardTest {
                 existingFingerprintForName = null,
                 remoteNick = nickname,
                 peerFP = fingerprint,
+                hasActiveRoute = true,
             )
         )
     }
@@ -55,6 +57,21 @@ class IdentitySessionNotificationGuardTest {
                 existingFingerprintForName = null,
                 remoteNick = nickname,
                 peerFP = fingerprint,
+                hasActiveRoute = true,
+            )
+        )
+    }
+
+    @Test
+    fun profileBeforeNativeRouteDoesNotInventDirectTransport() {
+        assertFalse(
+            shouldPublishIdentitySessionEstablished(
+                wasNameOnline = false,
+                existingNameForFingerprint = null,
+                existingFingerprintForName = null,
+                remoteNick = nickname,
+                peerFP = fingerprint,
+                hasActiveRoute = false,
             )
         )
     }

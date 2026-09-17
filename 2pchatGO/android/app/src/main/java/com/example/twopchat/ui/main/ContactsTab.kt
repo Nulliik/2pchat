@@ -72,7 +72,6 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
-import kotlinx.coroutines.withTimeoutOrNull
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.material.icons.Icons
@@ -90,6 +89,30 @@ internal data class PeerSearchRequest(
     val expectedLiveName: String,
     val expectedFingerprint: String?,
 )
+
+/**
+ * Collect the bounded, in-memory discovery cache for the complete lookup
+ * window. A tracker reply is only a transport hint, and replies from the
+ * direct, Yggdrasil and Tor paths can arrive at different times.
+ */
+internal suspend fun collectDiscoveryEndpoints(
+    candidateSource: () -> List<String>,
+    collectionWindowMs: Long = 8_000L,
+    pollIntervalMs: Long = 250L,
+    monotonicNanos: () -> Long = System::nanoTime,
+    wait: suspend (Long) -> Unit = { kotlinx.coroutines.delay(it) },
+): List<String> {
+    require(collectionWindowMs >= 0L)
+    require(pollIntervalMs > 0L)
+    val deadline = monotonicNanos() + collectionWindowMs * 1_000_000L
+    var collected = emptyList<String>()
+    do {
+        collected = candidateSource().distinct().take(12)
+        if (monotonicNanos() >= deadline) break
+        wait(pollIntervalMs)
+    } while (true)
+    return collected
+}
 
 internal fun invitePeerSearchRequest(
     name: String?,
@@ -801,17 +824,17 @@ fun ContactsTab(
                                     sharedCode = request.sharedCode,
                                 )
                             }
-                            // The native discovery service announces asynchronously. Wait
-                            // for its bounded, memory-only candidate cache instead of
-                            // rendering an optimistic result before any tracker reply.
-                            val discoveredEndpoints: List<String> = withTimeoutOrNull<List<String>>(8_000L) {
-                                var candidates = P2PMessageRelay.localDiscoveryEndpoints(request.expectedLiveName)
-                                while (candidates.isEmpty()) {
-                                    kotlinx.coroutines.delay(250L)
-                                    candidates = P2PMessageRelay.localDiscoveryEndpoints(request.expectedLiveName)
-                                }
-                                candidates
-                            } ?: emptyList()
+                            // Discovery responses arrive independently from every enabled
+                            // tracker. Do not return after the first response: in AUTO this
+                            // would commonly leave only a WAN candidate and skip a slightly
+                            // later Yggdrasil/Tor route. The cache is memory-only and bounded;
+                            // its complete short collection window is handed to the native
+                            // Happy-Eyeballs probe on the user's first tap.
+                            val discoveredEndpoints = collectDiscoveryEndpoints(
+                                candidateSource = {
+                                    P2PMessageRelay.localDiscoveryEndpoints(request.expectedLiveName)
+                                },
+                            )
                             val enrichedResults = results.map { peer ->
                                 if (discoveredEndpoints.isEmpty()) peer
                                 else peer + ("endpoints" to discoveredEndpoints)

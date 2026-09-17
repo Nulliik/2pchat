@@ -86,6 +86,10 @@ internal fun canonicalConnectionTransport(
  */
 internal fun incomingConnectionTransport(endpoint: String, localOnionServiceConfigured: Boolean): String {
     val normalized = endpoint.trim().lowercase()
+    // The user-space Yggdrasil TCP shim connects to the native listener from
+    // this dedicated loopback address. It is display provenance only, never a
+    // remote endpoint that can be reused for dialing.
+    if (normalized.startsWith("127.0.0.2:")) return "Yggdrasil"
     val isTorLoopback = normalized.startsWith("127.0.0.1:") || normalized.startsWith("[::1]:")
     if (localOnionServiceConfigured && isTorLoopback) return "Tor Onion"
     return canonicalConnectionTransport(null, endpoint) ?: "Direct P2P"

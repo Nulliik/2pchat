@@ -11,6 +11,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.net.InetAddress
 import java.net.URI
 
 @RunWith(AndroidJUnit4::class)
@@ -36,7 +37,11 @@ class NetworkModePreferenceRegressionTest {
         setKnownPeers(P2PPreferences.PeerTransportPreference.YGGDRASIL_ONLY)
 
         val active = TrackerPreferences.getActiveTrackerUrls(context)
-        assertEquals(2, active.size)
+        val expected = TrackerPreferences.builtInTrackers
+            .filter { it.name.contains("Yggdrasil", ignoreCase = true) }
+            .map { it.url }
+            .toSet()
+        assertEquals(expected, active.toSet())
         assertTrue(active.all(::hasYggdrasilHost))
         assertEquals("never", TrackerPreferences.ipv4AnnounceMode(context))
     }
@@ -81,7 +86,11 @@ class NetworkModePreferenceRegressionTest {
     }
 
     private fun hasYggdrasilHost(url: String): Boolean {
-        val bytes = URI(url).host?.let(java.net.InetAddress::getByName)?.address ?: return false
+        val host = URI(url).host ?: return false
+        // Only literal IPv6 tracker hosts can be Yggdrasil. Do not issue DNS
+        // queries while asserting that a clearnet URL was excluded.
+        if (!host.contains(':')) return false
+        val bytes = runCatching { InetAddress.getByName(host).address }.getOrNull() ?: return false
         return bytes.size == 16 && (bytes[0].toInt() and 0xfe) == 0x02
     }
 }
