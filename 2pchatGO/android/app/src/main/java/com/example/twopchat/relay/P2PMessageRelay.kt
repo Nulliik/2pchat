@@ -1,6 +1,3 @@
-
-
-
 package com.example.twopchat.relay
 
 import com.example.twopchat.logging.SafeLog
@@ -13,21 +10,27 @@ import com.example.twopchat.service.*
 import com.example.twopchat.tor.*
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
-import kotlin.concurrent.thread
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withTimeoutOrNull
 import com.example.twopchat.data.ChatDatabaseHelper
 import com.example.twopchat.ui.chat.Message
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import kotlinx.coroutines.delay
 import androidx.core.content.edit
+import androidx.core.graphics.scale
 import org.json.JSONObject
 import java.io.File
 import java.io.ByteArrayOutputStream
@@ -38,8 +41,19 @@ import java.util.UUID
 import android.util.Base64
 import android.os.SystemClock
 import androidx.compose.runtime.mutableStateMapOf
+import com.example.twopchat.bridge.BridgeMessageListener
+import com.example.twopchat.bridge.BridgeSessionListener
+import com.example.twopchat.bridge.IP2PBridge
+import com.example.twopchat.bridge.P2PBridgeProvider
+import com.example.twopchat.bridge.discoveryInfoHash
+import com.example.twopchat.data.Localizations
 import com.example.twopchat.group.runtime.GroupChatCoordinator
 import com.example.twopchat.group.protocol.GroupWireProtocol
+import com.example.twopchat.protocol.ProtocolVersionManager
+import com.example.twopchat.service.OutboxWorkScheduler
+import com.example.twopchat.ui.chat.state.ChatHistoryCache
+import com.example.twopchat.ui.main.formatInviteEndpoint
+import com.example.twopchat.yggdrasil.GlobalApplication
 
 internal fun isExpectedPeerFingerprint(persisted: String?, received: String, peerName: String? = null): Boolean {
     val p = persisted?.trim().orEmpty()
@@ -68,7 +82,9 @@ object P2PMessageRelay {
     internal fun closeAccountAdmission() {
         accountRuntime.close()
         ActiveChatStore.rejectAccountWork()
-        while (incomingPersistenceQueue.tryReceive().isSuccess) Unit
+        while (incomingPersistenceQueue.tryReceive().isSuccess) {
+            // Drain in-flight persistence tasks
+        }
     }
 
     internal fun awaitAccountCallbacks(): Boolean = accountRuntime.awaitIdle()
@@ -79,8 +95,8 @@ object P2PMessageRelay {
         true
     }
 
-    private fun guardedMessageListener(version: Long, listener: com.example.twopchat.bridge.BridgeMessageListener) =
-        object : com.example.twopchat.bridge.BridgeMessageListener {
+    private fun guardedMessageListener(version: Long, listener: BridgeMessageListener) =
+        object : BridgeMessageListener {
             override fun onMessageReceived(sender: String, text: String) =
                 withAccountCallback(version, Unit) { listener.onMessageReceived(sender, text) }
 
@@ -88,8 +104,8 @@ object P2PMessageRelay {
                 withAccountCallback(version, Unit) { listener.onFileProgress(sender, messageId, bytesTransferred, totalBytes, speedKbps) }
         }
 
-    private fun guardedSessionListener(version: Long, listener: com.example.twopchat.bridge.BridgeSessionListener) =
-        object : com.example.twopchat.bridge.BridgeSessionListener {
+    private fun guardedSessionListener(version: Long, listener: BridgeSessionListener) =
+        object : BridgeSessionListener {
             override fun onSessionEstablished(peerName: String, fingerprint: String, endpoint: String, transport: String, aboutMe: String): Boolean =
                 withAccountCallback(version, false) { listener.onSessionEstablished(peerName, fingerprint, endpoint, transport, aboutMe) }
 
@@ -102,7 +118,7 @@ object P2PMessageRelay {
             override fun onPeerDiscovered(infoHash: String, endpoint: String, source: String) =
                 withAccountCallback(version, Unit) { listener.onPeerDiscovered(infoHash, endpoint, source) }
         }
-    private val relayExceptionHandler = kotlinx.coroutines.CoroutineExceptionHandler { _, throwable ->
+    private val relayExceptionHandler = CoroutineExceptionHandler { _, throwable ->
         SafeLog.e("P2PMessageRelay", "Uncaught exception in relay scope", throwable)
     }
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO + relayExceptionHandler)
@@ -123,25 +139,17 @@ object P2PMessageRelay {
 
     @Volatile private var isRunning = false
     private val avatarCache = PeerAvatarCache()
-    private val notificationService = MessageNotificationService()
 
     @Volatile private var cachedAvatarBase64: String? = null
     @Volatile private var cachedAvatarLastModified: Long = -1L
 
-    fun invalidateProfileAvatarCache() {
-        synchronized(identityLock) {
-            cachedAvatarBase64 = null
-            cachedAvatarLastModified = -1L
-        }
-    }
-
     @Volatile private var storedAppContext: Context? = null
 
-    internal fun getBridge(context: Context? = null): com.example.twopchat.bridge.IP2PBridge {
+    internal fun getBridge(context: Context? = null): IP2PBridge {
         val ctx = context?.applicationContext
             ?: storedAppContext
             ?: runCatching {
-                com.example.twopchat.yggdrasil.GlobalApplication.appContext
+                GlobalApplication.appContext
             }.getOrNull()
         checkNotNull(ctx) {
             "P2P bridge requested before the Android application context was initialized"
@@ -151,10 +159,9 @@ object P2PMessageRelay {
         // message/session callbacks and causes successfully decrypted frames to
         // disappear before they reach the relay. Every caller must share the
         // provider singleton, including context-free maintenance callbacks.
-        return com.example.twopchat.bridge.P2PBridgeProvider.get(ctx)
+        return P2PBridgeProvider.get(ctx)
     }
 
-    private val activeFileTransfers = ConcurrentHashMap.newKeySet<String>()
     // Album parts are sent sequentially from serviceScope.  Cancelling the
     // individual native transfers alone is not sufficient: their callbacks
     // can arrive later and otherwise make the coordinator start another part.
@@ -258,10 +265,10 @@ object P2PMessageRelay {
                     }
                     val retained = PeerEndpointStore.candidates(ctx, normalizedName, fp, includeReserve = true,
                         legacyEndpoints = combined)
-                    P2PPreferences.prefs(ctx).edit().putString("last_endpoint_$normalizedName", retained.joinToString(",")).apply()
+                    P2PPreferences.prefs(ctx).edit { putString("last_endpoint_$normalizedName", retained.joinToString(",")) }
                     runOnMain { replaceEndpointProjection(normalizedName, retained.joinToString(",")) }
                 } else {
-                    P2PPreferences.prefs(ctx).edit().putString("last_endpoint_$normalizedName", joined).apply()
+                    P2PPreferences.prefs(ctx).edit { putString("last_endpoint_$normalizedName", joined) }
                 }
             }
         }
@@ -306,7 +313,7 @@ object P2PMessageRelay {
 
     private const val IP_CACHE_TTL_MS = 15_000L
 
-    fun getLocalIpAddress(context: Context? = null): String {
+    fun getLocalIpAddress(@Suppress("UNUSED_PARAMETER") context: Context? = null): String {
         val now = System.currentTimeMillis()
         val cached = cachedLocalIp
         if (cached != null && now < cachedLocalIpExpiryMs) {
@@ -396,7 +403,7 @@ object P2PMessageRelay {
     @Volatile
     private var lastAnnouncedTransportState: TransportAnnounceState? = null
 
-    private suspend fun refreshAnnouncementNow(context: Context): Boolean {
+    private fun refreshAnnouncementNow(context: Context): Boolean {
         val prefs = P2PPreferences.prefs(context)
         val username = prefs.getString("username_profile", "").orEmpty()
         val bridge = getBridge(context)
@@ -582,7 +589,6 @@ object P2PMessageRelay {
     private fun publishPeerOnline(
         peerName: String,
         transport: String?,
-        endpoint: String = "",
     ) {
         val version = peerPresenceVersions.advance(peerName)
         serviceScope.launch(Dispatchers.Main) {
@@ -732,9 +738,9 @@ object P2PMessageRelay {
         fun onFileProgress(sender: String, msgId: String, bytesTransferred: Long, totalBytes: Long, speedKbps: Double) {}
     }
 
-    internal val messageListeners = java.util.concurrent.CopyOnWriteArrayList<MessageListener>()
+    internal val messageListeners = CopyOnWriteArrayList<MessageListener>()
     private val activeChatPeer = AtomicReference<String?>(null)
-    private val activeChatPeerCounts = java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.atomic.AtomicInteger>()
+    private val activeChatPeerCounts = ConcurrentHashMap<String, AtomicInteger>()
 
     var activeChatPeerName: String?
         get() = activeChatPeer.get() ?: activeChatPeerCounts.keys.firstOrNull()
@@ -756,7 +762,7 @@ object P2PMessageRelay {
     fun enterActiveChat(peerName: String): AutoCloseable {
         incrementActiveChatPeer(peerName)
         activeChatPeer.set(peerName)
-        val closed = java.util.concurrent.atomic.AtomicBoolean(false)
+        val closed = AtomicBoolean(false)
         return AutoCloseable {
             if (closed.compareAndSet(false, true)) {
                 decrementActiveChatPeer(peerName)
@@ -777,7 +783,7 @@ object P2PMessageRelay {
 
     private fun incrementActiveChatPeer(peerName: String) {
         if (peerName.isBlank()) return
-        activeChatPeerCounts.computeIfAbsent(peerName) { java.util.concurrent.atomic.AtomicInteger(0) }.incrementAndGet()
+        activeChatPeerCounts.computeIfAbsent(peerName) { AtomicInteger(0) }.incrementAndGet()
     }
 
     private fun decrementActiveChatPeer(peerName: String) {
@@ -785,25 +791,6 @@ object P2PMessageRelay {
         val count = activeChatPeerCounts[peerName]?.decrementAndGet() ?: 0
         if (count <= 0) {
             activeChatPeerCounts.remove(peerName)
-        }
-    }
-
-    /**
-     * Legacy: Clears [activeChatPeerName] only when it still equals [peerName] and no active sessions remain.
-     * Prefer [enterActiveChat] for all new usages — it handles reference counting automatically.
-     * This variant is safe to call even without a prior [enterActiveChat] (it will not corrupt refcounts).
-     */
-    fun clearActiveChatPeerName(peerName: String) {
-        // Only decrement if there is actually a positive count to avoid underflow.
-        val existingCount = activeChatPeerCounts[peerName]?.get() ?: 0
-        if (existingCount > 0) {
-            decrementActiveChatPeer(peerName)
-        }
-        if (activeChatPeerCounts.isEmpty()) {
-            activeChatPeer.compareAndSet(peerName, null)
-        } else {
-            val remaining = activeChatPeerCounts.keys.firstOrNull { it != peerName } ?: activeChatPeerCounts.keys.firstOrNull()
-            activeChatPeer.set(remaining)
         }
     }
 
@@ -881,7 +868,6 @@ object P2PMessageRelay {
         val fingerprint = getBridge(context).getLocalFingerprint()
         if (username.isBlank() || fingerprint.length < 40) return
         val discovery = localPeerDiscovery ?: LocalPeerDiscovery(context) { _, discoveryToken, endpoint ->
-            val currentPrefs = P2PPreferences.prefs(context)
             val knownPeer = P2PPreferences.findPeerByDiscoveryToken(context, discoveryToken)
             if (knownPeer != null) {
                 val (authenticatedName, peerFingerprint) = knownPeer
@@ -911,7 +897,7 @@ object P2PMessageRelay {
     )
 
     private val incomingPersistenceQueue = Channel<IncomingPersistenceTask>(Channel.UNLIMITED)
-    private val incomingBatchProcessorStarted = java.util.concurrent.atomic.AtomicBoolean(false)
+    private val incomingBatchProcessorStarted = AtomicBoolean(false)
 
     private fun ensureIncomingBatchProcessorStarted() {
         if (incomingBatchProcessorStarted.compareAndSet(false, true)) {
@@ -942,7 +928,7 @@ object P2PMessageRelay {
                         }
                         processIncomingPersistenceBatch(batch)
                     } catch (e: Exception) {
-                        if (e is kotlinx.coroutines.CancellationException) throw e
+                        if (e is CancellationException) throw e
                         SafeLog.e(TAG, "Error processing incoming persistence batch", e)
                     }
                 }
@@ -976,7 +962,7 @@ object P2PMessageRelay {
                     val messages = senderTasks.map { it.message }
                     saveMessages(context, sender, messages)
                 } catch (e: Exception) {
-                    if (e is kotlinx.coroutines.CancellationException) throw e
+                    if (e is CancellationException) throw e
                     log(context, "Failed to persist incoming message batch: ${e.message}", "ERROR", e)
                 }
             }
@@ -1118,20 +1104,16 @@ object P2PMessageRelay {
                 if (currentFp != null) {
                     keys.add(currentFp)
                 }
-                val editor = sharedPrefs.edit()
-                var anyChanged = false
-                for (k in keys) {
-                    if (k.isNotEmpty()) {
-                        val currentVal = sharedPrefs.getString("peer_about_me_$k", null)
-                        if (currentVal != cleanAboutMe) {
-                            editor.putString("peer_about_me_$k", cleanAboutMe)
-                            db.savePeerAboutMe(k, cleanAboutMe)
-                            anyChanged = true
+                sharedPrefs.edit {
+                    for (k in keys) {
+                        if (k.isNotEmpty()) {
+                            val currentVal = sharedPrefs.getString("peer_about_me_$k", null)
+                            if (currentVal != cleanAboutMe) {
+                                putString("peer_about_me_$k", cleanAboutMe)
+                                db.savePeerAboutMe(k, cleanAboutMe)
+                            }
                         }
                     }
-                }
-                if (anyChanged) {
-                    editor.apply()
                 }
             }
         }
@@ -1143,7 +1125,7 @@ object P2PMessageRelay {
             if (isPlaceholderPeerName(targetKey) || targetKey == currentFp) {
                 log(context, "Migrating placeholder/fingerprint peer $targetKey to received nickname: $cleanNickname")
                 if (currentFp != null) {
-                    sharedPrefs.edit().putString("peer_fingerprint_$cleanNickname", currentFp).apply()
+                    sharedPrefs.edit { putString("peer_fingerprint_$cleanNickname", currentFp) }
                 }
                 renamePeer(context, targetKey, cleanNickname)
             }
@@ -1256,7 +1238,7 @@ object P2PMessageRelay {
                 }
             }
         } catch (e: Exception) {
-            if (e is kotlinx.coroutines.CancellationException) throw e
+            if (e is CancellationException) throw e
             SafeLog.w(TAG, "Failed cleaning dangling chat states during nickname adoption", e)
         }
     }
@@ -1345,7 +1327,7 @@ object P2PMessageRelay {
         try {
             migrateHistory(context, fromName, toName, movedAboutMe)
         } catch (e: Exception) {
-            if (e is kotlinx.coroutines.CancellationException) throw e
+            if (e is CancellationException) throw e
             log(context, "Failed to migrate chat history between peer aliases", "ERROR", e)
         }
     }
@@ -1400,7 +1382,7 @@ object P2PMessageRelay {
                         !isPlaceholderPeerName(it)
                     }
                     if (byEp != null) {
-                        P2PPreferences.prefs(context).edit().putString("peer_fingerprint_$byEp", fingerprint).apply()
+                        P2PPreferences.prefs(context).edit { putString("peer_fingerprint_$byEp", fingerprint) }
                         byEp
                     } else null
                 } else null
@@ -1486,7 +1468,7 @@ object P2PMessageRelay {
         // High-frequency DEBUG events (e.g. packet progress, frame pings) are kept in logcat only.
         if (level != "DEBUG") {
             try {
-                val timestamp = checkNotNull(logTimestampFormatter.get()).format(Date())
+                val timestamp = logTimestampFormatter.get()?.format(Date()).orEmpty()
                 AppLog.append(context, "$timestamp [KOTLIN_$level] $TAG: $fullMsg\n")
             } catch (e: Exception) {
                 SafeLog.e(TAG, "Failed to append diagnostic log", e)
@@ -1504,11 +1486,8 @@ object P2PMessageRelay {
             isRunning = true
             admission
         }
-        val listenerVersion = startup.version
-        try {
-            startAdmittedServer(context, listenerVersion)
-        } finally {
-            startup.close()
+        startup.use {
+            startAdmittedServer(context, it.version)
         }
     }
 
@@ -1522,7 +1501,7 @@ object P2PMessageRelay {
         val dbChats = try {
             db.getAllChatPeerNames()
         } catch (error: Exception) {
-            if (error is kotlinx.coroutines.CancellationException) throw error
+            if (error is CancellationException) throw error
             emptySet()
         }
         val persistedChats = ActiveChatStore.mergeIfUnchanged(persistedPrefs, restoreRevision, dbChats)
@@ -1576,7 +1555,7 @@ object P2PMessageRelay {
             startLocalDiscovery(appContext, port)
             
             // Register incoming message callback
-            bridge.registerMessageListener(guardedMessageListener(listenerVersion, object : com.example.twopchat.bridge.BridgeMessageListener {
+            bridge.registerMessageListener(guardedMessageListener(listenerVersion, object : BridgeMessageListener {
                 override fun onFileProgress(sender: String, messageId: String, bytesTransferred: Long, totalBytes: Long, speedKbps: Double) {
                     val resolved = if (isRawFingerprint(sender)) {
                         P2PPreferences.findPeerNameByFingerprint(appContext, sender) ?: sender
@@ -1645,7 +1624,7 @@ object P2PMessageRelay {
                     try {
                         val trimmed = text.trim()
                         if (trimmed.startsWith("{")) {
-                            val json = org.json.JSONObject(trimmed)
+                            val json = JSONObject(trimmed)
                             val payloadNickname = json.optString("nickname").ifEmpty { json.optString("sender").ifEmpty { json.optString("sender_name") } }
                             if (payloadNickname.isNotBlank() && isValidNickname(payloadNickname)) {
                                 if (resolvedSender == sender || isPlaceholderPeerName(resolvedSender) || isRawFingerprint(resolvedSender)) {
@@ -1662,7 +1641,7 @@ object P2PMessageRelay {
                             when (json.optString("type")) {
                                 // Reliability/liveness control frames are consumed by the
                                 // session layer. They must never become visible chat rows.
-                                "heartbeat", "ping", "pong" -> return
+                                "heartbeat" -> return
                                 "profile_request" -> {
                                     val requester = payloadNickname.ifBlank { resolvedSender }
                                     log(appContext, "Received profile request from $requester, replying with full profile", "INFO", null)
@@ -1684,7 +1663,7 @@ object P2PMessageRelay {
                                     val rawOnion = json.optString("onion_address").trim()
                                     val onionPort = json.optInt("listen_port", if (json.has("listener_port")) json.optInt("listener_port") else 50001)
                                     if (rawOnion.isNotEmpty() && rawOnion.contains(".onion", ignoreCase = true)) {
-                                        val formatted = com.example.twopchat.ui.main.formatInviteEndpoint(rawOnion, onionPort)
+                                        val formatted = formatInviteEndpoint(rawOnion, onionPort)
                                             ?: if (rawOnion.contains(":")) rawOnion else "$rawOnion:$onionPort"
                                         P2PPreferences.setPeerOnionAddress(appContext, effectiveName, formatted)
                                         ChatDatabaseHelper.getInstance(appContext).savePeerOnionAddress(
@@ -1717,7 +1696,7 @@ object P2PMessageRelay {
                                     }
                                     val time = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
                                     val rxMsg = Message(
-                                        id = if (msgId.isNotEmpty()) msgId else UUID.randomUUID().toString(),
+                                        id = msgId.ifEmpty { UUID.randomUUID().toString() },
                                         text = body,
                                         isMe = false,
                                         timestamp = time,
@@ -1746,7 +1725,7 @@ object P2PMessageRelay {
                                         json.optString("preview_base64"),
                                     )
                                     val caption = json.optString("caption").ifBlank { json.optString("emoji") }.ifBlank { json.optString("text") }.trim()
-                                    val displayMsg = if (caption.isNotBlank()) caption else VoiceMessageSupport.displayMessage(attachmentType, fileName)
+                                    val displayMsg = caption.ifBlank { VoiceMessageSupport.displayMessage(attachmentType, fileName) }
                                     val offerMessage = Message(
                                         id = messageId,
                                         text = displayMsg,
@@ -1781,7 +1760,7 @@ object P2PMessageRelay {
                                         appContext,
                                         resolvedSender,
                                         offerMessage,
-                                        notificationText = com.example.twopchat.data.Localizations.tr(
+                                        notificationText = Localizations.tr(
                                             P2PPreferences.getAppLanguage(appContext),
                                             ru = "Началось получение файла: %s",
                                             en = "Receiving file: %s",
@@ -1866,19 +1845,19 @@ object P2PMessageRelay {
                                     val effectiveName = nickname ?: resolvedSender
                                     val discCode = json.optString("discovery_code").takeIf { it.isNotBlank() }
                                     if (discCode != null) {
-                                        val editor = sharedPrefs.edit()
-                                        editor.putString("discovery_code_$effectiveName", discCode)
-                                        val baseEff = effectiveName.substringBefore("#").trim()
-                                        if (baseEff.isNotEmpty()) editor.putString("discovery_code_$baseEff", discCode)
-                                        if (sender.isNotBlank()) {
-                                            editor.putString("discovery_code_$sender", discCode)
-                                            val baseSender = sender.substringBefore("#").trim()
-                                            if (baseSender.isNotEmpty()) editor.putString("discovery_code_$baseSender", discCode)
+                                        sharedPrefs.edit {
+                                            putString("discovery_code_$effectiveName", discCode)
+                                            val baseEff = effectiveName.substringBefore("#").trim()
+                                            if (baseEff.isNotEmpty()) putString("discovery_code_$baseEff", discCode)
+                                            if (sender.isNotBlank()) {
+                                                putString("discovery_code_$sender", discCode)
+                                                val baseSender = sender.substringBefore("#").trim()
+                                                if (baseSender.isNotEmpty()) putString("discovery_code_$baseSender", discCode)
+                                            }
+                                            if (fingerprint != null) {
+                                                putString("discovery_code_$fingerprint", discCode)
+                                            }
                                         }
-                                        if (fingerprint != null) {
-                                            editor.putString("discovery_code_$fingerprint", discCode)
-                                        }
-                                        editor.apply()
                                     }
                                     if (fingerprint != null && nickname != null) {
                                         if (!P2PPreferences.publishPeerIdentityIfExpected(appContext, nickname, fingerprint)) return
@@ -1889,18 +1868,18 @@ object P2PMessageRelay {
                                     val b64 = json.optString("avatar_base64")
                                     // Avatars are control-plane thumbnails, not file transfers. Bound their
                                     // encoded size and decoded dimensions before allocating a full bitmap.
-                                    if (b64.isNotEmpty() && b64.length <= 2_000_000) {
+                                    if (b64.length in 1..2_000_000) {
                                         try {
-                                            val bytes = android.util.Base64.decode(b64, android.util.Base64.DEFAULT)
-                                            val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                                            android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+                                            val bytes = Base64.decode(b64, Base64.DEFAULT)
+                                            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                                            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
                                             if (bounds.outWidth in 1..4096 && bounds.outHeight in 1..4096 &&
                                                 bounds.outWidth.toLong() * bounds.outHeight.toLong() <= 16_000_000L) {
                                                 var sample = 1
                                                 while (bounds.outWidth / sample > 1024 || bounds.outHeight / sample > 1024) sample *= 2
-                                                val bitmap = android.graphics.BitmapFactory.decodeByteArray(
+                                                val bitmap = BitmapFactory.decodeByteArray(
                                                     bytes, 0, bytes.size,
-                                                    android.graphics.BitmapFactory.Options().apply { inSampleSize = sample }
+                                                    BitmapFactory.Options().apply { inSampleSize = sample }
                                                 )
                                                 if (bitmap != null) {
                                                     serviceScope.launch(Dispatchers.Main) {
@@ -1936,7 +1915,7 @@ object P2PMessageRelay {
                                 "onion_address_share", "onion_address_update" -> {
                                     val rawOnion = json.optString("onion_address").trim()
                                     val port = json.optInt("listener_port", json.optInt("port", listenerPort(appContext)))
-                                    val formattedOnion = com.example.twopchat.ui.main.formatInviteEndpoint(rawOnion, port)
+                                    val formattedOnion = formatInviteEndpoint(rawOnion, port)
                                     val fp = json.optString("fingerprint").trim()
                                     val sig = json.optString("signature").trim()
                                     val timestamp = json.optLong("timestamp", 0L)
@@ -1977,7 +1956,7 @@ object P2PMessageRelay {
                                     val b64 = json.optString("wallpaper_data", "")
                                     val dimming = json.optInt("dimming", 30)
                                     val isBlur = json.optBoolean("is_blur", false)
-                                    if (b64.isNotBlank() && b64.length <= 6_000_000) {
+                                    if (b64.length in 1..6_000_000 && b64.isNotBlank()) {
                                         try {
                                             val bytes = Base64.decode(b64, Base64.DEFAULT)
                                             val dir = File(appContext.filesDir, "direct_wallpapers").also { it.mkdirs() }
@@ -2015,7 +1994,7 @@ object P2PMessageRelay {
                                             }
 
                                             val lang = P2PPreferences.getAppLanguage(appContext)
-                                            val wallpaperSetText = com.example.twopchat.data.Localizations.tr(
+                                            val wallpaperSetText = Localizations.tr(
                                                 lang,
                                                 ru = "Собеседник установил(а) новые обои для этого чата",
                                                 en = "Your peer set a new wallpaper for this chat",
@@ -2054,7 +2033,7 @@ object P2PMessageRelay {
                                             }
 
                                             val lang = P2PPreferences.getAppLanguage(appContext)
-                                            val wallpaperRemovedText = com.example.twopchat.data.Localizations.tr(
+                                            val wallpaperRemovedText = Localizations.tr(
                                                 lang,
                                                 ru = "Собеседник удалил(а) обои для этого чата",
                                                 en = "Your peer removed the wallpaper for this chat",
@@ -2119,41 +2098,38 @@ object P2PMessageRelay {
                                         } else {
                                             nextPinnedMessageStateVersion(currentVersion, "legacy:$sender")
                                         }
-                                        var stateHandled = true
                                         if (shouldApplyPinnedMessageState(currentVersion, incomingVersion)) {
                                             val storedText = ChatDatabaseHelper.getInstance(appContext)
                                                 .findMessageForReaction(sender, msgId, "")
                                                 ?.text
                                                 ?: text
-                                            prefs.edit()
-                                                .putString(P2PPreferences.pinnedMessageId(sender), msgId)
-                                                .putString(
+                                            prefs.edit {
+                                                putString(P2PPreferences.pinnedMessageId(sender), msgId)
+                                                putString(
                                                     P2PPreferences.pinnedMessageText(sender),
                                                     SecureStorage.encrypt(storedText),
                                                 )
-                                                .putString(
+                                                putString(
                                                     P2PPreferences.pinnedMessageSender(sender),
                                                     if (isFromSender) sender else "You",
                                                 )
-                                                .putString(P2PPreferences.pinnedBy(sender), sender)
-                                                .putLong(
+                                                putString(P2PPreferences.pinnedBy(sender), sender)
+                                                putLong(
                                                     P2PPreferences.pinnedStateVersion(sender),
                                                     incomingVersion.counter,
                                                 )
-                                                .putString(
+                                                putString(
                                                     P2PPreferences.pinnedStateActor(sender),
                                                     incomingVersion.actor,
                                                 )
-                                                .apply()
+                                            }
                                             runOnMain {
                                                 messageListeners.forEach {
                                                     it.onMessagePinned(sender, msgId, storedText, isFromSender)
                                                 }
                                             }
                                         }
-                                        if (stateHandled) {
-                                            sendPinnedStateAck(appContext, sender, json.optString("control_id"))
-                                        }
+                                        sendPinnedStateAck(appContext, sender, json.optString("control_id"))
                                     }
                                     return
                                 }
@@ -2171,29 +2147,26 @@ object P2PMessageRelay {
                                     } else {
                                         nextPinnedMessageStateVersion(currentVersion, "legacy:$sender")
                                     }
-                                    var stateHandled = true
                                     if (shouldApplyPinnedMessageState(currentVersion, incomingVersion)) {
-                                        prefs.edit()
-                                            .remove(P2PPreferences.pinnedMessageId(sender))
-                                            .remove(P2PPreferences.pinnedMessageText(sender))
-                                            .remove(P2PPreferences.pinnedMessageSender(sender))
-                                            .remove(P2PPreferences.pinnedBy(sender))
-                                            .putLong(
+                                        prefs.edit {
+                                            remove(P2PPreferences.pinnedMessageId(sender))
+                                            remove(P2PPreferences.pinnedMessageText(sender))
+                                            remove(P2PPreferences.pinnedMessageSender(sender))
+                                            remove(P2PPreferences.pinnedBy(sender))
+                                            putLong(
                                                 P2PPreferences.pinnedStateVersion(sender),
                                                 incomingVersion.counter,
                                             )
-                                            .putString(
+                                            putString(
                                                 P2PPreferences.pinnedStateActor(sender),
                                                 incomingVersion.actor,
                                             )
-                                            .apply()
+                                        }
                                         runOnMain {
                                             messageListeners.forEach { it.onMessageUnpinned(sender) }
                                         }
                                     }
-                                    if (stateHandled) {
-                                        sendPinnedStateAck(appContext, sender, json.optString("control_id"))
-                                    }
+                                    sendPinnedStateAck(appContext, sender, json.optString("control_id"))
                                     return
                                 }
                                 "typing_state" -> {
@@ -2248,12 +2221,12 @@ object P2PMessageRelay {
                                         if (prefs.getString(P2PPreferences.pinnedMessageId(resolvedSender), null) == msgId ||
                                             prefs.getString(P2PPreferences.pinnedMessageId(sender), null) == msgId
                                         ) {
-                                            prefs.edit()
-                                                .putString(
+                                            prefs.edit {
+                                                putString(
                                                     P2PPreferences.pinnedMessageText(resolvedSender),
                                                     SecureStorage.encrypt(text),
                                                 )
-                                                .apply()
+                                            }
                                         }
                                         serviceScope.launch(Dispatchers.Main) {
                                             messageListeners.forEach {
@@ -2287,16 +2260,16 @@ object P2PMessageRelay {
                                         if (prefs.getString(P2PPreferences.pinnedMessageId(resolvedSender), null) == msgId ||
                                             prefs.getString(P2PPreferences.pinnedMessageId(sender), null) == msgId
                                         ) {
-                                            prefs.edit()
-                                                .remove(P2PPreferences.pinnedMessageId(resolvedSender))
-                                                .remove(P2PPreferences.pinnedMessageText(resolvedSender))
-                                                .remove(P2PPreferences.pinnedMessageSender(resolvedSender))
-                                                .remove(P2PPreferences.pinnedBy(resolvedSender))
-                                                .remove(P2PPreferences.pinnedMessageId(sender))
-                                                .remove(P2PPreferences.pinnedMessageText(sender))
-                                                .remove(P2PPreferences.pinnedMessageSender(sender))
-                                                .remove(P2PPreferences.pinnedBy(sender))
-                                                .apply()
+                                            prefs.edit {
+                                                remove(P2PPreferences.pinnedMessageId(resolvedSender))
+                                                remove(P2PPreferences.pinnedMessageText(resolvedSender))
+                                                remove(P2PPreferences.pinnedMessageSender(resolvedSender))
+                                                remove(P2PPreferences.pinnedBy(resolvedSender))
+                                                remove(P2PPreferences.pinnedMessageId(sender))
+                                                remove(P2PPreferences.pinnedMessageText(sender))
+                                                remove(P2PPreferences.pinnedMessageSender(sender))
+                                                remove(P2PPreferences.pinnedBy(sender))
+                                            }
                                         }
                                         serviceScope.launch(Dispatchers.Main) {
                                             messageListeners.forEach {
@@ -2383,7 +2356,7 @@ object P2PMessageRelay {
                                 "forwarding_state" -> {
                                     val enabled = json.optBoolean("enabled", false)
                                     val sp = P2PPreferences.prefs(appContext)
-                                    sp.edit().putBoolean("restrict_forwarding_$resolvedSender", enabled).apply()
+                                    sp.edit { putBoolean("restrict_forwarding_$resolvedSender", enabled) }
                                     serviceScope.launch(Dispatchers.Main) {
                                         messageListeners.forEach { it.onForwardingStateChanged(resolvedSender, enabled) }
                                     }
@@ -2430,9 +2403,9 @@ object P2PMessageRelay {
                                          if (!P2PPreferences.publishPeerIdentityIfExpected(appContext, nickname, sender)) return
                                         getBridge(appContext).updatePeerNameMapping(sender, nickname)
                                     }
-                                    val time = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date())
+                                    val time = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
                                     val rxMsg = Message(
-                                        id = if (msgId.isNotEmpty()) msgId else UUID.randomUUID().toString(),
+                                        id = msgId.ifEmpty { UUID.randomUUID().toString() },
                                         text = msgText,
                                         isMe = false,
                                         timestamp = time,
@@ -2457,9 +2430,9 @@ object P2PMessageRelay {
                                          if (!P2PPreferences.publishPeerIdentityIfExpected(appContext, nickname, sender)) return
                                         getBridge(appContext).updatePeerNameMapping(sender, nickname)
                                     }
-                                    val time = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date())
+                                    val time = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
                                     val rxMsg = Message(
-                                        id = if (msgId.isNotEmpty()) msgId else UUID.randomUUID().toString(),
+                                        id = msgId.ifEmpty { UUID.randomUUID().toString() },
                                         text = replyText,
                                         isMe = false,
                                         timestamp = time,
@@ -2524,7 +2497,7 @@ object P2PMessageRelay {
                                 }
                                 val albumComplete = albumUris.take(totalParts).all { it.isNotBlank() }
                                 val appLang = runCatching { P2PPreferences.getAppLanguage(appContext) }.getOrDefault("English")
-                                val defaultTitle = com.example.twopchat.data.Localizations.tr(
+                                val defaultTitle = Localizations.tr(
                                     appLang,
                                     ru = "Альбом (${incomingAttachment.albumCount})",
                                     en = "Sent an album (${incomingAttachment.albumCount})",
@@ -2541,10 +2514,10 @@ object P2PMessageRelay {
                                         ?: defaultTitle,
                                     isMe = false,
                                     timestamp = existingAlbum?.timestamp
-                                        ?: java.text.SimpleDateFormat(
+                                        ?: SimpleDateFormat(
                                             "HH:mm",
-                                            java.util.Locale.getDefault(),
-                                        ).format(java.util.Date()),
+                                            Locale.getDefault(),
+                                        ).format(Date()),
                                     attachmentType = "ALBUM",
                                     attachmentUri = albumUris.firstOrNull { it.isNotBlank() } ?: albumUris.firstOrNull(),
                                     attachmentName = "Album",
@@ -2564,7 +2537,7 @@ object P2PMessageRelay {
                                 id = incomingAttachment.messageId.ifBlank { UUID.randomUUID().toString() },
                                 text = incomingAttachment.displayMessage,
                                 isMe = false,
-                                timestamp = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date()),
+                                timestamp = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date()),
                                 attachmentType = incomingAttachment.attachmentType,
                                 attachmentUri = incomingAttachment.attachmentUri,
                                 attachmentName = incomingAttachment.attachmentName,
@@ -2575,7 +2548,7 @@ object P2PMessageRelay {
                                 id = UUID.randomUUID().toString(),
                                 text = text,
                                 isMe = false,
-                                timestamp = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date()),
+                                timestamp = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date()),
                                 status = "SENT"
                             )
                         }
@@ -2636,7 +2609,7 @@ object P2PMessageRelay {
                             val onionMatch = Regex("""([a-z2-7]{56}\.onion(?::\d+)?)""", RegexOption.IGNORE_CASE).find(text)
                             if (onionMatch != null) {
                                 val onionAddr = onionMatch.value.trim()
-                                val formatted = com.example.twopchat.ui.main.formatInviteEndpoint(onionAddr, listenerPort(appContext))
+                                val formatted = formatInviteEndpoint(onionAddr, listenerPort(appContext))
                                 if (formatted != null && formatted.contains(".onion", ignoreCase = true)) {
                                     P2PPreferences.setPeerOnionAddress(appContext, resolvedSender, formatted)
                                     P2PPreferences.setPeerOnionAddress(appContext, sender, formatted)
@@ -2667,19 +2640,14 @@ object P2PMessageRelay {
                             },
                         )
                     } catch (ex: Exception) {
-                        if (ex is kotlinx.coroutines.CancellationException) throw ex
+                        if (ex is CancellationException) throw ex
                         log(appContext, "Failed to persist incoming message to SharedPreferences/SQLite", "ERROR", ex)
                     }
                 }
             }))
 
-            bridge.registerSessionListener(guardedSessionListener(listenerVersion, object : com.example.twopchat.bridge.BridgeSessionListener {
+            bridge.registerSessionListener(guardedSessionListener(listenerVersion, object : BridgeSessionListener {
                 override fun onSessionEstablished(peerName: String, fingerprint: String, endpoint: String, transport: String, aboutMe: String): Boolean {
-                    val identityPrefs = P2PPreferences.prefs(appContext)
-                    val activeChats = identityPrefs.getStringSet("active_chats", emptySet())
-                        ?.filterNot { it == "Saved Messages" || isPlaceholderPeerName(it) }
-                        .orEmpty()
-
                     val resolvedPeerName = canonicalPeerName(appContext, peerName, fingerprint, endpoint)
                     val canonicalTransport = canonicalConnectionTransport(transport, endpoint)
                     if (isPlaceholderPeerName(resolvedPeerName)) {
@@ -2714,14 +2682,13 @@ object P2PMessageRelay {
                     publishPeerOnline(
                         peerName = resolvedPeerName,
                         transport = canonicalTransport,
-                        endpoint = endpoint,
                     )
 
                     val sharedPrefs = P2PPreferences.prefs(appContext)
                     if (canonicalTransport != null) {
-                        sharedPrefs.edit()
-                            .putString(P2PPreferences.transport(resolvedPeerName), canonicalTransport)
-                            .apply()
+                        sharedPrefs.edit {
+                            putString(P2PPreferences.transport(resolvedPeerName), canonicalTransport)
+                        }
                     }
 
                     // Save to active chats so the UI updates and shows the peer chat screen
@@ -2735,7 +2702,7 @@ object P2PMessageRelay {
                     shareOnionAddress(appContext, resolvedPeerName, endpoint)
                     processOfflineQueue(appContext, resolvedPeerName, endpoint)
                     GroupChatCoordinator.onPeerConnected(appContext, resolvedPeerName)
-                    com.example.twopchat.service.OutboxWorkScheduler.triggerImmediateDrain(appContext)
+                    OutboxWorkScheduler.triggerImmediateDrain(appContext)
                     return true
                 }
 
@@ -2820,10 +2787,10 @@ object P2PMessageRelay {
                         } else ""
 
                         val currentFpHash = fp.takeIf { it.isNotBlank() }?.let {
-                            com.example.twopchat.bridge.discoveryInfoHash(it, it)
+                            discoveryInfoHash(it, it)
                         }
                         val currentCodeHash = discCode.takeIf { it.isNotBlank() }?.let {
-                            com.example.twopchat.bridge.discoveryInfoHash(peerName, it)
+                            discoveryInfoHash(peerName, it)
                         }
 
                         if (infoHash.equals(currentFpHash, ignoreCase = true) ||
@@ -2846,7 +2813,7 @@ object P2PMessageRelay {
                                 log(appContext, "Discovered ${verified.endpoints.size} signed endpoints for $peerName (seq=${verified.seq}) via $source")
                                 for (verifiedEp in verified.endpoints) {
                                     injectLocalDiscoveryCandidate(peerName, fp, verifiedEp)
-                                    rememberAuthenticatedPeerEndpoint(peerName, verifiedEp, appContext, EndpointSource.DISCOVERY, org.json.JSONObject(endpoint).optLong("expires_at", 0))
+                                    rememberAuthenticatedPeerEndpoint(peerName, verifiedEp, appContext, EndpointSource.DISCOVERY, JSONObject(endpoint).optLong("expires_at", 0))
                                     if (!getBridge(appContext).isPeerOnline(peerName, fp)) {
                                         getBridge(appContext).reconnectPeerSessionInBackground(peerName, verifiedEp, fp)
                                     }
@@ -2914,7 +2881,7 @@ object P2PMessageRelay {
                 isRunning = false
             }
             maintenanceCoordinator.stop()
-            if (e is kotlinx.coroutines.CancellationException) throw e
+            if (e is CancellationException) throw e
             log(appContext, "Error starting Native Go P2P Relays", "ERROR", e)
         }
     }
@@ -3023,7 +2990,7 @@ object P2PMessageRelay {
                                     val aspectRatio = bitmap.width.toFloat() / bitmap.height.toFloat()
                                     val width = if (aspectRatio > 1) maxDimension else (maxDimension * aspectRatio).toInt()
                                     val height = if (aspectRatio > 1) (maxDimension / aspectRatio).toInt() else maxDimension
-                                    Bitmap.createScaledBitmap(bitmap, width, height, true)
+                                    bitmap.scale(width, height)
                                 } else {
                                     bitmap
                                 }
@@ -3087,7 +3054,7 @@ object P2PMessageRelay {
                     log(context, "Profile send status: $success")
                 }
             } catch (e: Exception) {
-                if (e is kotlinx.coroutines.CancellationException) throw e
+                if (e is CancellationException) throw e
                 log(context, "Failed to share profile with a peer", "ERROR", e)
             } finally {
                 scaledBitmap?.takeIf { it !== sourceBitmap && !it.isRecycled }?.recycle()
@@ -3188,7 +3155,7 @@ object P2PMessageRelay {
                     ).orEmpty()
                     getBridge(appContext).sendP2pMessage(peerName, resolvedEndpoint, payload, expectedFingerprint)
                 } catch (e: Exception) {
-                    if (e is kotlinx.coroutines.CancellationException) throw e
+                    if (e is CancellationException) throw e
                     log(appContext, "Failed to send onion address update to $peerName: ${e.message}", "ERROR")
                 }
             }
@@ -3253,7 +3220,7 @@ object P2PMessageRelay {
                 if (success) lastOnionShareAt[shareKey] = System.currentTimeMillis()
                 log(context, "Onion address share status: $success")
             } catch (e: Exception) {
-                if (e is kotlinx.coroutines.CancellationException) throw e
+                if (e is CancellationException) throw e
                 log(context, "Failed to share onion address with peer", "ERROR", e)
             } finally {
                 onionSharesInFlight.remove(shareKey)
@@ -3279,7 +3246,7 @@ object P2PMessageRelay {
             val onionMatch = Regex("""([a-z2-7]{56}\.onion(?::\d+)?)""", RegexOption.IGNORE_CASE).find(text)
             if (onionMatch != null) {
                 val onionAddr = onionMatch.value.trim()
-                val formatted = com.example.twopchat.ui.main.formatInviteEndpoint(onionAddr, listenerPort(context))
+                val formatted = formatInviteEndpoint(onionAddr, listenerPort(context))
                 if (formatted != null && formatted.contains(".onion", ignoreCase = true) && P2PPreferences.getPeerOnionAddress(context, peerName) == null) {
                     P2PPreferences.setPeerOnionAddress(context, peerName, formatted)
                     val fingerprint = P2PPreferences.prefs(context)
@@ -3311,7 +3278,7 @@ object P2PMessageRelay {
                         val aspectRatio = wallpaperBitmap.width.toFloat() / wallpaperBitmap.height.toFloat()
                         val width = if (aspectRatio > 1) maxDimension else (maxDimension * aspectRatio).toInt()
                         val height = if (aspectRatio > 1) (maxDimension / aspectRatio).toInt() else maxDimension
-                        Bitmap.createScaledBitmap(wallpaperBitmap, width, height, true)
+                        wallpaperBitmap.scale(width, height)
                     } else {
                         wallpaperBitmap
                     }
@@ -3331,7 +3298,7 @@ object P2PMessageRelay {
                 outboundMessenger.sendControlMessage(context, peerName, payload)
                 log(context, "Sent direct_wallpaper_update to $peerName")
             } catch (e: Exception) {
-                if (e is kotlinx.coroutines.CancellationException) throw e
+                if (e is CancellationException) throw e
                 log(context, "Failed to send direct_wallpaper_update to $peerName: ${e.message}", "ERROR", e)
             }
         }
@@ -3434,7 +3401,7 @@ object P2PMessageRelay {
             peerTypingStates.remove(alias)
             peerConnectionTransports.remove(alias)
             _peerEndpoints.remove(alias)
-            com.example.twopchat.ui.chat.state.ChatHistoryCache.remove(alias)
+            ChatHistoryCache.remove(alias)
         }
 
         // Clear messages database, pending controls, and peer table for this peer and all aliases
@@ -3574,7 +3541,7 @@ object P2PMessageRelay {
 
                     val fileCaption = if (idx == 0) caption else ""
                     val fileTransferId = "${albumId}_$idx"
-                    val deferred = kotlinx.coroutines.CompletableDeferred<Boolean>()
+                    val deferred = CompletableDeferred<Boolean>()
                     sendFile(
                         context = appContext,
                         peerName = peerName,
@@ -3588,7 +3555,7 @@ object P2PMessageRelay {
                     ) { success ->
                         deferred.complete(success)
                     }
-                    val transferOk = kotlinx.coroutines.withTimeoutOrNull(5 * 60 * 1000L) {
+                    val transferOk = withTimeoutOrNull(5 * 60 * 1000L) {
                         deferred.await()
                     } ?: false
 
@@ -3606,7 +3573,7 @@ object P2PMessageRelay {
                         try {
                             db.updateMessageStatus(albumId, "PENDING")
                         } catch (e: Exception) {
-                            if (e is kotlinx.coroutines.CancellationException) throw e
+                            if (e is CancellationException) throw e
                             SafeLog.w(TAG, "Failed updating album status to PENDING in database", e)
                         }
                         runOnMain { onAlbumStatusChanged("PENDING") }
@@ -3618,7 +3585,7 @@ object P2PMessageRelay {
                     try {
                         db.updateMessageStatus(albumId, "SENT")
                     } catch (e: Exception) {
-                        if (e is kotlinx.coroutines.CancellationException) throw e
+                        if (e is CancellationException) throw e
                         SafeLog.w(TAG, "Failed updating album status to SENT in database", e)
                     }
                     runOnMain { onAlbumStatusChanged("SENT") }
@@ -3712,8 +3679,8 @@ object P2PMessageRelay {
     }
 
     fun sendForwardingState(context: Context, peerName: String, enabled: Boolean) {
-        val endpoint = peerEndpoints[peerName] ?: return
-        val payload = org.json.JSONObject().apply {
+        if (peerName !in peerEndpoints) return
+        val payload = JSONObject().apply {
             put("type", "forwarding_state")
             put("enabled", enabled)
         }
@@ -3734,7 +3701,7 @@ object P2PMessageRelay {
             return
         }
         val fingerprint = P2PPreferences.getPeerFingerprint(context, peerName).orEmpty()
-        val session = com.example.twopchat.protocol.ProtocolVersionManager.refresh(fingerprint)
+        val session = ProtocolVersionManager.refresh(fingerprint)
         val supported = runCatching {
             GroupWireProtocol.requiredCapabilities(payload).all { session?.supports(it) == true }
         }.getOrDefault(false)
