@@ -163,7 +163,12 @@ internal class RelayMaintenanceCoordinator(
                     val isTorConnecting = com.example.twopchat.tor.TorManager.isTorConnecting.value
                     for (peerName in chats) {
                         if (P2PPreferences.isPeerIdentityChangePending(appContext, peerName)) continue
-                        val fingerprint = prefs.getString("peer_fingerprint_$peerName", "").orEmpty()
+                        // Prefer the canonical lookup because older chats can have a
+                        // fingerprint only in the encrypted DB. If none exists, a
+                        // saved chat may still retry its own persisted legacy route;
+                        // this is deliberately an unpinned bootstrap and does not
+                        // promote either route or identity before authentication.
+                        val fingerprint = P2PPreferences.getPeerFingerprint(appContext, peerName).orEmpty()
                         // Renew Go's 30-minute lookup lease even when no dialable
                         // address remains. Registration respects tracker intervals.
                         if (canonicalEndpointFingerprint(fingerprint) != null &&
@@ -176,8 +181,18 @@ internal class RelayMaintenanceCoordinator(
                             reconnectDelayMs.remove(peerName)
                             continue
                         }
-                        val endpoint = PeerEndpointStore.candidates(appContext, peerName, fingerprint, includeReserve = false, now = now)
-                            .joinToString(",").takeIf { it.isNotBlank() } ?: continue
+                        val endpoint = if (canonicalEndpointFingerprint(fingerprint) != null) {
+                            PeerEndpointStore.candidates(appContext, peerName, fingerprint, includeReserve = false, now = now)
+                                .joinToString(",")
+                        } else {
+                            // Only `chats` (saved contacts) reach this branch. Do not
+                            // use in-memory discovery candidates: those are not a
+                            // proof of nickname ownership and must require a tap.
+                            legacyUnpinnedReconnectCandidates(
+                                fingerprint,
+                                P2PPreferences.getEffectiveEndpointsForPeer(appContext, peerName),
+                            ).joinToString(",")
+                        }.takeIf { it.isNotBlank() } ?: continue
 
                         // If Tor is actively bootstrapping or restarting and only onion route exists, defer to prevent SOCKS race
                         if (isTorConnecting && endpoint.contains(".onion", ignoreCase = true) && !endpoint.split(",").any { !it.contains(".onion", ignoreCase = true) }) {

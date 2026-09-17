@@ -17,6 +17,27 @@ internal fun canonicalEndpointFingerprint(value: String?): String? {
         ?.lowercase(Locale.ROOT)
 }
 
+/**
+ * A legacy chat can predate fingerprint persistence while still have a locally
+ * stored route.  It may be retried only as an unpinned bootstrap: the route is
+ * normalized and bounded here, while identity remains untrusted until the
+ * authenticated handshake/profile flow binds a fingerprint.
+ *
+ * Callers must limit this to an existing saved chat.  Discovery/tracker routes
+ * must never enter this fallback.
+ */
+internal fun legacyUnpinnedReconnectCandidates(
+    persistedFingerprint: String?,
+    persistedEndpoints: String,
+): List<String> {
+    if (canonicalEndpointFingerprint(persistedFingerprint) != null) return emptyList()
+    return persistedEndpoints
+        .split(',')
+        .mapNotNull(EndpointRetention::normalize)
+        .distinct()
+        .take(EndpointRetention.MAX_PER_PEER)
+}
+
 internal data class EndpointRecord(
     val fingerprint: String,
     val endpoint: String,

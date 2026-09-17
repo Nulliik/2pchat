@@ -153,4 +153,13 @@ class EndpointRetentionTest {
         assertNull(com.example.twopchat.relay.canonicalEndpointFingerprint("a".repeat(44)))
         assertNull(com.example.twopchat.relay.canonicalEndpointFingerprint("a".repeat(42) + "B="))
     }
+
+    @Test fun `saved legacy route can bootstrap only while no fingerprint is pinned`() {
+        assertEquals(
+            listOf("8.8.8.8:50001", requireNotNull(EndpointRetention.normalize("[200:db8::1]:50001"))),
+            legacyUnpinnedReconnectCandidates("", "8.8.8.8,8.8.8.8:50001,[200:db8::1]:50001"),
+        )
+        assertTrue(legacyUnpinnedReconnectCandidates("a".repeat(64), "8.8.8.8:50001").isEmpty())
+        assertTrue(legacyUnpinnedReconnectCandidates("", "127.0.0.1:50001").isEmpty())
+    }
 }
