@@ -348,6 +348,7 @@ class YggdrasilUserSpaceStack(
 
                 var offset = 0
                 while (offset < read) {
+                    awaitSendWindow(session)
                     val segLen = minOf(read - offset, MAX_TCP_PAYLOAD)
                     val chunk = buf.copyOfRange(offset, offset + segLen)
                     val currentSeq = session.seqSent.getAndAdd(segLen.toLong())
@@ -588,6 +589,7 @@ class YggdrasilUserSpaceStack(
 
                 var offset = 0
                 while (offset < read) {
+                    awaitSendWindow(session)
                     val segLen = minOf(read - offset, MAX_TCP_PAYLOAD)
                     val chunk = buf.copyOfRange(offset, offset + segLen)
                     val currentSeq = session.seqSent.getAndAdd(segLen.toLong())
@@ -688,6 +690,22 @@ class YggdrasilUserSpaceStack(
         val pending = PendingSegment(dstIp.copyOf(), srcPort, dstPort, sequence, payload.copyOf())
         session.unacknowledged[sequence] = pending
         sendTcpPacket(localIp, pending.dstIp, srcPort, dstPort, sequence, session.seqRecv.get(), 0x18, pending.payload)
+    }
+
+    /**
+     * Yggdrasil delivers IP packets, but has no TCP congestion control for
+     * this user-space shim. A bounded flight window prevents a profile/avatar
+     * burst from overrunning the real mesh path before ACKs can return.
+     */
+    private fun awaitSendWindow(session: StreamSession) {
+        while (running.get() && !session.isClosed.get() && session.unacknowledged.size >= MAX_IN_FLIGHT_SEGMENTS) {
+            try {
+                Thread.sleep(SEND_WINDOW_WAIT_MS)
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+                return
+            }
+        }
     }
 
     private fun acknowledgeOutbound(session: StreamSession, acknowledgedSequence: Long) {
@@ -809,6 +827,8 @@ class YggdrasilUserSpaceStack(
          * were observed to black-hole on real mesh paths.
          */
         const val MAX_TCP_PAYLOAD = 900
+        private const val MAX_IN_FLIGHT_SEGMENTS = 4
+        private const val SEND_WINDOW_WAIT_MS = 5L
         private const val LOCAL_CORE_CONNECT_TIMEOUT_MS = 5_000
         private const val RETRANSMIT_SCAN_MS = 150L
         private const val RETRANSMIT_AFTER_MS = 450L
