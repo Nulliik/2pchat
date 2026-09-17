@@ -74,6 +74,10 @@ class YggdrasilUserSpaceStack(
     private var socksServer: ServerSocket? = null
     private var udpRelaySocket: DatagramSocket? = null
     private var workerThreads = mutableListOf<Thread>()
+    // TCP data, ACKs and retransmissions originate on different threads. The
+    // gomobile buffer boundary does not provide a packet-atomic multi-writer
+    // contract, so serialize every outbound mesh packet here.
+    private val yggSendLock = Any()
 
     private val localIp: ByteArray by lazy {
         try {
@@ -665,7 +669,9 @@ class YggdrasilUserSpaceStack(
         raw[40 + 17] = (csum and 0xFF).toByte()
 
         try {
-            ygg.sendBuffer(raw, totalLen.toLong())
+            synchronized(yggSendLock) {
+                ygg.sendBuffer(raw, totalLen.toLong())
+            }
         } catch (e: Exception) {
             SafeLog.w(TAG, "Failed sending TCP packet buffer to mesh: ${e.javaClass.simpleName}")
         }
@@ -724,7 +730,11 @@ class YggdrasilUserSpaceStack(
         }.array()
         val csum = computeTransportChecksum(raw, 40, udpLen, srcIp, dstIp, 17)
         raw[46] = ((csum ushr 8) and 0xFF).toByte(); raw[47] = (csum and 0xFF).toByte()
-        runCatching { ygg.sendBuffer(raw, raw.size.toLong()) }
+        runCatching {
+            synchronized(yggSendLock) {
+                ygg.sendBuffer(raw, raw.size.toLong())
+            }
+        }
     }
 
     private fun computeTcpChecksum(
