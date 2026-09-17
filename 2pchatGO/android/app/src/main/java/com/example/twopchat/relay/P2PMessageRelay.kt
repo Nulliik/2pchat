@@ -2861,7 +2861,7 @@ object P2PMessageRelay {
 
     /** Stop every account-bound transport before identity files are erased. */
     fun shutdownForAccountDeletion(context: Context): Boolean {
-        if ((callbackDepth.get() ?: 0) != 0 || Thread.holdsLock(ActiveChatStore.persistenceLock)) return false
+        if (accountRuntime.isEntered() || Thread.holdsLock(ActiveChatStore.persistenceLock)) return false
         val appContext = context.applicationContext
         closeAccountAdmission()
         synchronized(startStopLock) {
