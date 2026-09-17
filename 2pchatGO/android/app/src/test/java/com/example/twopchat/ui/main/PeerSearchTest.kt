@@ -8,6 +8,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import com.example.twopchat.relay.orderedDirectEndpoints
 import com.example.twopchat.relay.selectExternalIpv4
+import com.example.twopchat.relay.P2PMessageRelay
 
 class PeerSearchTest {
     @Test
@@ -135,7 +136,7 @@ class PeerSearchTest {
     }
 
     @Test
-    fun `QR only connects to a live verified tracker result`() {
+    fun `tracker candidates never claim identity verification`() {
         val live = mapOf<String, Any>("verified" to "True", "ownership_verified" to "False")
         val owned = mapOf<String, Any>("verified" to "True", "ownership_verified" to "True")
         val stale = mapOf<String, Any>("verified" to "False", "ownership_verified" to "True")
@@ -144,6 +145,28 @@ class PeerSearchTest {
         assertFalse(isConnectablePeerSearchResult(live, expectedFingerprint = "expected"))
         assertTrue(isConnectablePeerSearchResult(owned, expectedFingerprint = "expected"))
         assertFalse(isConnectablePeerSearchResult(stale, expectedFingerprint = null))
+    }
+
+    @Test
+    fun `unverified tracker candidate is not connectable as an authenticated identity`() {
+        val trackerCandidate = mapOf<String, Any>(
+            "verified" to "False",
+            "ownership_verified" to "False",
+            "endpoints" to listOf("[200:db8::1]:50001"),
+        )
+
+        assertFalse(isConnectablePeerSearchResult(trackerCandidate, expectedFingerprint = null))
+        assertFalse(isConnectablePeerSearchResult(trackerCandidate, expectedFingerprint = "expected"))
+    }
+
+    @Test
+    fun `unnamed session profile bootstrap requires a live fingerprint session`() {
+        val fingerprint = "a".repeat(64)
+
+        assertTrue(P2PMessageRelay.shouldBootstrapUnnamedSessionProfile(fingerprint, fingerprint, true))
+        assertFalse(P2PMessageRelay.shouldBootstrapUnnamedSessionProfile(fingerprint, fingerprint, false))
+        assertFalse(P2PMessageRelay.shouldBootstrapUnnamedSessionProfile(fingerprint, "not-a-fingerprint", true))
+        assertFalse(P2PMessageRelay.shouldBootstrapUnnamedSessionProfile("Alice", fingerprint, true))
     }
 
     @Test

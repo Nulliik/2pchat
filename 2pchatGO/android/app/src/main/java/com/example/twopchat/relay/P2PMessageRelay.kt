@@ -172,6 +172,37 @@ object P2PMessageRelay {
     private val localPeerCandidates =
         ConcurrentHashMap<String, CopyOnWriteArrayList<LocalPeerCandidate>>()
 
+    /**
+     * A tracker result is only a reachability hint. Before a chat exists we keep
+     * it in this short-lived lookup table so the search UI can show it, without
+     * promoting an unauthenticated address into persistent endpoint storage.
+     */
+    private data class PendingDiscoveryLookup(val peerName: String, val expiresAtMs: Long)
+    private val pendingDiscoveryLookups = ConcurrentHashMap<String, PendingDiscoveryLookup>()
+    private const val PENDING_DISCOVERY_LOOKUP_TTL_MS = 15_000L
+
+    internal fun registerPendingDiscoveryLookup(infoHashes: Collection<String>, peerName: String) {
+        val normalizedName = peerName.trim()
+        if (normalizedName.isEmpty() || normalizedName.length > 160) return
+        val expiresAt = System.currentTimeMillis() + PENDING_DISCOVERY_LOOKUP_TTL_MS
+        infoHashes.forEach { rawHash ->
+            val hash = rawHash.trim().lowercase(Locale.ROOT)
+            if (hash.matches(Regex("[0-9a-f]{40}"))) {
+                pendingDiscoveryLookups[hash] = PendingDiscoveryLookup(normalizedName, expiresAt)
+            }
+        }
+    }
+
+    private fun pendingLookupPeerName(infoHash: String): String? {
+        val hash = infoHash.trim().lowercase(Locale.ROOT)
+        val lookup = pendingDiscoveryLookups[hash] ?: return null
+        if (System.currentTimeMillis() >= lookup.expiresAtMs) {
+            pendingDiscoveryLookups.remove(hash, lookup)
+            return null
+        }
+        return lookup.peerName
+    }
+
     private fun localPeerCandidateKey(peerName: String): String =
         peerName.trim().lowercase(Locale.ROOT)
 
@@ -234,6 +265,17 @@ object P2PMessageRelay {
                 }
             }
         }
+        return true
+    }
+
+    /** Keeps an unverified search endpoint in memory only for the initial handshake. */
+    internal fun rememberBootstrapPeerEndpoint(peerName: String, endpoints: String): Boolean {
+        val normalizedName = peerName.trim()
+        val endpointParts = endpoints.split(',').map(String::trim).filter(String::isNotEmpty)
+        if (normalizedName.isEmpty() || normalizedName.length > 160 ||
+            endpointParts.isEmpty() || !isValidPeerEndpointList(endpoints)) return false
+        val joined = endpointParts.distinct().take(EndpointRetention.MAX_PER_PEER).joinToString(",")
+        _peerEndpoints[normalizedName] = joined
         return true
     }
 
@@ -1023,6 +1065,22 @@ object P2PMessageRelay {
             trimmed.startsWith("[") ||
             trimmed.matches(Regex("""^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(:\d+)?$"""))
     }
+
+    /**
+     * An inbound authenticated session does not initially carry a nickname.  Its
+     * fingerprint is nevertheless a usable routing key for the profile exchange.
+     * Do not schedule that exchange if the JNI callback lost a race with the
+     * disconnect callback: profile data must only be sent over a currently-live
+     * ratchet session.
+     */
+    internal fun shouldBootstrapUnnamedSessionProfile(
+        resolvedPeerName: String,
+        fingerprint: String,
+        sessionStillOnline: Boolean,
+    ): Boolean =
+        isPlaceholderPeerName(resolvedPeerName) &&
+            isRawFingerprint(fingerprint) &&
+            sessionStillOnline
 
     fun handlePeerNicknameReceived(
         context: Context,
@@ -2625,8 +2683,22 @@ object P2PMessageRelay {
                     val resolvedPeerName = canonicalPeerName(appContext, peerName, fingerprint, endpoint)
                     val canonicalTransport = canonicalConnectionTransport(transport, endpoint)
                     if (isPlaceholderPeerName(resolvedPeerName)) {
+                        if (!shouldBootstrapUnnamedSessionProfile(
+                                resolvedPeerName = resolvedPeerName,
+                                fingerprint = fingerprint,
+                                sessionStillOnline = getBridge(appContext).isPeerOnline(fingerprint, fingerprint),
+                            )
+                        ) {
+                            log(appContext, "Ignoring stale unnamed-session callback after close")
+                            return true
+                        }
+                        // The peer has authenticated cryptographically but has not yet sent
+                        // its nickname.  Send the profile envelope addressed by its fingerprint;
+                        // it contains the identity information needed to bind the nickname.
+                        // This used to send only the optional onion-address control message,
+                        // leaving anonymous peers unable to complete profile discovery.
                         log(appContext, "Authenticated unnamed session awaiting identity information - sending self profile")
-                        shareOnionAddress(appContext, fingerprint, endpoint)
+                        shareAvatar(appContext, fingerprint, endpoint, force = true)
                         return true
                     }
                     if (!P2PPreferences.publishPeerIdentityIfExpected(appContext, resolvedPeerName, fingerprint, endpoint, aboutMe)) {
@@ -2720,6 +2792,16 @@ object P2PMessageRelay {
                         return
                     }
                     val discoveryMode = P2PPreferences.getDiscoverySecurityMode(appContext)
+                    // Searches made before a contact exists must be able to
+                    // collect candidates. Do not persist or dial them here:
+                    // a tracker cannot prove ownership of a nickname or key.
+                    // Strict discovery never accepts raw tracker addresses.
+                    if (discoveryMode != P2PPreferences.DiscoverySecurityMode.STRICT) {
+                        pendingLookupPeerName(infoHash)?.let { pendingPeerName ->
+                            injectLocalDiscoveryCandidate(pendingPeerName, "", endpoint)
+                            log(appContext, "Collected unverified discovery endpoint for $pendingPeerName via $source")
+                        }
+                    }
                     val activeChats = prefs.getStringSet("active_chats", emptySet()) ?: emptySet()
 
                     for (peerName in activeChats) {

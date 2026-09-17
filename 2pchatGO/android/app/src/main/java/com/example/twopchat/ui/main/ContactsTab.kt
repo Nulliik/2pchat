@@ -72,6 +72,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.material.icons.Icons
@@ -800,23 +801,38 @@ fun ContactsTab(
                                     sharedCode = request.sharedCode,
                                 )
                             }
+                            // The native discovery service announces asynchronously. Wait
+                            // for its bounded, memory-only candidate cache instead of
+                            // rendering an optimistic result before any tracker reply.
+                            val discoveredEndpoints: List<String> = withTimeoutOrNull<List<String>>(8_000L) {
+                                var candidates = P2PMessageRelay.localDiscoveryEndpoints(request.expectedLiveName)
+                                while (candidates.isEmpty()) {
+                                    kotlinx.coroutines.delay(250L)
+                                    candidates = P2PMessageRelay.localDiscoveryEndpoints(request.expectedLiveName)
+                                }
+                                candidates
+                            } ?: emptyList()
+                            val enrichedResults = results.map { peer ->
+                                if (discoveredEndpoints.isEmpty()) peer
+                                else peer + ("endpoints" to discoveredEndpoints)
+                            }
 
                             withContext(Dispatchers.Main) {
                                 if (generation != searchGeneration) return@withContext
-                            val list = results.map { contactFromPeerSearchResult(it, appLanguage) }
+                            val list = enrichedResults.map { contactFromPeerSearchResult(it, appLanguage) }
                             val verifiedCount = list.count { it.verified }
                             val unverifiedCount = list.size - verifiedCount
 
                             searchResults = list
                             searchSummary = if (appLanguage == "Русский") {
                                 if (verifiedCount == 0 && unverifiedCount > 0) {
-                                    "Найдено: $unverifiedCount без live-подтверждения. Добавление заблокировано."
+                                    "Найдено: $unverifiedCount endpoint(ов); проверка identity будет выполнена при подключении."
                                 } else {
                                     "Поиск завершён: подтверждено $verifiedCount, найдено без live-подтверждения $unverifiedCount"
                                 }
                             } else {
                                 if (verifiedCount == 0 && unverifiedCount > 0) {
-                                    "Found: $unverifiedCount without live verification. Connection blocked."
+                                    "Found: $unverifiedCount endpoint(s); identity will be verified during connection."
                                 } else {
                                     "Search complete: $verifiedCount verified, $unverifiedCount found without live verification"
                                 }
@@ -1672,10 +1688,14 @@ fun ContactsTab(
                                     if (searchCode.isNotBlank()) {
                                         sharedPrefs.edit().putString("discovery_code_$peerKey", searchCode).apply()
                                     }
-                                    // The live search already authenticated this fingerprint.
                                     if (contact.endpoints.isNotBlank() && contact.endpoints != "Unknown") {
-                                        sharedPrefs.edit().putString("last_endpoint_$peerKey", contact.endpoints).apply()
-                                        if (contact.endpoints.contains(".onion")) {
+                                        // A name#code lookup has only a tracker candidate.
+                                        // Persistent endpoint retention is reserved for an
+                                        // authenticated route update.
+                                        if (contact.ownershipVerified) {
+                                            sharedPrefs.edit().putString("last_endpoint_$peerKey", contact.endpoints).apply()
+                                        }
+                                        if (contact.ownershipVerified && contact.endpoints.contains(".onion")) {
                                             P2PPreferences.setPeerOnionAddress(context, peerKey, contact.endpoints)
                                             val cEps = contact.endpoints.split(",").map { it.trim() }.filter { it.isNotEmpty() }
                                             if (cEps.isNotEmpty() && cEps.all { it.contains(".onion", ignoreCase = true) }) {
@@ -1691,7 +1711,11 @@ fun ContactsTab(
                                         if (contact.fingerprint.isNotBlank()) {
                                             P2PBridgeProvider.get(context).updatePeerNameMapping(contact.fingerprint, peerKey)
                                         }
-                                        com.example.twopchat.relay.P2PMessageRelay.rememberAuthenticatedPeerEndpoint(peerKey, contact.endpoints)
+                                        if (contact.ownershipVerified) {
+                                            com.example.twopchat.relay.P2PMessageRelay.rememberAuthenticatedPeerEndpoint(peerKey, contact.endpoints)
+                                        } else {
+                                            com.example.twopchat.relay.P2PMessageRelay.rememberBootstrapPeerEndpoint(peerKey, contact.endpoints)
+                                        }
                                         com.example.twopchat.relay.P2PMessageRelay.triggerImmediateReconnect(context)
                                     }
                                     onItemClick(Chat(peerKey))

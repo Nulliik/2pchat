@@ -1032,6 +1032,7 @@ class NativeBridgeImpl(
 
         val appContext = com.example.twopchat.yggdrasil.GlobalApplication.appContext
         val trackers = usableTrackerUrls(appContext)
+        P2PMessageRelay.registerPendingDiscoveryLookup(infoHashes, resultName)
         NativeBridge.startDiscovery(trackers = trackers, infoHashes = infoHashes.toList(),
             listenPort = P2PMessageRelay.listenerPort(appContext))
 
@@ -1049,8 +1050,12 @@ class NativeBridgeImpl(
                 "nickname" to resultName,
                 "fingerprint" to resultFP,
                 "endpoints" to knownCandidates.distinct(),
-                "verified" to true,
-                "ownership_verified" to (!sharedCode.isNullOrBlank() || !expectedFingerprint.isNullOrBlank()),
+                // A tracker associates an info-hash with a socket address, not
+                // a cryptographic identity. Only an authenticated session (or
+                // an invite carrying the expected fingerprint) can establish this.
+                "verified" to false,
+                "ownership_verified" to false,
+                "verification_reason" to "tracker endpoint discovered; identity verification pending",
                 "shared_code" to (sharedCode ?: ""),
             )
         )

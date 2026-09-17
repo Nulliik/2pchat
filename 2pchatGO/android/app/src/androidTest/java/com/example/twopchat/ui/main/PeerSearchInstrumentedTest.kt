@@ -85,11 +85,11 @@ class PeerSearchInstrumentedTest {
     }
 
     @Test
-    fun trackerResultMustPassLiveVerification() {
-        assertTrue(isConnectablePeerSearchResult(
-            mapOf("verified" to "True", "ownership_verified" to "False"),
-            expectedFingerprint = null,
-        ))
+    fun trackerCandidateWithoutAuthenticatedSessionIsNotVerified() {
+        assertNull(
+            listOf(mapOf<String, Any>("verified" to "False", "ownership_verified" to "False"))
+                .firstOrNull { isConnectablePeerSearchResult(it, expectedFingerprint = null) },
+        )
         assertNull(
             listOf(mapOf<String, Any>("verified" to "False"))
                 .firstOrNull { isConnectablePeerSearchResult(it, expectedFingerprint = null) },
