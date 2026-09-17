@@ -26,7 +26,9 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
         null, 
         DATABASE_VERSION, 
         0, 
-        net.zetetic.database.DefaultDatabaseErrorHandler(), 
+        net.zetetic.database.DatabaseErrorHandler {
+            throw android.database.sqlite.SQLiteException("Chat database corruption; preserving database")
+        },
         null, 
         false
     ) {
@@ -166,22 +168,16 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
                     if (!isMigrationChecked) {
                         val pass = SecureStorage.getOrGenerateDbPassphrase(context)
                         val dbFile = context.getDatabasePath(DATABASE_NAME)
-                        checkAndMigrateDatabase(context, dbFile, pass)
-                        isMigrationChecked = true
+                        try {
+                            checkAndMigrateDatabase(context, dbFile, pass)
+                            isMigrationChecked = true
+                        } finally {
+                            SecurityUtils.zeroize(pass)
+                        }
                     }
                 }
             }
-            return try {
-                writableDatabase
-            } catch (e: android.database.sqlite.SQLiteException) {
-                if (e.message?.contains("file is not a database") == true || e.message?.contains("code 26") == true) {
-                    SafeLog.e(TAG, "Chat database unreadable (key mismatch or corrupted). Recreating.", e)
-                    context.deleteDatabase(DATABASE_NAME)
-                    writableDatabase
-                } else {
-                    throw e
-                }
-            }
+            return writableDatabase
         }
 
     private val safeReadableDatabase: SQLiteDatabase
@@ -191,22 +187,16 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
                     if (!isMigrationChecked) {
                         val pass = SecureStorage.getOrGenerateDbPassphrase(context)
                         val dbFile = context.getDatabasePath(DATABASE_NAME)
-                        checkAndMigrateDatabase(context, dbFile, pass)
-                        isMigrationChecked = true
+                        try {
+                            checkAndMigrateDatabase(context, dbFile, pass)
+                            isMigrationChecked = true
+                        } finally {
+                            SecurityUtils.zeroize(pass)
+                        }
                     }
                 }
             }
-            return try {
-                readableDatabase
-            } catch (e: android.database.sqlite.SQLiteException) {
-                if (e.message?.contains("file is not a database") == true || e.message?.contains("code 26") == true) {
-                    SafeLog.e(TAG, "Chat database unreadable (key mismatch or corrupted). Recreating.", e)
-                    context.deleteDatabase(DATABASE_NAME)
-                    readableDatabase
-                } else {
-                    throw e
-                }
-            }
+            return readableDatabase
         }
 
     override fun onConfigure(db: SQLiteDatabase) {
@@ -288,20 +278,12 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
         if (oldVersion < 2) {
-            try {
-                db.execSQL("ALTER TABLE $TABLE_MESSAGES ADD COLUMN $KEY_REPLY_TO_ID TEXT")
-                db.execSQL("ALTER TABLE $TABLE_MESSAGES ADD COLUMN $KEY_REPLY_TO_TEXT TEXT")
-                db.execSQL("ALTER TABLE $TABLE_MESSAGES ADD COLUMN $KEY_REPLY_TO_NAME TEXT")
-            } catch (e: Exception) {
-                SafeLog.e(TAG, "Legacy reply-column migration failed", e)
-            }
+            addColumnIfMissing(db, TABLE_MESSAGES, KEY_REPLY_TO_ID, "TEXT")
+            addColumnIfMissing(db, TABLE_MESSAGES, KEY_REPLY_TO_TEXT, "TEXT")
+            addColumnIfMissing(db, TABLE_MESSAGES, KEY_REPLY_TO_NAME, "TEXT")
         }
         if (oldVersion < 3) {
-            try {
-                db.execSQL("ALTER TABLE $TABLE_MESSAGES ADD COLUMN $KEY_STATUS TEXT")
-            } catch (e: Exception) {
-                SafeLog.e(TAG, "Legacy status-column migration failed", e)
-            }
+            addColumnIfMissing(db, TABLE_MESSAGES, KEY_STATUS, "TEXT")
         }
         if (oldVersion < 4) {
             try {
@@ -356,11 +338,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
             }
         }
         if (oldVersion < 6) {
-            try {
-                db.execSQL("ALTER TABLE $TABLE_MESSAGES ADD COLUMN $KEY_REACTIONS TEXT")
-            } catch (e: Exception) {
-                SafeLog.e(TAG, "Legacy reactions-column migration failed", e)
-            }
+            addColumnIfMissing(db, TABLE_MESSAGES, KEY_REACTIONS, "TEXT")
         }
         if (oldVersion < 7) {
             db.execSQL("ALTER TABLE $TABLE_MESSAGES ADD COLUMN $KEY_SENT_AT_MS INTEGER NOT NULL DEFAULT 0")
@@ -379,56 +357,26 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
             db.execSQL("ALTER TABLE $TABLE_MESSAGES ADD COLUMN $KEY_ALBUM_URIS TEXT")
             db.execSQL("ALTER TABLE $TABLE_MESSAGES ADD COLUMN $KEY_ALBUM_TYPES TEXT")
         }
-        if (oldVersion < 11) {
-            createPeersTable(db)
-        }
+        createPeersTable(db)
         if (oldVersion < 12) {
             createCompositeIndices(db)
         }
         if (oldVersion < 13) {
-            try {
-                db.execSQL("ALTER TABLE $TABLE_PEERS ADD COLUMN $KEY_ABOUT_ME TEXT")
-            } catch (e: android.database.sqlite.SQLiteException) {
-                // intentionally ignored: column KEY_ABOUT_ME may already exist from previous migration
-            } catch (e: Exception) {
-                SafeLog.w(TAG, "Failed adding KEY_ABOUT_ME to $TABLE_PEERS", e)
-            }
+            addColumnIfMissing(db, TABLE_PEERS, KEY_ABOUT_ME, "TEXT")
         }
         if (oldVersion < 14) {
-            try {
-                db.execSQL("ALTER TABLE $TABLE_PEERS ADD COLUMN $KEY_TRANSPORT_POLICY INTEGER NOT NULL DEFAULT 0")
-            } catch (e: android.database.sqlite.SQLiteException) {
-                // intentionally ignored: column KEY_TRANSPORT_POLICY may already exist from previous migration
-            } catch (e: Exception) {
-                SafeLog.w(TAG, "Failed adding KEY_TRANSPORT_POLICY to $TABLE_PEERS", e)
-            }
-            try {
-                db.execSQL(
-                    "UPDATE $TABLE_PEERS SET $KEY_TRANSPORT_POLICY = 2 " +
+            addColumnIfMissing(db, TABLE_PEERS, KEY_TRANSPORT_POLICY, "INTEGER NOT NULL DEFAULT 0")
+            db.execSQL(
+                "UPDATE $TABLE_PEERS SET $KEY_TRANSPORT_POLICY = 2 " +
                     "WHERE $KEY_ONION_ADDRESS IS NOT NULL AND $KEY_ONION_ADDRESS != '' " +
                     "AND ($KEY_LAST_ENDPOINT IS NULL OR $KEY_LAST_ENDPOINT = '' OR $KEY_LAST_ENDPOINT LIKE '%.onion%')"
-                )
-            } catch (e: Exception) {
-                SafeLog.w(TAG, "Failed backfilling transport_policy for onion contacts in $TABLE_PEERS", e)
-            }
+            )
         }
         if (oldVersion < 15) {
-            try {
-                db.execSQL("ALTER TABLE $TABLE_PEERS ADD COLUMN $KEY_PEER_SOURCE TEXT NOT NULL DEFAULT 'DIRECT_INVITE'")
-            } catch (e: android.database.sqlite.SQLiteException) {
-                // intentionally ignored: column KEY_PEER_SOURCE may already exist from previous migration
-            } catch (e: Exception) {
-                SafeLog.w(TAG, "Failed adding KEY_PEER_SOURCE to $TABLE_PEERS", e)
-            }
+            addColumnIfMissing(db, TABLE_PEERS, KEY_PEER_SOURCE, "TEXT NOT NULL DEFAULT 'DIRECT_INVITE'")
         }
         if (oldVersion < 16) {
-            try {
-                db.execSQL("ALTER TABLE $TABLE_PEERS ADD COLUMN $KEY_POLICY_CONFIRMED INTEGER NOT NULL DEFAULT 0")
-            } catch (e: android.database.sqlite.SQLiteException) {
-                // intentionally ignored if column exists
-            } catch (e: Exception) {
-                SafeLog.w(TAG, "Failed adding KEY_POLICY_CONFIRMED to $TABLE_PEERS", e)
-            }
+            addColumnIfMissing(db, TABLE_PEERS, KEY_POLICY_CONFIRMED, "INTEGER NOT NULL DEFAULT 0")
         }
         if (oldVersion < 17) {
             createMediaAccessLogTable(db)
@@ -442,6 +390,16 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
         if (oldVersion < 20) {
             createEndpointTables(db)
         }
+    }
+
+    private fun addColumnIfMissing(db: SQLiteDatabase, table: String, column: String, definition: String) {
+        val columns = db.rawQuery("PRAGMA table_info($table)", null).use { cursor ->
+            buildSet {
+                while (cursor.moveToNext()) add(cursor.getString(cursor.getColumnIndexOrThrow("name")))
+            }
+        }
+        check(columns.isNotEmpty()) { "Missing migration table" }
+        if (column !in columns) db.execSQL("ALTER TABLE $table ADD COLUMN $column $definition")
     }
 
     private fun createEndpointTables(db: SQLiteDatabase) {
@@ -543,7 +501,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
                     if (idx >= 0 && !cursor.isNull(idx)) cursor.getString(idx) else null
                 } else null
             }
-        } catch (_: Exception) { null }
+        } catch (e: Exception) { throw e }
     }
 
     private fun isHigherPriorityStatus(existing: String?, incoming: String?): Boolean {
@@ -628,11 +586,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
 
     private fun safeDec(stringCipher: SecureStorage.StringCipher, value: String?): String? {
         if (value.isNullOrEmpty() || value == "{}" || !SecureStorage.isEncrypted(value)) return value
-        return try {
-            stringCipher.decrypt(value)
-        } catch (_: Exception) {
-            value
-        }
+        return stringCipher.decrypt(value)
     }
 
     private fun safeDecOrNull(
@@ -991,7 +945,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
                 """.trimIndent(),
             )
         } catch (e: Exception) {
-            SafeLog.w(TAG, "Failed creating media_access_log table", e)
+            throw e
         }
     }
 
@@ -1007,7 +961,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
                 """.trimIndent(),
             )
         } catch (e: Exception) {
-            SafeLog.w(TAG, "Failed creating discovery_sequences table", e)
+            throw e
         }
     }
 
@@ -1035,7 +989,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
                 """.trimIndent(),
             )
         } catch (e: Exception) {
-            SafeLog.w(TAG, "Failed creating group succession tables", e)
+            throw e
         }
     }
 
@@ -1059,7 +1013,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
             }
             db.insertWithOnConflict(TABLE_GROUP_SUCCESSION_STATE, null, cv, SQLiteDatabase.CONFLICT_REPLACE)
         } catch (e: Exception) {
-            SafeLog.e(TAG, "saveGroupSuccessionState failed for $groupId", e)
+            throw e
         }
     }
 
@@ -1092,7 +1046,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
                 }
             }
         } catch (e: Exception) {
-            SafeLog.e(TAG, "getGroupSuccessionState failed for $groupId", e)
+            throw e
         }
         return null
     }
@@ -1107,7 +1061,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
             }
             db.insertWithOnConflict(TABLE_REVOKED_SUCCESSION_CERTIFICATES, null, cv, SQLiteDatabase.CONFLICT_REPLACE)
         } catch (e: Exception) {
-            SafeLog.e(TAG, "recordRevokedCertificate failed for $certHash", e)
+            throw e
         }
     }
 
@@ -1124,8 +1078,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
                 return cursor.moveToFirst()
             }
         } catch (e: Exception) {
-            SafeLog.e(TAG, "isSuccessionCertificateRevoked failed for $certHash", e)
-            return false
+            throw e
         }
     }
 
@@ -1143,7 +1096,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
                 }
             }
         } catch (e: Exception) {
-            SafeLog.e(TAG, "getAllRevokedCertificates failed", e)
+            throw e
         }
         return list
     }
@@ -1267,7 +1220,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
                 db.endTransaction()
             }
         } catch (e: Exception) {
-            SafeLog.e(TAG, "Failed to mark messages as read for $peerName", e)
+            throw e
         }
         if (messageIds.isNotEmpty()) {
             com.example.twopchat.data.cache.MessageCache.invalidateAll(messageIds)
@@ -1290,7 +1243,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
             db.delete(TABLE_MESSAGES, "$KEY_ID = ?", arrayOf(id))
             com.example.twopchat.data.cache.MessageCache.invalidate(id)
         } catch (e: Exception) {
-            SafeLog.e(TAG, "Failed to delete message $id", e)
+            throw e
         }
     }
 
@@ -1312,7 +1265,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
             db.update(TABLE_MESSAGES, values, "$KEY_ID = ?", arrayOf(id))
             com.example.twopchat.data.cache.MessageCache.invalidate(id)
         } catch (e: Exception) {
-            SafeLog.e(TAG, "Failed to update status for $id", e)
+            throw e
         }
     }
 
@@ -1346,12 +1299,10 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
                 db.update(TABLE_MESSAGES, values, "$KEY_ID = ?", arrayOf(id))
             }
             db.setTransactionSuccessful()
-            com.example.twopchat.data.cache.MessageCache.invalidateAll(updates.keys)
-        } catch (e: Exception) {
-            SafeLog.e(TAG, "Failed to batch update message statuses", e)
         } finally {
             db.endTransaction()
         }
+        com.example.twopchat.data.cache.MessageCache.invalidateAll(updates.keys)
     }
 
     fun updateMessageReactions(id: String, reactions: Map<String, List<String>>) {
@@ -1363,7 +1314,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
             db.update(TABLE_MESSAGES, values, "$KEY_ID = ?", arrayOf(id))
             com.example.twopchat.data.cache.MessageCache.invalidate(id)
         } catch (e: Exception) {
-            SafeLog.e(TAG, "Failed to update reactions for $id", e)
+            throw e
         }
     }
 
@@ -1414,8 +1365,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
             if (rows > 0) com.example.twopchat.data.cache.MessageCache.invalidate(id)
             return rows > 0
         } catch (e: Exception) {
-            SafeLog.e(TAG, "Failed to update text for $id for peer $peerName", e)
-            return false
+            throw e
         }
     }
 
@@ -1437,8 +1387,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
             if (rows > 0) com.example.twopchat.data.cache.MessageCache.invalidate(id)
             return rows > 0
         } catch (e: Exception) {
-            SafeLog.e(TAG, "Failed to delete message $id for peer $peerName", e)
-            return false
+            throw e
         }
     }
 
@@ -1461,7 +1410,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
             db.update(TABLE_MESSAGES, values, "$KEY_ID = ?", arrayOf(id))
             com.example.twopchat.data.cache.MessageCache.invalidate(id)
         } catch (e: Exception) {
-            SafeLog.e(TAG, "Failed to update text for $id", e)
+            throw e
         }
     }
 
@@ -1499,8 +1448,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
             if (rows > 0) com.example.twopchat.data.cache.MessageCache.invalidate(id)
             return rows > 0
         } catch (e: Exception) {
-            SafeLog.e(TAG, "Failed to direct update text for $id", e)
-            return false
+            throw e
         }
     }
 
@@ -1876,149 +1824,94 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
         return result
     }
 
-    fun getPeerTransportPolicy(peerNameOrFP: String): Int {
-        if (peerNameOrFP.isBlank()) return 0
-        val db = this.safeReadableDatabase
-        return try {
-            db.query(
-                TABLE_PEERS,
-                arrayOf(KEY_TRANSPORT_POLICY),
-                "LOWER($KEY_PEER_NAME) = LOWER(?) OR $KEY_FINGERPRINT = ?",
-                arrayOf(peerNameOrFP.trim(), peerNameOrFP.trim()),
-                null,
-                null,
-                null,
-            ).use { cursor ->
-                if (cursor.moveToFirst()) {
-                    val idx = cursor.getColumnIndex(KEY_TRANSPORT_POLICY)
-                    if (idx != -1 && !cursor.isNull(idx)) cursor.getInt(idx) else 0
-                } else 0
+    private fun <T> readPeerPermission(
+        peerNameOrFP: String,
+        column: String,
+        missing: T,
+        read: (android.database.Cursor) -> T,
+    ): T {
+        if (peerNameOrFP.isBlank()) return missing
+        return safeReadableDatabase.query(
+            TABLE_PEERS,
+            arrayOf(column),
+            "LOWER($KEY_PEER_NAME) = LOWER(?) OR $KEY_FINGERPRINT = ?",
+            arrayOf(peerNameOrFP.trim(), peerNameOrFP.trim()),
+            null, null, null,
+        ).use { cursor ->
+            if (!cursor.moveToFirst()) return@use missing
+            if (cursor.isNull(0)) throw android.database.sqlite.SQLiteException("Missing peer permission value")
+            val value = read(cursor)
+            while (cursor.moveToNext()) {
+                if (cursor.isNull(0) || read(cursor) != value) {
+                    throw android.database.sqlite.SQLiteException("Conflicting peer permission values")
+                }
             }
-        } catch (e: Exception) {
-            SafeLog.w(TAG, "Failed to get transport policy for $peerNameOrFP", e)
-            0
+            value
         }
     }
+
+    private fun writePeerPermissions(peerNameOrFP: String, values: ContentValues) {
+        require(peerNameOrFP.isNotBlank()) { "Peer identifier must not be blank" }
+        val db = safeWritableDatabase
+        db.beginTransaction()
+        try {
+            values.put(KEY_UPDATED_AT_MS, System.currentTimeMillis())
+            val rows = db.update(
+                TABLE_PEERS, values,
+                "LOWER($KEY_PEER_NAME) = LOWER(?) OR $KEY_FINGERPRINT = ?",
+                arrayOf(peerNameOrFP.trim(), peerNameOrFP.trim()),
+            )
+            if (rows == 0) {
+                values.put(KEY_PEER_NAME, peerNameOrFP.trim())
+                db.insertOrThrow(TABLE_PEERS, null, values)
+            }
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
+    }
+
+    fun getPeerTransportPolicy(peerNameOrFP: String): Int =
+        readPeerPermission(peerNameOrFP, KEY_TRANSPORT_POLICY, 0) { cursor ->
+            val policy = cursor.getInt(0)
+            if (policy !in 0..3) throw android.database.sqlite.SQLiteException("Invalid peer transport policy")
+            policy
+        }
 
     fun setPeerTransportPolicy(peerNameOrFP: String, policy: Int) {
-        if (peerNameOrFP.isBlank()) return
-        val db = this.safeWritableDatabase
-        try {
-            val values = ContentValues().apply {
-                put(KEY_TRANSPORT_POLICY, policy)
-                put(KEY_UPDATED_AT_MS, System.currentTimeMillis())
-            }
-            val rows = db.update(
-                TABLE_PEERS,
-                values,
-                "LOWER($KEY_PEER_NAME) = LOWER(?) OR $KEY_FINGERPRINT = ?",
-                arrayOf(peerNameOrFP.trim(), peerNameOrFP.trim())
-            )
-            if (rows == 0) {
-                values.put(KEY_PEER_NAME, peerNameOrFP.trim())
-                db.insertWithOnConflict(TABLE_PEERS, null, values, SQLiteDatabase.CONFLICT_IGNORE)
-            }
-        } catch (e: Exception) {
-            SafeLog.e(TAG, "Failed to set transport policy for $peerNameOrFP", e)
-        }
+        require(policy in 0..3) { "Invalid peer transport policy" }
+        writePeerPermissions(peerNameOrFP, ContentValues().apply { put(KEY_TRANSPORT_POLICY, policy) })
     }
 
-    fun getPeerSource(peerNameOrFP: String): String {
-        if (peerNameOrFP.isBlank()) return "DIRECT_INVITE"
-        val db = this.safeReadableDatabase
-        return try {
-            db.query(
-                TABLE_PEERS,
-                arrayOf(KEY_PEER_SOURCE),
-                "LOWER($KEY_PEER_NAME) = LOWER(?) OR $KEY_FINGERPRINT = ?",
-                arrayOf(peerNameOrFP.trim(), peerNameOrFP.trim()),
-                null,
-                null,
-                null,
-            ).use { cursor ->
-                if (cursor.moveToFirst()) {
-                    val idx = cursor.getColumnIndex(KEY_PEER_SOURCE)
-                    if (idx != -1 && !cursor.isNull(idx)) cursor.getString(idx) else "DIRECT_INVITE"
-                } else "DIRECT_INVITE"
+    fun getPeerSource(peerNameOrFP: String): String =
+        readPeerPermission(peerNameOrFP, KEY_PEER_SOURCE, "DIRECT_INVITE") { cursor ->
+            val source = cursor.getString(0)
+            if (source !in setOf("DIRECT_INVITE", "GROUP_INFERRED")) {
+                throw android.database.sqlite.SQLiteException("Invalid peer source")
             }
-        } catch (e: Exception) {
-            SafeLog.w(TAG, "Failed to get peer source for $peerNameOrFP", e)
-            "DIRECT_INVITE"
+            source
         }
-    }
 
     fun setPeerSource(peerNameOrFP: String, source: String) {
-        if (peerNameOrFP.isBlank()) return
-        val db = this.safeWritableDatabase
-        try {
-            val values = ContentValues().apply {
-                put(KEY_PEER_SOURCE, source)
-                put(KEY_UPDATED_AT_MS, System.currentTimeMillis())
-            }
-            val rows = db.update(
-                TABLE_PEERS,
-                values,
-                "LOWER($KEY_PEER_NAME) = LOWER(?) OR $KEY_FINGERPRINT = ?",
-                arrayOf(peerNameOrFP.trim(), peerNameOrFP.trim())
-            )
-            if (rows == 0) {
-                values.put(KEY_PEER_NAME, peerNameOrFP.trim())
-                db.insertWithOnConflict(TABLE_PEERS, null, values, SQLiteDatabase.CONFLICT_IGNORE)
-            }
-        } catch (e: Exception) {
-            SafeLog.e(TAG, "Failed to set peer source for $peerNameOrFP", e)
-        }
+        require(source in setOf("DIRECT_INVITE", "GROUP_INFERRED")) { "Invalid peer source" }
+        writePeerPermissions(peerNameOrFP, ContentValues().apply { put(KEY_PEER_SOURCE, source) })
     }
 
     fun isPeerGroupInferred(peerNameOrFP: String): Boolean {
         return getPeerSource(peerNameOrFP) == "GROUP_INFERRED"
     }
 
-    fun isPolicyConfirmed(peerNameOrFP: String): Boolean {
-        if (peerNameOrFP.isBlank()) return false
-        val db = this.safeReadableDatabase
-        return try {
-            db.query(
-                TABLE_PEERS,
-                arrayOf(KEY_POLICY_CONFIRMED),
-                "LOWER($KEY_PEER_NAME) = LOWER(?) OR $KEY_FINGERPRINT = ?",
-                arrayOf(peerNameOrFP.trim(), peerNameOrFP.trim()),
-                null,
-                null,
-                null,
-            ).use { cursor ->
-                if (cursor.moveToFirst()) {
-                    val idx = cursor.getColumnIndex(KEY_POLICY_CONFIRMED)
-                    if (idx != -1 && !cursor.isNull(idx)) cursor.getInt(idx) == 1 else false
-                } else false
-            }
-        } catch (e: Exception) {
-            SafeLog.w(TAG, "Failed to get policy_confirmed for $peerNameOrFP", e)
-            false
+    fun isPolicyConfirmed(peerNameOrFP: String): Boolean =
+        readPeerPermission(peerNameOrFP, KEY_POLICY_CONFIRMED, false) { cursor ->
+            val confirmed = cursor.getInt(0)
+            if (confirmed !in 0..1) throw android.database.sqlite.SQLiteException("Invalid policy confirmation")
+            confirmed == 1
         }
-    }
 
     fun setPolicyConfirmed(peerNameOrFP: String, confirmed: Boolean) {
-        if (peerNameOrFP.isBlank()) return
-        val db = this.safeWritableDatabase
-        try {
-            val values = ContentValues().apply {
-                put(KEY_POLICY_CONFIRMED, if (confirmed) 1 else 0)
-                put(KEY_UPDATED_AT_MS, System.currentTimeMillis())
-            }
-            val rows = db.update(
-                TABLE_PEERS,
-                values,
-                "LOWER($KEY_PEER_NAME) = LOWER(?) OR $KEY_FINGERPRINT = ?",
-                arrayOf(peerNameOrFP.trim(), peerNameOrFP.trim())
-            )
-            if (rows == 0) {
-                values.put(KEY_PEER_NAME, peerNameOrFP.trim())
-                db.insertWithOnConflict(TABLE_PEERS, null, values, SQLiteDatabase.CONFLICT_IGNORE)
-            }
-        } catch (e: Exception) {
-            SafeLog.e(TAG, "Failed to set policy_confirmed for $peerNameOrFP", e)
-        }
+        writePeerPermissions(peerNameOrFP, ContentValues().apply {
+            put(KEY_POLICY_CONFIRMED, if (confirmed) 1 else 0)
+        })
     }
 
     fun strictnessRank(policy: Int): Int = when (policy) {
@@ -2037,8 +1930,11 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
         } else {
             groupFloor
         }
-        setPeerTransportPolicy(peerNameOrFP, effective)
-        setPolicyConfirmed(peerNameOrFP, true)
+        require(desiredPolicy in 0..3 && groupFloor in 0..3) { "Invalid peer transport policy" }
+        writePeerPermissions(peerNameOrFP, ContentValues().apply {
+            put(KEY_TRANSPORT_POLICY, effective)
+            put(KEY_POLICY_CONFIRMED, 1)
+        })
         return effective
     }
 
@@ -2148,47 +2044,76 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
                     "ON $TABLE_MESSAGES($KEY_PEER_NAME, $KEY_SENT_AT_MS DESC, $KEY_ID DESC)"
             )
         } catch (e: Exception) {
-            SafeLog.w(TAG, "Failed to create composite message indices", e)
+            throw e
         }
     }
 
-    private fun checkAndMigrateDatabase(context: Context, dbFile: java.io.File, pass: ByteArray) {
-        if (!dbFile.exists() || dbFile.length() < 16) return
-        val isPlaintext = try {
-            java.io.FileInputStream(dbFile).use { input ->
-                val header = ByteArray(16)
-                val read = input.read(header)
-                read == 16 && header.contentEquals("SQLite format 3\u0000".toByteArray(Charsets.US_ASCII))
+    internal fun checkAndMigrateDatabase(
+        context: Context,
+        dbFile: java.io.File,
+        pass: ByteArray,
+        replace: (java.io.File, java.io.File) -> Boolean = { source, target -> source.renameTo(target) },
+        export: (SQLiteDatabase) -> Unit = { source ->
+            source.rawQuery("SELECT sqlcipher_export('encrypted')", null).use { it.moveToFirst() }
+        },
+        verify: (SQLiteDatabase) -> Unit = { migrated ->
+            migrated.rawQuery("PRAGMA integrity_check", null).use { cursor ->
+                check(cursor.moveToFirst() && cursor.getString(0) == "ok" && !cursor.moveToNext()) {
+                    "Encrypted database verification failed"
+                }
             }
-        } catch (_: Exception) {
-            false
+        },
+    ) {
+        if (!dbFile.exists()) return
+        val isPlaintext = java.io.FileInputStream(dbFile).use { input ->
+            val header = ByteArray(16)
+            input.read(header) == 16 && header.contentEquals("SQLite format 3\u0000".toByteArray(Charsets.US_ASCII))
         }
         if (!isPlaintext) return
-        val tempFile = java.io.File(dbFile.parentFile, "$DATABASE_NAME.encrypted.tmp")
-        if (tempFile.exists()) tempFile.delete()
-        var source: SQLiteDatabase? = null
+        val tempFile = java.io.File.createTempFile("$DATABASE_NAME.encrypted.", ".tmp", dbFile.parentFile)
+        var failure: Throwable? = null
         try {
-            val db = SQLiteDatabase.openDatabase(dbFile.absolutePath, null as ByteArray?, null, SQLiteDatabase.OPEN_READWRITE, null)
-            source = db
-            val escPath = tempFile.absolutePath.replace("'", "''")
-            val passHex = pass.joinToString("") { "%02x".format(it) }
-            db.execSQL("ATTACH DATABASE '$escPath' AS encrypted KEY \"x'$passHex'\"")
-            db.execSQL("SELECT sqlcipher_export('encrypted')")
-            db.execSQL("DETACH DATABASE encrypted")
-            db.close()
-            source = null
-            check(dbFile.delete()) { "Could not replace legacy plaintext database" }
-            check(tempFile.renameTo(dbFile)) { "Could not install encrypted database" }
-        } catch (e: Exception) {
-            SafeLog.e(TAG, "Failed to migrate plaintext database", e)
-        } finally {
-            SecurityUtils.zeroize(pass)
-            try {
-                source?.close()
-            } catch (e: Exception) {
-                SafeLog.d(TAG, "Failed closing plaintext database source during migration cleanup: ${e.javaClass.simpleName}")
+            val errorHandler = net.zetetic.database.DatabaseErrorHandler {
+                throw android.database.sqlite.SQLiteException("Migration database corruption; preserving source")
             }
-            if (tempFile.exists()) tempFile.delete()
+            val version = SQLiteDatabase.openDatabase(
+                dbFile.absolutePath, null as ByteArray?, null, SQLiteDatabase.OPEN_READWRITE, errorHandler, null,
+            ).use { source ->
+                source.rawQuery("PRAGMA wal_checkpoint(TRUNCATE)", null).use { cursor ->
+                    check(cursor.moveToFirst() && cursor.getInt(0) == 0) { "Database checkpoint failed" }
+                }
+                source.rawQuery("PRAGMA journal_mode=DELETE", null).use { cursor ->
+                    check(cursor.moveToFirst() && cursor.getString(0).equals("delete", true)) { "Database journal busy" }
+                }
+                val version = source.version
+                check(version > 0) { "Unversioned legacy database requires recovery" }
+                source.execSQL("ATTACH DATABASE ? AS encrypted KEY ?", arrayOf<Any>(tempFile.absolutePath, pass))
+                export(source)
+                source.execSQL("PRAGMA encrypted.user_version = $version")
+                source.execSQL("DETACH DATABASE encrypted")
+                version
+            }
+            SQLiteDatabase.openDatabase(
+                tempFile.absolutePath, pass, null, SQLiteDatabase.OPEN_READONLY, errorHandler, null,
+            ).use { migrated ->
+                check(migrated.version == version) { "Encrypted database version mismatch" }
+                verify(migrated)
+            }
+            java.io.RandomAccessFile(tempFile, "rw").use { it.fd.sync() }
+            check(replace(tempFile, dbFile)) { "Could not install encrypted database; source preserved" }
+        } catch (e: Throwable) {
+            failure = e
+            throw e
+        } finally {
+            val cleanupFailures = listOf("", "-journal", "-wal", "-shm").mapNotNull { suffix ->
+                val artifact = java.io.File(tempFile.path + suffix)
+                if (artifact.exists() && !artifact.delete()) java.io.IOException("Could not remove migration temporary file") else null
+            }
+            if (cleanupFailures.isNotEmpty()) {
+                val primary = failure ?: cleanupFailures.first()
+                cleanupFailures.filter { it !== primary }.forEach(primary::addSuppressed)
+                if (failure == null) throw primary
+            }
         }
     }
 }

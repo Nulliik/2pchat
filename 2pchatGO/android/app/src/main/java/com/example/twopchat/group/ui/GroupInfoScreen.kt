@@ -117,6 +117,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.math.abs
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import androidx.compose.foundation.combinedClickable
@@ -164,6 +165,7 @@ fun GroupInfoScreen(
         if (!isOwner) {
             GroupChatCoordinator.querySuccessionState(state.metadata.groupId)
             runCatching { GroupChatCoordinator.runAntiEntropy() }
+                .onFailure { if (it is CancellationException) throw it }
         }
     }
 

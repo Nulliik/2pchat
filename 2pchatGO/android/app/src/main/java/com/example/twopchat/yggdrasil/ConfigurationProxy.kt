@@ -14,6 +14,39 @@ import com.example.twopchat.security.*
 // Теперь это обычный класс — каждый экземпляр владеет своим файлом/json и не конкурирует с другими.
 class ConfigurationProxy(applicationContext: Context) {
     internal companion object {
+        internal fun readStoredConfig(file: File, decrypt: (String) -> String? = SecureStorage::decrypt): String {
+            val stored = file.readText(Charsets.UTF_8)
+            val plain = if (SecureStorage.isEncrypted(stored)) {
+                checkNotNull(decrypt(stored)) { "Configuration decryption failed" }
+            } else {
+                check(stored.trimStart().startsWith("{")) { "Unrecognized configuration format" }
+                stored
+            }
+            val identity = try {
+                JSONObject(plain).optString("PrivateKey")
+            } catch (e: org.json.JSONException) {
+                throw IllegalStateException("Malformed configuration; preserved on disk", e)
+            }
+            check(identity.isNotBlank()) { "Missing configuration identity" }
+            return plain
+        }
+
+        internal fun persistConfig(
+            file: File,
+            plainText: String,
+            encrypt: (String) -> String = SecureStorage::encrypt,
+            replace: (File, File) -> Boolean = { source, target -> source.renameTo(target) },
+        ) {
+            val encrypted = encrypt(plainText)
+            check(encrypted.startsWith("enc:v1:")) { "Configuration encryption failed" }
+            val temp = File(file.parentFile, "${file.name}.tmp")
+            java.io.FileOutputStream(temp).use { output ->
+                output.write(encrypted.toByteArray(Charsets.UTF_8))
+                output.fd.sync()
+            }
+            check(replace(temp, file)) { "Could not replace configuration; original preserved" }
+        }
+
         private const val PREF_POOL_SEEDED = "yggdrasil_public_pool_seeded_v1"
         private const val PREF_POOL_PRUNED = "yggdrasil_public_pool_pruned_v1"
         private const val MAX_RETAINED_PUBLIC_PEERS = 6
@@ -62,46 +95,15 @@ class ConfigurationProxy(applicationContext: Context) {
 
     @Synchronized
     fun updateJSON(fn: (JSONObject) -> Unit) {
-        json = JSONObject(readConfig())
-        fn(json)
-        val str = json.toString()
-        persist(str)
+        val updated = JSONObject(readConfig())
+        fn(updated)
+        persist(updated.toString())
+        json = updated
     }
 
-    private fun readConfig(): String {
-        return try {
-            if (!file.exists()) {
-                val fresh = String(Mobile.generateConfigJSON(), Charsets.UTF_8)
-                persist(fresh)
-                return fresh
-            }
-            val stored = file.readText(Charsets.UTF_8)
-            val decrypted = SecureStorage.decrypt(stored)
-            if (!decrypted.isNullOrBlank()) {
-                decrypted
-            } else if (stored.trim().startsWith("{")) {
-                persist(stored)
-                stored
-            } else {
-                val fresh = String(Mobile.generateConfigJSON(), Charsets.UTF_8)
-                persist(fresh)
-                fresh
-            }
-        } catch (e: Throwable) {
-            val fresh = String(Mobile.generateConfigJSON(), Charsets.UTF_8)
-            runCatching { persist(fresh) }
-            fresh
-        }
-    }
+    private fun readConfig(): String = readStoredConfig(file)
 
-    private fun persist(plainText: String) {
-        val temp = File(file.parentFile, "${file.name}.tmp")
-        temp.writeText(SecureStorage.encrypt(plainText), Charsets.UTF_8)
-        if (!temp.renameTo(file)) {
-            file.writeText(temp.readText(Charsets.UTF_8), Charsets.UTF_8)
-            temp.delete()
-        }
-    }
+    private fun persist(plainText: String) = persistConfig(file, plainText)
 
     private fun fix() {
         updateJSON { json ->

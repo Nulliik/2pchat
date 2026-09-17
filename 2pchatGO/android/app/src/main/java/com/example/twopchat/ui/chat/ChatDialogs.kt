@@ -830,7 +830,7 @@ fun ChatForwardDialog(
                         com.example.twopchat.data.ChatDatabaseHelper.getInstance(context).saveMessage(chatName, fwdMsg)
                     }
                 }
-                com.example.twopchat.config.P2PPreferences.prefs(context).edit().putString("last_msg_$chatName", com.example.twopchat.security.SecureStorage.encrypt("You: $textToForward")).apply()
+                com.example.twopchat.relay.LastMessagePreviewStore.set(P2PPreferences.prefs(context), chatName, "You: $textToForward")
 
                 if (forwardEndpoint != null && chatName != "Saved Messages") {
                     val attachUri = currentMsg.attachmentUri

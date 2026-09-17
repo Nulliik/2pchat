@@ -28,7 +28,9 @@ import com.example.twopchat.media.AttachmentStorageManager
 import com.example.twopchat.media.StickerSupport
 import com.example.twopchat.relay.P2PMessageRelay
 import com.example.twopchat.ui.chat.AttachmentImageCache
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -117,9 +119,9 @@ fun StorageSettingsPage(
     }
 
     fun refreshStorageSizes() {
-        isCalculating = true
         storageScope.launch {
-            val sizes = runCatching {
+            isCalculating = true
+            val sizes = try {
                 withContext(Dispatchers.IO) {
                     val cacheDir = context.cacheDir
                     val downloadsDir = File(context.filesDir, "config/downloads")
@@ -152,7 +154,13 @@ fun StorageSettingsPage(
                         usage,
                     )
                 }
-            }.getOrNull()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Throwable) {
+                null
+            } finally {
+                isCalculating = false
+            }
             if (sizes != null) {
                 cacheBytes = sizes.cacheBytes
                 receivedStickerBytes = sizes.receivedStickerBytes
@@ -161,7 +169,6 @@ fun StorageSettingsPage(
                 dbBytes = sizes.databaseBytes
                 mediaUsage = sizes.mediaUsage
             }
-            isCalculating = false
         }
     }
 
@@ -323,6 +330,8 @@ fun StorageSettingsPage(
                                     },
                                     Toast.LENGTH_SHORT,
                                 ).show()
+                            } catch (e: CancellationException) {
+                                throw e
                             } catch (e: Exception) {
                                 e.printStackTrace()
                                 Toast.makeText(
@@ -336,7 +345,7 @@ fun StorageSettingsPage(
                                 ).show()
                             } finally {
                                 isClearingMedia = false
-                                refreshStorageSizes()
+                                if (isActive) refreshStorageSizes()
                             }
                         }
                     },
@@ -484,6 +493,8 @@ fun StorageSettingsPage(
                                     tr = "Silindi: $deletedCount"
                                 )
                                 Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+                            } catch (error: CancellationException) {
+                                throw error
                             } catch (error: Exception) {
                                 error.printStackTrace()
                                 Toast.makeText(
@@ -502,7 +513,7 @@ fun StorageSettingsPage(
                                 ).show()
                             } finally {
                                 isClearingMedia = false
-                                refreshStorageSizes()
+                                if (isActive) refreshStorageSizes()
                             }
                         }
                     },

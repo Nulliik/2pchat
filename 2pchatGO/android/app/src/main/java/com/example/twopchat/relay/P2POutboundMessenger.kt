@@ -111,7 +111,10 @@ internal class P2POutboundMessenger(
             persistedEndpoint = P2PPreferences.prefs(context)
                 .getString(P2PPreferences.lastEndpoint(peerName), null),
             onionEndpoint = P2PPreferences.getPeerOnionAddress(context, peerName)
-                ?: try { com.example.twopchat.data.ChatDatabaseHelper.getInstance(context).getPeerOnionAddress(peerName) } catch (_: Throwable) { null },
+                ?: try { com.example.twopchat.data.ChatDatabaseHelper.getInstance(context).getPeerOnionAddress(peerName) } catch (error: Exception) {
+                    if (error is CancellationException) throw error
+                    null
+                },
         ) ?: if (isLive) "" else run {
             val peerKey = normalizePeerKey(peerName)
             val lastFail = lastPeerFailureAt[peerKey] ?: 0L
@@ -383,6 +386,7 @@ internal class P2POutboundMessenger(
             )
             true
         } catch (error: Exception) {
+            if (error is CancellationException) throw error
             log(context, "Failed to queue read receipt", "ERROR", error)
             false
         }
@@ -555,6 +559,7 @@ internal class P2POutboundMessenger(
                                     tempSanitized = ImageSanitizer.sanitizeImageExif(context, file.absolutePath)
                                     tempSanitized ?: file
                                 } catch (e: Exception) {
+                                    if (e is CancellationException) throw e
                                     file
                                 }
                                 val partId = "${message.id}_$index"
@@ -592,6 +597,7 @@ internal class P2POutboundMessenger(
                             tempSanitized = ImageSanitizer.sanitizeImageExif(context, attachmentFile.absolutePath)
                             tempSanitized ?: attachmentFile
                         } catch (e: Exception) {
+                            if (e is CancellationException) throw e
                             attachmentFile
                         }
                         if (tempSanitized != null) {

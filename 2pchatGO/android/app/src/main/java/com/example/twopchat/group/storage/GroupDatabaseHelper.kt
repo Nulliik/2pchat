@@ -213,35 +213,17 @@ class GroupDatabaseHelper(
     null,
     DATABASE_VERSION,
     0,
-    net.zetetic.database.DefaultDatabaseErrorHandler(),
+    net.zetetic.database.DatabaseErrorHandler {
+        throw android.database.sqlite.SQLiteException("Group database corruption; preserving database")
+    },
     null,
     false,
 ) {
     val safeReadableDatabase: SQLiteDatabase
-        get() = try {
-            readableDatabase
-        } catch (e: Exception) {
-            if (e.message?.contains("file is not a database") == true || e.message?.contains("code 26") == true || e.message?.contains("corrupt") == true) {
-                SafeLog.e("GroupDatabaseHelper", "Group database unreadable (key mismatch or corrupted). Recreating.", e)
-                context.applicationContext.deleteDatabase(databaseName)
-                readableDatabase
-            } else {
-                throw e
-            }
-        }
+        get() = readableDatabase
 
     val safeWritableDatabase: SQLiteDatabase
-        get() = try {
-            writableDatabase
-        } catch (e: Exception) {
-            if (e.message?.contains("file is not a database") == true || e.message?.contains("code 26") == true || e.message?.contains("corrupt") == true) {
-                SafeLog.e("GroupDatabaseHelper", "Group database unreadable (key mismatch or corrupted). Recreating.", e)
-                context.applicationContext.deleteDatabase(databaseName)
-                writableDatabase
-            } else {
-                throw e
-            }
-        }
+        get() = writableDatabase
     override fun onConfigure(db: SQLiteDatabase) {
         super.onConfigure(db)
         com.example.twopchat.data.DatabaseTuning.applyOptimizations(db)

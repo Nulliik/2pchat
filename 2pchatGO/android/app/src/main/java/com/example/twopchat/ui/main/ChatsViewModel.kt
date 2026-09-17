@@ -52,6 +52,7 @@ internal class ChatsViewModel(
                         com.example.twopchat.ui.chat.state.ChatHistoryCache.put(peer, messages)
                     }
                 } catch (e: Exception) {
+                    if (e is kotlinx.coroutines.CancellationException) throw e
                     com.example.twopchat.logging.SafeLog.d("ChatsViewModel", "Prefetching history for $peer failed: ${e.javaClass.simpleName}")
                 }
             }
@@ -76,13 +77,7 @@ internal class ChatsViewModel(
     private fun refreshActiveChats() {
         com.example.twopchat.relay.P2PMessageRelay.sanitizeAndMergeDanglingChats(appContext)
         val prefChats = sharedPrefs.getStringSet("active_chats", emptySet()).orEmpty()
-        val db = com.example.twopchat.data.ChatDatabaseHelper.getInstance(appContext)
-        val dbChats = try {
-            db.getAllChatPeerNames()
-        } catch (_: Exception) {
-            emptySet()
-        }
-        val combined = (prefChats + dbChats).filter { it.isNotBlank() && it != "null" && it != "Saved Messages" }.toSet()
+        val combined = prefChats.filter { it.isNotBlank() && it != "null" && it != "Saved Messages" }.toSet()
         if (activeChatsSet.value != combined) {
             activeChatsSet.value = combined
             notifyChatListChanged(immediate = false)
@@ -107,13 +102,7 @@ internal class ChatsViewModel(
             }
             key?.startsWith("last_msg_") == true -> {
                 val peerName = key.removePrefix("last_msg_")
-                val raw = prefs.getString(key, null)
-                val dec = com.example.twopchat.security.SecureStorage.decrypt(raw)
-                if (dec != null) {
-                    com.example.twopchat.config.P2PPreferences.lastMessageCache[peerName] = dec
-                } else {
-                    com.example.twopchat.config.P2PPreferences.lastMessageCache.remove(peerName)
-                }
+                com.example.twopchat.relay.LastMessagePreviewStore.refresh(prefs, peerName)
                 notifyChatListChanged()
             }
             key?.startsWith("draft_msg_") == true ||
@@ -155,7 +144,7 @@ internal class ChatsViewModel(
                                 yggOk = isYggStateOk && yggAddress.isNotBlank(),
                             )
                         }
-                    }.getOrNull()
+                    }.onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }.getOrNull()
                     snapshot?.let {
                         heroActivePeers.intValue = it.activePeers
                         heroUpnpOk.value = it.upnpOk

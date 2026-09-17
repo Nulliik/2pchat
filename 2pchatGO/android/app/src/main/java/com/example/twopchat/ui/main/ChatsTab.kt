@@ -147,14 +147,7 @@ fun ChatsTab(
             val lastMsg = if (hasDraft) {
                 "$draftPrefix$draft"
             } else {
-                com.example.twopchat.config.P2PPreferences.lastMessageCache[name] ?: run {
-                    val rawEncrypted = sharedPrefs.getString("last_msg_$name", null)
-                    val decrypted = SecureStorage.decrypt(rawEncrypted) ?: "No messages yet"
-                    if (rawEncrypted != null) {
-                        com.example.twopchat.config.P2PPreferences.lastMessageCache[name] = decrypted
-                    }
-                    decrypted
-                }
+                com.example.twopchat.relay.LastMessagePreviewStore.get(sharedPrefs, name) ?: "No messages yet"
             }
             val transport = canonicalConnectionTransport(
                 rawTransport = P2PMessageRelay.peerConnectionTransports[name]
@@ -470,6 +463,7 @@ fun ChatsTab(
                                                 }
                                                 P2PMessageRelay.triggerImmediateReconnect(context).join()
                                             } catch (error: Exception) {
+                                                if (error is kotlinx.coroutines.CancellationException) throw error
                                                 SafeLog.e("ChatsTab", "Unable to refresh connections", error)
                                                 refreshSucceeded = false
                                             } finally {
@@ -1597,7 +1591,9 @@ fun ChatsTab(
                                     val fp = sharedPrefs.getString("peer_fingerprint_${peer.name}", null)
                                     val aliases = listOfNotNull(fp).filter { it.isNotBlank() }
                                     db.clearMessagesForPeer(peer.name, aliases)
-                                    sharedPrefs.edit {
+                                    com.example.twopchat.relay.ActiveChatStore.update(sharedPrefs, { it }) {
+                                        com.example.twopchat.relay.LastMessagePreviewStore.remove(peer.name)
+                                        aliases.forEach(com.example.twopchat.relay.LastMessagePreviewStore::remove)
                                         remove("last_msg_${peer.name}")
                                         remove("unread_count_${peer.name}")
                                         remove(com.example.twopchat.config.P2PPreferences.pinnedMessageId(peer.name))

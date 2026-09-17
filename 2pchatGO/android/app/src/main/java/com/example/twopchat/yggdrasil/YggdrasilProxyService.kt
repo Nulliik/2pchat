@@ -76,6 +76,7 @@ class YggdrasilProxyService : Service() {
     private var started = AtomicBoolean()
     private var publicPeerPoolPruned = AtomicBoolean()
     private lateinit var config: ConfigurationProxy
+    @Volatile private var startupFailed = false
     // Serialize engine access and lifecycle commands away from the UI thread.
     private val serviceScope = CoroutineScope(SupervisorJob() + yggdrasilServiceDispatcher)
     private var startJob: Job? = null
@@ -87,30 +88,34 @@ class YggdrasilProxyService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        config = ConfigurationProxy(applicationContext)
-        promoteToForeground()
+        if (!promoteToForeground(State.Disabled)) {
+            startupFailed = true
+            serviceScope.launch { stop() }
+        }
     }
 
-    private fun promoteToForeground() {
-        val notification = createServiceNotification(this, State.Disabled)
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                ServiceCompat.startForeground(
-                    this,
-                    PROXY_NOTIFICATION_ID,
-                    notification,
-                    ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE,
-                )
-            } else {
-                startForeground(PROXY_NOTIFICATION_ID, notification)
-            }
-        } catch (e: Exception) {
-            SafeLog.w(TAG, "Failed to startForeground with specialUse, fallback to regular startForeground", e)
+    private fun promoteToForeground(state: State): Boolean {
+        return try {
+            val notification = createServiceNotification(this, state)
             try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                    ServiceCompat.startForeground(
+                        this,
+                        PROXY_NOTIFICATION_ID,
+                        notification,
+                        ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE,
+                    )
+                } else {
+                    startForeground(PROXY_NOTIFICATION_ID, notification)
+                }
+            } catch (e: Exception) {
+                SafeLog.w(TAG, "Failed to startForeground with specialUse, falling back", e)
                 startForeground(PROXY_NOTIFICATION_ID, notification)
-            } catch (fallbackEx: Exception) {
-                SafeLog.e(TAG, "Failed regular startForeground fallback", fallbackEx)
             }
+            true
+        } catch (e: Exception) {
+            SafeLog.e(TAG, "Unable to promote proxy service to foreground", e)
+            false
         }
     }
 
@@ -124,12 +129,31 @@ class YggdrasilProxyService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        promoteToForeground()
+        if (startupFailed) return START_NOT_STICKY
+        if (!promoteToForeground(if (isProxyActive) State.Enabled else State.Disabled)) {
+            startupFailed = true
+            serviceScope.launch { stop() }
+            return START_NOT_STICKY
+        }
         if (intent == null) {
             SafeLog.d(TAG, "Intent is null")
             return START_NOT_STICKY
         }
-        serviceScope.launch { handleCommand(intent) }
+        serviceScope.launch {
+            if (startupFailed) return@launch
+            try {
+                if (intent.action != ACTION_STOP && !::config.isInitialized) {
+                    config = ConfigurationProxy(applicationContext)
+                }
+                handleCommand(intent)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                SafeLog.e(TAG, "Yggdrasil startup prerequisite or command failed (${error.javaClass.simpleName})")
+                startupFailed = true
+                stop()
+            }
+        }
         return if ((intent.action ?: ACTION_STOP) == ACTION_STOP) START_NOT_STICKY else START_STICKY
     }
 
@@ -228,31 +252,17 @@ class YggdrasilProxyService : Service() {
                 throw cancelled
             } catch (error: Throwable) {
                 SafeLog.e(TAG, "Unable to start Yggdrasil proxy service", error)
-                stop(stopService = false)
+                startupFailed = true
+                stop(stopService = true)
             }
         }
     }
 
     private suspend fun startProxyEngine() {
-        val notification = createServiceNotification(this, State.Enabled)
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                ServiceCompat.startForeground(
-                    this,
-                    PROXY_NOTIFICATION_ID,
-                    notification,
-                    ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE,
-                )
-            } else {
-                startForeground(PROXY_NOTIFICATION_ID, notification)
-            }
-        } catch (e: Throwable) {
-            SafeLog.w(TAG, "Failed to startForeground in startProxyEngine", e)
-            try {
-                startForeground(PROXY_NOTIFICATION_ID, notification)
-            } catch (fallbackEx: Exception) {
-                SafeLog.e(TAG, "Failed startForeground fallback in startProxyEngine", fallbackEx)
-            }
+        if (!promoteToForeground(State.Disabled)) {
+            startupFailed = true
+            stop()
+            return
         }
 
         // Acquire multicast lock
@@ -290,16 +300,21 @@ class YggdrasilProxyService : Service() {
             return
         }
 
-        yggLog(applicationContext, "Yggdrasil started in PROXY mode (127.0.0.1:9053) with IPv6: $address")
-        updateRuntimeState(address, STATE_ENABLED)
-
         try {
-            userStack = YggdrasilUserSpaceStack(ygg, socksPort = 9053, localTargetPort = 50001).apply {
-                start()
-            }
-            yggLog(applicationContext, "Yggdrasil UserSpace SOCKS5 stack listening on 127.0.0.1:9053 -> target: 50001")
+            val stack = YggdrasilUserSpaceStack(ygg, socksPort = 9053, localTargetPort = 50001)
+            userStack = stack
+            stack.start()
         } catch (e: Throwable) {
             yggLog(applicationContext, "Failed to initialize YggdrasilUserSpaceStack", "ERROR", e)
+            startupFailed = true
+            stop()
+            return
+        }
+
+        if (!promoteToForeground(State.Enabled)) {
+            startupFailed = true
+            stop()
+            return
         }
 
         updateJob = serviceScope.launch {
@@ -313,6 +328,8 @@ class YggdrasilProxyService : Service() {
         }
 
         isProxyActive = true
+        updateRuntimeState(address, STATE_ENABLED)
+        yggLog(applicationContext, "Yggdrasil started in PROXY mode (127.0.0.1:9053) with IPv6: $address")
 
         val intent = Intent(YGG_STATE_INTENT)
         intent.putExtra("state", STATE_ENABLED)
@@ -328,7 +345,8 @@ class YggdrasilProxyService : Service() {
         updateJob = null
         yggLog(applicationContext, "Stopping Yggdrasil PROXY service...")
         isProxyActive = false
-        userStack?.stop()
+        runCatching { userStack?.stop() }
+            .onFailure { SafeLog.w(TAG, "Unable to stop proxy stack cleanly", it) }
         userStack = null
         val wasStarted = started.getAndSet(false)
         if (wasStarted) {
@@ -338,6 +356,11 @@ class YggdrasilProxyService : Service() {
             }
             yggdrasil = null
         }
+
+        multicastLock?.let { lock ->
+            runCatching { if (lock.isHeld) lock.release() }
+        }
+        multicastLock = null
 
         var intent = Intent(STATE_INTENT)
         intent.putExtra("type", "state")
@@ -355,12 +378,6 @@ class YggdrasilProxyService : Service() {
         if (stopService) {
             stopSelf()
         }
-        multicastLock?.let { lock ->
-            if (lock.isHeld) {
-                runCatching { lock.release() }
-            }
-        }
-        multicastLock = null
     }
 
     private fun connect() {

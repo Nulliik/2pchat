@@ -160,12 +160,8 @@ class NotificationActionReceiver : BroadcastReceiver() {
         ChatDatabaseHelper.getInstance(context).saveMessage(sender, msg)
 
         val prefs = P2PPreferences.prefs(context)
-        val activeChats = prefs.getStringSet(P2PPreferences.ACTIVE_CHATS, emptySet()).orEmpty()
-        prefs.edit().apply {
-            if (sender !in activeChats) putStringSet(P2PPreferences.ACTIVE_CHATS, activeChats + sender)
-            putString(P2PPreferences.lastMessage(sender), SecureStorage.encrypt("You: $replyText"))
-            apply()
-        }
+        com.example.twopchat.relay.ActiveChatStore.add(prefs, sender)
+        com.example.twopchat.relay.LastMessagePreviewStore.set(prefs, sender, "You: $replyText")
     }
 
     private fun ensureRelayRunning(context: Context) {
@@ -175,6 +171,7 @@ class NotificationActionReceiver : BroadcastReceiver() {
                 Intent(context, P2PRelayService::class.java),
             )
         } catch (error: Exception) {
+            if (error is kotlinx.coroutines.CancellationException) throw error
             // A notification action normally has a background-start exemption. If an
             // OEM denies it, the already-running relay can still flush the durable queue.
             SafeLog.w(TAG, "Could not request relay service start", error)
@@ -217,7 +214,7 @@ class NotificationActionReceiver : BroadcastReceiver() {
                 .apply()
             MessageNotificationService.clearHistory(context, sender)
         } catch (error: Exception) {
-            SafeLog.e(TAG, "Failed to mark messages as read for $sender", error)
+            throw error
         }
     }
 }

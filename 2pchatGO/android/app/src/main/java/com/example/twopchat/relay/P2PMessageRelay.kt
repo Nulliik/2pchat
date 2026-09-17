@@ -60,6 +60,48 @@ object P2PMessageRelay {
     }
     private val startStopLock = Any()
     private val identityLock = Any()
+    internal val accountRuntime = AccountRuntimeGate()
+
+    private fun <T> withAccountCallback(version: Long, rejected: T, action: () -> T): T =
+        accountRuntime.run(version, rejected, action)
+
+    internal fun closeAccountAdmission() {
+        accountRuntime.close()
+        ActiveChatStore.rejectAccountWork()
+        while (incomingPersistenceQueue.tryReceive().isSuccess) Unit
+    }
+
+    internal fun awaitAccountCallbacks(): Boolean = accountRuntime.awaitIdle()
+
+    internal fun completeProfileInstallation(): Boolean = synchronized(startStopLock) {
+        if (AccountDataWiper.isWiping || !accountRuntime.open()) return false
+        ActiveChatStore.openAccount()
+        true
+    }
+
+    private fun guardedMessageListener(version: Long, listener: com.example.twopchat.bridge.BridgeMessageListener) =
+        object : com.example.twopchat.bridge.BridgeMessageListener {
+            override fun onMessageReceived(sender: String, text: String) =
+                withAccountCallback(version, Unit) { listener.onMessageReceived(sender, text) }
+
+            override fun onFileProgress(sender: String, messageId: String, bytesTransferred: Long, totalBytes: Long, speedKbps: Double) =
+                withAccountCallback(version, Unit) { listener.onFileProgress(sender, messageId, bytesTransferred, totalBytes, speedKbps) }
+        }
+
+    private fun guardedSessionListener(version: Long, listener: com.example.twopchat.bridge.BridgeSessionListener) =
+        object : com.example.twopchat.bridge.BridgeSessionListener {
+            override fun onSessionEstablished(peerName: String, fingerprint: String, endpoint: String, transport: String, aboutMe: String): Boolean =
+                withAccountCallback(version, false) { listener.onSessionEstablished(peerName, fingerprint, endpoint, transport, aboutMe) }
+
+            override fun onSessionClosed(peerName: String, fingerprint: String, reason: String) =
+                withAccountCallback(version, Unit) { listener.onSessionClosed(peerName, fingerprint, reason) }
+
+            override fun onPeerRoutesUpdated(peerName: String, fingerprint: String, endpoints: String) =
+                withAccountCallback(version, Unit) { listener.onPeerRoutesUpdated(peerName, fingerprint, endpoints) }
+
+            override fun onPeerDiscovered(infoHash: String, endpoint: String, source: String) =
+                withAccountCallback(version, Unit) { listener.onPeerDiscovered(infoHash, endpoint, source) }
+        }
     private val relayExceptionHandler = kotlinx.coroutines.CoroutineExceptionHandler { _, throwable ->
         SafeLog.e("P2PMessageRelay", "Uncaught exception in relay scope", throwable)
     }
@@ -816,12 +858,14 @@ object P2PMessageRelay {
         }
     }
 
-    private data class IncomingPersistenceTask(
+    internal data class IncomingPersistenceTask(
         val context: Context,
-        val sender: String,
+        val prefs: android.content.SharedPreferences,
+        val lifecycle: ActiveChatStore.Task,
         val message: Message,
         val notificationText: String,
         val countAsNew: Boolean,
+        val preview: LastMessagePreviewStore.Update,
     )
 
     private val incomingPersistenceQueue = Channel<IncomingPersistenceTask>(Channel.UNLIMITED)
@@ -856,6 +900,7 @@ object P2PMessageRelay {
                         }
                         processIncomingPersistenceBatch(batch)
                     } catch (e: Exception) {
+                        if (e is kotlinx.coroutines.CancellationException) throw e
                         SafeLog.e(TAG, "Error processing incoming persistence batch", e)
                     }
                 }
@@ -863,22 +908,33 @@ object P2PMessageRelay {
         }
     }
 
-    private fun processIncomingPersistenceBatch(batch: List<IncomingPersistenceTask>) {
-        if (batch.isEmpty()) return
-        val bySender = batch.groupBy { it.sender }
-        for ((sender, senderTasks) in bySender) {
+    internal fun processIncomingPersistenceBatch(
+        batch: List<IncomingPersistenceTask>,
+        saveMessages: (Context, String, List<Message>) -> Unit = { context, sender, messages ->
+            ChatDatabaseHelper.getInstance(context).saveMessages(sender, messages)
+        },
+        encrypt: (String) -> String = SecureStorage::encrypt,
+        chatOpen: (Context, String) -> Boolean = ::isChatOpenWith,
+        notify: (Context, String, Message, String) -> Unit = ::showNotification,
+        cancelNotification: (Context, String) -> Unit = MessageNotificationService::cancelNotificationForPeer,
+    ): Unit = synchronized(ActiveChatStore.persistenceLock) {
+        if (batch.isEmpty() || ActiveChatStore.accountClosed) return
+        val bySender = batch.mapNotNull { task ->
+            ActiveChatStore.resolve(task.lifecycle)?.let { (task.prefs to it) to task }
+        }.groupBy({ it.first }, { it.second })
+        for ((key, senderTasks) in bySender) {
+            val (prefs, sender) = key
             val context = senderTasks.first().context
-            val prefs = P2PPreferences.prefs(context)
-            val activeSet = prefs.getStringSet(P2PPreferences.ACTIVE_CHATS, emptySet()).orEmpty()
-            val needsActiveAdd = sender !in activeSet
+            if (ActiveChatStore.isRetired(prefs)) continue
             val isLocked = P2PPreferences.isAppLocked()
             val persistHistory = prefs.getBoolean("persist_chat_history", true)
 
             if (!isLocked && persistHistory) {
                 try {
                     val messages = senderTasks.map { it.message }
-                    ChatDatabaseHelper.getInstance(context).saveMessages(sender, messages)
+                    saveMessages(context, sender, messages)
                 } catch (e: Exception) {
+                    if (e is kotlinx.coroutines.CancellationException) throw e
                     log(context, "Failed to persist incoming message batch: ${e.message}", "ERROR", e)
                 }
             }
@@ -886,32 +942,46 @@ object P2PMessageRelay {
             val latestTask = senderTasks.last()
             val latestNotificationText = latestTask.notificationText
             val currentActivePeer = activeChatPeerName
-            val isChatOpenWithSender = isChatOpenWith(context, sender)
+            val isChatOpenWithSender = chatOpen(context, sender)
 
             val newCount = senderTasks.count { it.countAsNew }
             val unreadKey = P2PPreferences.unreadCount(sender)
 
-            prefs.edit {
-                if (needsActiveAdd) {
-                    putStringSet(P2PPreferences.ACTIVE_CHATS, activeSet + sender)
-                }
-                if (!isLocked) {
-                    putString(P2PPreferences.lastMessage(sender), SecureStorage.encrypt(latestNotificationText))
-                }
+            if (!isLocked) {
+                senderTasks.forEach { LastMessagePreviewStore.persist(prefs, sender, it.preview, encrypt) }
+            }
+            ActiveChatStore.update(prefs, { it + sender }) {
                 if (newCount > 0 && !isChatOpenWithSender) {
                     putInt(unreadKey, prefs.getInt(unreadKey, 0) + newCount)
                 }
             }
 
             if (newCount > 0 && !isChatOpenWithSender) {
-                showNotification(context, sender, latestTask.message, latestNotificationText)
+                notify(context, sender, latestTask.message, latestNotificationText)
             } else {
-                MessageNotificationService.cancelNotificationForPeer(context, sender)
+                cancelNotification(context, sender)
                 if (currentActivePeer != null) {
-                    MessageNotificationService.cancelNotificationForPeer(context, currentActivePeer)
+                    cancelNotification(context, currentActivePeer)
                 }
             }
         }
+    }
+
+    internal fun prepareIncomingPersistence(
+        context: Context,
+        sender: String,
+        message: Message,
+        notificationText: String = message.text,
+        countAsNew: Boolean = true,
+    ): IncomingPersistenceTask? = synchronized(ActiveChatStore.persistenceLock) {
+        if (ActiveChatStore.accountClosed) return null
+        val prefs = P2PPreferences.prefs(context)
+        val lifecycle = ActiveChatStore.admit(prefs, sender) ?: return null
+        val canonicalName = ActiveChatStore.resolve(lifecycle) ?: return null
+        IncomingPersistenceTask(
+            context, prefs, lifecycle, message, notificationText, countAsNew,
+            LastMessagePreviewStore.publish(canonicalName, notificationText),
+        )
     }
 
     internal fun persistAndDispatchIncoming(
@@ -921,25 +991,15 @@ object P2PMessageRelay {
         notificationText: String = message.text,
         countAsNew: Boolean = true,
     ) {
-        // Cache plaintext immediately so UI reads it with zero Keystore overhead
-        P2PPreferences.lastMessageCache[sender] = notificationText
-
-        // 1. Immediately deliver to active in-app chat listeners so message appears instantly
+        val task = prepareIncomingPersistence(context, sender, message, notificationText, countAsNew) ?: return
         runOnMain {
-            messageListeners.forEach { it.onMessageReceived(sender, message) }
+            synchronized(ActiveChatStore.persistenceLock) {
+                val currentSender = ActiveChatStore.resolve(task.lifecycle) ?: return@synchronized
+                messageListeners.forEach { it.onMessageReceived(currentSender, message) }
+            }
         }
-
-        // 2. Queue for batched DB persistence, encryption, and notification
         ensureIncomingBatchProcessorStarted()
-        incomingPersistenceQueue.trySend(
-            IncomingPersistenceTask(
-                context = context,
-                sender = sender,
-                message = message,
-                notificationText = notificationText,
-                countAsNew = countAsNew,
-            )
-        )
+        incomingPersistenceQueue.trySend(task)
         if (!message.isMe && message.id.isNotBlank()) {
             sendDeliveryReceipt(context, sender, peerEndpoints[sender], message.id)
         }
@@ -1124,11 +1184,9 @@ object P2PMessageRelay {
     fun sanitizeAndMergeDanglingChats(context: Context) {
         try {
             val prefs = P2PPreferences.prefs(context)
-            val activeChats = prefs.getStringSet("active_chats", emptySet())?.toSet() ?: return
-            val validChats = activeChats.filter { P2PPreferences.isValidPeerChatName(it) }.toSet()
-            if (validChats.size != activeChats.size) {
-                prefs.edit().putStringSet("active_chats", validChats).apply()
-            }
+            val validChats = ActiveChatStore.update(prefs, { chats ->
+                chats.filter { P2PPreferences.isValidPeerChatName(it) }.toSet()
+            })
             val dangling = validChats.filter {
                 it.endsWith(" ·") || it.endsWith(" · ") || it.endsWith(" .") || it.endsWith(" . ")
             }
@@ -1140,6 +1198,7 @@ object P2PMessageRelay {
                 }
             }
         } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
             SafeLog.w(TAG, "Failed cleaning dangling chat states during nickname adoption", e)
         }
     }
@@ -1147,22 +1206,18 @@ object P2PMessageRelay {
     internal fun moveChatState(
         context: Context,
         fromName: String,
-        toName: String
-    ) {
-        if (fromName == toName) return
+        toName: String,
+        migrateHistory: (Context, String, String, String?) -> Unit = ::migrateChatHistory,
+    ): Unit = synchronized(ActiveChatStore.persistenceLock) {
+        if (fromName == toName || ActiveChatStore.accountClosed) return
         val sharedPrefs = P2PPreferences.prefs(context)
-        val activeSet = sharedPrefs.getStringSet("active_chats", emptySet()) ?: emptySet()
-        val updatedChats = activeSet.toMutableSet()
-        val hadVisibleChat = updatedChats.remove(fromName)
-        var changed = hadVisibleChat
-        if (hadVisibleChat && updatedChats.add(toName)) {
-            changed = true
-        }
-
-        val editor = sharedPrefs.edit()
-        if (changed) {
-            editor.putStringSet("active_chats", updatedChats)
-        }
+        if (!ActiveChatStore.redirect(sharedPrefs, fromName, toName)) return
+        var movedAboutMe: String? = null
+        ActiveChatStore.update(sharedPrefs, { chats ->
+            if (fromName in chats) chats - fromName + toName else chats
+        }) {
+        val editor = this
+        val sourcePreviewWins = LastMessagePreviewStore.move(fromName, toName)
 
         val keysToMove = listOf(
             "last_msg_", "transport_", "last_endpoint_", "peer_fingerprint_",
@@ -1193,13 +1248,10 @@ object P2PMessageRelay {
                     }
                 }
                 "last_msg_" -> {
-                    // Placeholder messages are the most recently received
-                    // ones which triggered this migration.
-                    sharedPrefs.getString("$prefix$fromName", null)?.let {
-                        editor.putString("$prefix$toName", it)
-                    }
-                    P2PPreferences.lastMessageCache.remove(fromName)?.let {
-                        P2PPreferences.lastMessageCache[toName] = it
+                    if (sourcePreviewWins || !sharedPrefs.contains("$prefix$toName")) {
+                        sharedPrefs.getString("$prefix$fromName", null)?.let {
+                            editor.putString("$prefix$toName", it)
+                        }
                     }
                 }
                 "peer_about_me_" -> {
@@ -1207,7 +1259,7 @@ object P2PMessageRelay {
                     val existing = sharedPrefs.getString("$prefix$toName", null)?.trim()?.takeIf { it.isNotBlank() }
                     if (value != null && (existing.isNullOrBlank() || !sharedPrefs.contains("$prefix$toName"))) {
                         editor.putString("$prefix$toName", value)
-                        ChatDatabaseHelper.getInstance(context).savePeerAboutMe(toName, value)
+                        movedAboutMe = value
                     }
                 }
                 else -> {
@@ -1219,7 +1271,7 @@ object P2PMessageRelay {
             }
             editor.remove("$prefix$fromName")
         }
-        editor.apply()
+        }
 
         try {
             val wpDir = File(context.filesDir, "direct_wallpapers")
@@ -1233,25 +1285,39 @@ object P2PMessageRelay {
         }
 
         try {
-            val db = ChatDatabaseHelper.getInstance(context)
-            db.renamePeer(fromName, toName)
-            refreshLastMessageFromHistory(context, db, toName)
+            migrateHistory(context, fromName, toName, movedAboutMe)
         } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
             log(context, "Failed to migrate chat history between peer aliases", "ERROR", e)
         }
+    }
+
+    private fun migrateChatHistory(context: Context, fromName: String, toName: String, aboutMe: String?) {
+        val db = ChatDatabaseHelper.getInstance(context)
+        db.renamePeer(fromName, toName)
+        if (aboutMe != null) db.savePeerAboutMe(toName, aboutMe)
+        refreshLastMessageFromHistory(context, db, toName)
     }
 
     private fun refreshLastMessageFromHistory(
         context: Context,
         db: ChatDatabaseHelper,
-        peerName: String
+        peerName: String,
     ) {
-        val prefs = P2PPreferences.prefs(context)
+        refreshLastMessageFromHistory(P2PPreferences.prefs(context), peerName, { db.getLastMessageForPeer(peerName) })
+    }
+
+    internal fun refreshLastMessageFromHistory(
+        prefs: android.content.SharedPreferences,
+        peerName: String,
+        load: () -> Message?,
+        encrypt: (String) -> String = SecureStorage::encrypt,
+    ) {
         if (!prefs.getBoolean("persist_chat_history", true)) return
-        val latest = db.getLastMessageForPeer(peerName) ?: return
+        val revision = LastMessagePreviewStore.historyRevision(prefs, peerName) ?: return
+        val latest = load() ?: return
         val preview = if (latest.isMe) "You: ${latest.text}" else latest.text
-        P2PPreferences.lastMessageCache[peerName] = preview
-        prefs.edit().putString("last_msg_$peerName", SecureStorage.encrypt(preview)).apply()
+        LastMessagePreviewStore.refreshFromHistory(prefs, peerName, revision, preview, encrypt)
     }
 
     private fun canonicalPeerName(
@@ -1374,22 +1440,34 @@ object P2PMessageRelay {
      * Start the background Native Go P2P server.
      */
     fun startServer(context: Context) {
-        synchronized(startStopLock) {
-            if (isRunning) return
+        val startup = synchronized(startStopLock) {
+            if (isRunning || AccountLifecycle.mutations.isBusy || ActiveChatStore.accountClosed) return
+            val admission = accountRuntime.enter() ?: return
             isRunning = true
+            admission
         }
+        val listenerVersion = startup.version
+        try {
+            startAdmittedServer(context, listenerVersion)
+        } finally {
+            startup.close()
+        }
+    }
+
+    private fun startAdmittedServer(context: Context, listenerVersion: Long) {
         val appContext = context.applicationContext
         loadPersistedAvatars(appContext)
         migratePersistedPlaceholderChats(appContext)
         val persistedPrefs = P2PPreferences.prefs(appContext)
         val db = ChatDatabaseHelper.getInstance(appContext)
-        val dbChats = try { db.getAllChatPeerNames() } catch (_: Exception) { emptySet() }
-        val prefChats = persistedPrefs.getStringSet("active_chats", emptySet()).orEmpty()
-        val combinedChats = (prefChats + dbChats).filter { it.isNotBlank() && it != "null" && it != "Saved Messages" }.toSet()
-        if (combinedChats != prefChats) {
-            persistedPrefs.edit().putStringSet("active_chats", combinedChats).apply()
+        val restoreRevision = ActiveChatStore.revision()
+        val dbChats = try {
+            db.getAllChatPeerNames()
+        } catch (error: Exception) {
+            if (error is kotlinx.coroutines.CancellationException) throw error
+            emptySet()
         }
-        val persistedChats = combinedChats
+        val persistedChats = ActiveChatStore.mergeIfUnchanged(persistedPrefs, restoreRevision, dbChats)
         if (persistedPrefs.getBoolean("persist_chat_history", true)) {
             for (peerName in persistedChats) {
                 refreshLastMessageFromHistory(appContext, db, peerName)
@@ -1440,7 +1518,7 @@ object P2PMessageRelay {
             startLocalDiscovery(appContext, port)
             
             // Register incoming message callback
-            bridge.registerMessageListener(object : com.example.twopchat.bridge.BridgeMessageListener {
+            bridge.registerMessageListener(guardedMessageListener(listenerVersion, object : com.example.twopchat.bridge.BridgeMessageListener {
                 override fun onFileProgress(sender: String, messageId: String, bytesTransferred: Long, totalBytes: Long, speedKbps: Double) {
                     val resolved = if (isRawFingerprint(sender)) {
                         P2PPreferences.findPeerNameByFingerprint(appContext, sender) ?: sender
@@ -1514,9 +1592,7 @@ object P2PMessageRelay {
                             if (payloadNickname.isNotBlank() && isValidNickname(payloadNickname)) {
                                 if (resolvedSender == sender || isPlaceholderPeerName(resolvedSender) || isRawFingerprint(resolvedSender)) {
                                     if (isRawFingerprint(sender)) {
-                                        sharedPrefs.edit()
-                                            .putString("peer_fingerprint_$payloadNickname", sender)
-                                            .apply()
+                                        if (!P2PPreferences.publishPeerIdentityIfExpected(appContext, payloadNickname, sender)) return
                                         getBridge(appContext).updatePeerNameMapping(sender, payloadNickname)
                                     }
                                     resolvedSender = payloadNickname
@@ -1542,7 +1618,7 @@ object P2PMessageRelay {
                                     val effectiveName = nickname ?: resolvedSender
                                     if (nickname != null) {
                                         if (fingerprint.isNotBlank()) {
-                                            sharedPrefs.edit().putString("peer_fingerprint_$nickname", fingerprint).apply()
+                                            if (!P2PPreferences.publishPeerIdentityIfExpected(appContext, nickname, fingerprint)) return
                                             getBridge(appContext).updatePeerNameMapping(fingerprint, nickname)
                                         }
                                         handlePeerNicknameReceived(appContext, sender, nickname, json.optString("about_me"))
@@ -1574,9 +1650,7 @@ object P2PMessageRelay {
                                         resolvedSender
                                     }
                                     if (nickname != null && isRawFingerprint(sender)) {
-                                        sharedPrefs.edit()
-                                            .putString("peer_fingerprint_$nickname", sender)
-                                            .apply()
+                                         if (!P2PPreferences.publishPeerIdentityIfExpected(appContext, nickname, sender)) return
                                     }
                                     val trimmedBody = body.trim()
                                     if (trimmedBody.startsWith("{")) {
@@ -1749,7 +1823,7 @@ object P2PMessageRelay {
                                         editor.apply()
                                     }
                                     if (fingerprint != null && nickname != null) {
-                                        sharedPrefs.edit().putString("peer_fingerprint_$nickname", fingerprint).apply()
+                                        if (!P2PPreferences.publishPeerIdentityIfExpected(appContext, nickname, fingerprint)) return
                                         getBridge(appContext).updatePeerNameMapping(fingerprint, nickname)
                                     }
                                     handlePeerNicknameReceived(appContext, sender, nickname, aboutMe)
@@ -2295,9 +2369,7 @@ object P2PMessageRelay {
                                         resolvedSender
                                     }
                                     if (nickname != null && isRawFingerprint(sender)) {
-                                        sharedPrefs.edit()
-                                            .putString("peer_fingerprint_$nickname", sender)
-                                            .apply()
+                                         if (!P2PPreferences.publishPeerIdentityIfExpected(appContext, nickname, sender)) return
                                         getBridge(appContext).updatePeerNameMapping(sender, nickname)
                                     }
                                     val time = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date())
@@ -2324,9 +2396,7 @@ object P2PMessageRelay {
                                         resolvedSender
                                     }
                                     if (nickname != null && isRawFingerprint(sender)) {
-                                        sharedPrefs.edit()
-                                            .putString("peer_fingerprint_$nickname", sender)
-                                            .apply()
+                                         if (!P2PPreferences.publishPeerIdentityIfExpected(appContext, nickname, sender)) return
                                         getBridge(appContext).updatePeerNameMapping(sender, nickname)
                                     }
                                     val time = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date())
@@ -2539,12 +2609,13 @@ object P2PMessageRelay {
                             },
                         )
                     } catch (ex: Exception) {
+                        if (ex is kotlinx.coroutines.CancellationException) throw ex
                         log(appContext, "Failed to persist incoming message to SharedPreferences/SQLite", "ERROR", ex)
                     }
                 }
-            })
+            }))
 
-            bridge.registerSessionListener(object : com.example.twopchat.bridge.BridgeSessionListener {
+            bridge.registerSessionListener(guardedSessionListener(listenerVersion, object : com.example.twopchat.bridge.BridgeSessionListener {
                 override fun onSessionEstablished(peerName: String, fingerprint: String, endpoint: String, transport: String, aboutMe: String): Boolean {
                     val identityPrefs = P2PPreferences.prefs(appContext)
                     val activeChats = identityPrefs.getStringSet("active_chats", emptySet())
@@ -2558,46 +2629,14 @@ object P2PMessageRelay {
                         shareOnionAddress(appContext, fingerprint, endpoint)
                         return true
                     }
-                    val persistedFingerprint = identityPrefs
-                        .getString(P2PPreferences.peerFingerprint(resolvedPeerName), null)
-                    if (!isExpectedPeerFingerprint(persistedFingerprint, fingerprint, resolvedPeerName)) {
-                        if (isRawFingerprint(persistedFingerprint.orEmpty()) && isRawFingerprint(fingerprint)) {
-                            P2PPreferences.recordPendingPeerIdentity(
-                                appContext,
-                                resolvedPeerName,
-                                fingerprint,
-                                endpoint,
-                            )
-                            clearPeerPresenceImmediately(resolvedPeerName)
-                            log(
-                                appContext,
-                                "Rejected fingerprint change for $resolvedPeerName: expected $persistedFingerprint, received $fingerprint",
-                                "ERROR",
-                            )
-                            return false
-                        }
-                    }
-                    if (P2PPreferences.isPeerIdentityChangePending(appContext, resolvedPeerName)) {
-                        log(
-                            appContext,
-                            "Rejected session for $resolvedPeerName while an identity change awaits confirmation",
-                            "ERROR",
-                        )
-                        // Clear stale UI state so the peer no longer appears connected.
+                    if (!P2PPreferences.publishPeerIdentityIfExpected(appContext, resolvedPeerName, fingerprint, endpoint, aboutMe)) {
                         clearPeerPresenceImmediately(resolvedPeerName)
                         return false
                     }
-                    P2PPreferences.prefs(appContext)
-                        .edit().apply {
-                            putString("peer_fingerprint_$resolvedPeerName", fingerprint)
-                            if (aboutMe.isNotBlank()) {
-                                putString("peer_about_me_$resolvedPeerName", aboutMe)
-                                putString("peer_about_me_$fingerprint", aboutMe)
-                                ChatDatabaseHelper.getInstance(appContext).savePeerAboutMe(resolvedPeerName, aboutMe)
-                                ChatDatabaseHelper.getInstance(appContext).savePeerAboutMe(fingerprint, aboutMe)
-                            }
-                            apply()
-                        }
+                    if (aboutMe.isNotBlank()) {
+                        ChatDatabaseHelper.getInstance(appContext).savePeerAboutMe(resolvedPeerName, aboutMe)
+                        ChatDatabaseHelper.getInstance(appContext).savePeerAboutMe(fingerprint, aboutMe)
+                    }
                     getBridge(appContext).updatePeerNameMapping(fingerprint, resolvedPeerName)
                     log(appContext, "Secure Double Ratchet session established")
                     publishPeerOnline(
@@ -2614,12 +2653,7 @@ object P2PMessageRelay {
                     }
 
                     // Save to active chats so the UI updates and shows the peer chat screen
-                    val activeSet = sharedPrefs.getStringSet("active_chats", emptySet()) ?: emptySet()
-                    if (!activeSet.contains(resolvedPeerName)) {
-                        val newSet = activeSet.toMutableSet()
-                        newSet.add(resolvedPeerName)
-                        sharedPrefs.edit().putStringSet("active_chats", newSet).apply()
-                    }
+                    ActiveChatStore.add(sharedPrefs, resolvedPeerName)
 
                     clearAvatarShareCooldown(resolvedPeerName)
                     clearAvatarShareCooldown(fingerprint)
@@ -2756,7 +2790,7 @@ object P2PMessageRelay {
                         }
                     }
                 }
-            })
+            }))
             
             log(appContext, "Native Go P2P Relays started successfully")
 
@@ -2798,6 +2832,7 @@ object P2PMessageRelay {
                 isRunning = false
             }
             maintenanceCoordinator.stop()
+            if (e is kotlinx.coroutines.CancellationException) throw e
             log(appContext, "Error starting Native Go P2P Relays", "ERROR", e)
         }
     }
@@ -2826,7 +2861,9 @@ object P2PMessageRelay {
 
     /** Stop every account-bound transport before identity files are erased. */
     fun shutdownForAccountDeletion(context: Context): Boolean {
+        if ((callbackDepth.get() ?: 0) != 0 || Thread.holdsLock(ActiveChatStore.persistenceLock)) return false
         val appContext = context.applicationContext
+        closeAccountAdmission()
         synchronized(startStopLock) {
             isRunning = false
         }
@@ -2846,6 +2883,7 @@ object P2PMessageRelay {
             peerRttMs.clear()
         }
         val stopped = getBridge(appContext).shutdownAllSessions()
+        awaitAccountCallbacks()
         GroupChatCoordinator.shutdown()
         log(
             appContext,
@@ -2967,6 +3005,7 @@ object P2PMessageRelay {
                     log(context, "Profile send status: $success")
                 }
             } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
                 log(context, "Failed to share profile with a peer", "ERROR", e)
             } finally {
                 scaledBitmap?.takeIf { it !== sourceBitmap && !it.isRecycled }?.recycle()
@@ -3067,6 +3106,7 @@ object P2PMessageRelay {
                     ).orEmpty()
                     getBridge(appContext).sendP2pMessage(peerName, resolvedEndpoint, payload, expectedFingerprint)
                 } catch (e: Exception) {
+                    if (e is kotlinx.coroutines.CancellationException) throw e
                     log(appContext, "Failed to send onion address update to $peerName: ${e.message}", "ERROR")
                 }
             }
@@ -3131,6 +3171,7 @@ object P2PMessageRelay {
                 if (success) lastOnionShareAt[shareKey] = System.currentTimeMillis()
                 log(context, "Onion address share status: $success")
             } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
                 log(context, "Failed to share onion address with peer", "ERROR", e)
             } finally {
                 onionSharesInFlight.remove(shareKey)
@@ -3208,6 +3249,7 @@ object P2PMessageRelay {
                 outboundMessenger.sendControlMessage(context, peerName, payload)
                 log(context, "Sent direct_wallpaper_update to $peerName")
             } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
                 log(context, "Failed to send direct_wallpaper_update to $peerName: ${e.message}", "ERROR", e)
             }
         }
@@ -3254,20 +3296,37 @@ object P2PMessageRelay {
     }
 
     fun deleteChat(context: Context, peerName: String) {
+        deleteChat(context, peerName, { action -> serviceScope.launch(Dispatchers.IO) { action() } })
+    }
+
+    internal fun deleteChat(
+        context: Context,
+        peerName: String,
+        scheduleDelete: (() -> Unit) -> Unit,
+        deleteHistory: (Context, String, Set<String>, String?) -> Unit = { ctx, name, aliases, fingerprint ->
+            val db = ChatDatabaseHelper.getInstance(ctx)
+            db.clearMessagesForPeer(name, aliases)
+            aliases.forEach(db::deletePendingControlsForPeer)
+            if (!fingerprint.isNullOrBlank()) PeerEndpointStore.delete(ctx.applicationContext, fingerprint)
+            db.deletePeer(name, aliases)
+        },
+        clearNotification: (Context, String) -> Unit = MessageNotificationService::clearHistory,
+    ): Unit = synchronized(ActiveChatStore.persistenceLock) {
+        if (ActiveChatStore.accountClosed) return
         val clean = peerName.trim()
         if (clean.isBlank()) return
         val lower = clean.lowercase()
         val fp = P2PPreferences.getPeerFingerprint(context, clean)
         val resolvedName = if (!fp.isNullOrBlank()) P2PPreferences.findPeerNameByFingerprint(context, fp) else P2PPreferences.findPeerNameByFingerprint(context, clean)
-        val aliases = listOfNotNull(clean, lower, fp, resolvedName).filter { it.isNotBlank() }.distinct()
-
         val sharedPrefs = P2PPreferences.prefs(context)
-        val activeSet = sharedPrefs.getStringSet("active_chats", emptySet()).orEmpty()
-        val newSet = activeSet.filterNot { item -> aliases.any { alias -> item.equals(alias, ignoreCase = true) } }.toSet()
-        
-        sharedPrefs.edit {
-            putStringSet("active_chats", newSet)
+        val initialAliases = listOfNotNull(clean, lower, fp, resolvedName).filter { it.isNotBlank() }.distinct()
+        if (initialAliases.any { ActiveChatStore.isDeleting(sharedPrefs, it) }) return
+        val aliases = ActiveChatStore.beginDelete(sharedPrefs, initialAliases)
+        ActiveChatStore.update(sharedPrefs, { chats ->
+            chats.filterNot { item -> aliases.any { alias -> item.equals(alias, ignoreCase = true) } }.toSet()
+        }) {
             aliases.forEach { alias ->
+                LastMessagePreviewStore.remove(alias)
                 remove("last_msg_$alias")
                 remove("unread_count_$alias")
                 remove("draft_msg_$alias")
@@ -3297,17 +3356,17 @@ object P2PMessageRelay {
         }
 
         // Clear messages database, pending controls, and peer table for this peer and all aliases
-        serviceScope.launch(Dispatchers.IO) {
-            val db = ChatDatabaseHelper.getInstance(context)
-            db.clearMessagesForPeer(peerName, aliases)
-            db.deletePendingControlsForPeer(peerName)
-            if (!fp.isNullOrBlank()) PeerEndpointStore.delete(context.applicationContext, fp)
-            db.deletePeer(peerName, aliases)
+        scheduleDelete {
+            synchronized(ActiveChatStore.persistenceLock) {
+                if (ActiveChatStore.accountClosed || ActiveChatStore.isRetired(sharedPrefs)) return@synchronized
+                deleteHistory(context, peerName, aliases, fp)
+                ActiveChatStore.completeDelete(sharedPrefs, aliases)
+            }
         }
 
         // Clear notification history
         aliases.forEach { alias ->
-            MessageNotificationService.clearHistory(context, alias)
+            clearNotification(context, alias)
         }
     }
 

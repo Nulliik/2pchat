@@ -90,6 +90,7 @@ open class PacketTunnelProvider: VpnService() {
     private var publicPeerPoolPruned = AtomicBoolean()
 
     private lateinit var config: ConfigurationProxy
+    @Volatile private var startupFailed = false
 
     private var readerThread: Thread? = null
     private var writerThread: Thread? = null
@@ -106,21 +107,34 @@ open class PacketTunnelProvider: VpnService() {
 
     override fun onCreate() {
         super.onCreate()
-        config = ConfigurationProxy(applicationContext)
-        val notification = createServiceNotification(this, State.Disabled)
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                ServiceCompat.startForeground(
-                    this,
-                    SERVICE_NOTIFICATION_ID,
-                    notification,
-                    ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE,
-                )
-            } else {
+        if (!promoteToForeground(State.Disabled)) {
+            startupFailed = true
+            serviceScope.launch { stop() }
+        }
+    }
+
+    private fun promoteToForeground(state: State): Boolean {
+        return try {
+            val notification = createServiceNotification(this, state)
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                    ServiceCompat.startForeground(
+                        this,
+                        SERVICE_NOTIFICATION_ID,
+                        notification,
+                        ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE,
+                    )
+                } else {
+                    startForeground(SERVICE_NOTIFICATION_ID, notification)
+                }
+            } catch (e: Exception) {
+                SafeLog.w(TAG, "Failed to startForeground with specialUse, falling back", e)
                 startForeground(SERVICE_NOTIFICATION_ID, notification)
             }
+            true
         } catch (e: Exception) {
-            SafeLog.w(TAG, "Failed to startForeground in onCreate", e)
+            SafeLog.e(TAG, "Unable to promote VPN service to foreground", e)
+            false
         }
     }
 
@@ -155,7 +169,22 @@ open class PacketTunnelProvider: VpnService() {
             SafeLog.d(TAG, "Intent is null")
             return START_NOT_STICKY
         }
-        serviceScope.launch { handleCommand(intent) }
+        if (startupFailed) return START_NOT_STICKY
+        serviceScope.launch {
+            if (startupFailed) return@launch
+            try {
+                if (intent.action != ACTION_STOP && !::config.isInitialized) {
+                    config = ConfigurationProxy(applicationContext)
+                }
+                handleCommand(intent)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                SafeLog.e(TAG, "Yggdrasil startup prerequisite or command failed (${error.javaClass.simpleName})")
+                startupFailed = true
+                stop()
+            }
+        }
         return if ((intent.action ?: ACTION_STOP) == ACTION_STOP) START_NOT_STICKY else START_STICKY
     }
 
@@ -266,7 +295,8 @@ open class PacketTunnelProvider: VpnService() {
                 // Every later reconnect was then ignored as an already running
                 // tunnel even though no usable TUN workers existed.
                 SafeLog.e(TAG, "Unable to start Yggdrasil tunnel", error)
-                stop(stopService = false)
+                startupFailed = true
+                stop(stopService = true)
             }
         }
     }
@@ -277,30 +307,16 @@ open class PacketTunnelProvider: VpnService() {
         // when Builder.establish() cannot create its TUN descriptor.
         if (VpnService.prepare(this) != null) {
             SafeLog.w(TAG, "VPN consent is missing; Yggdrasil tunnel was not started")
+            startupFailed = true
             updateRuntimeState("", STATE_DISABLED)
             stop(stopService = true)
             return
         }
 
-        val notification = createServiceNotification(this, State.Enabled)
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                ServiceCompat.startForeground(
-                    this,
-                    SERVICE_NOTIFICATION_ID,
-                    notification,
-                    ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE,
-                )
-            } else {
-                startForeground(SERVICE_NOTIFICATION_ID, notification)
-            }
-        } catch (e: Throwable) {
-            SafeLog.w(TAG, "Failed to startForeground in startTunnel with specialUse, falling back", e)
-            try {
-                startForeground(SERVICE_NOTIFICATION_ID, notification)
-            } catch (fallbackEx: Exception) {
-                SafeLog.e(TAG, "Failed startForeground fallback in startTunnel", fallbackEx)
-            }
+        if (!promoteToForeground(State.Disabled)) {
+            startupFailed = true
+            stop()
+            return
         }
 
         // Acquire multicast lock
@@ -333,8 +349,6 @@ open class PacketTunnelProvider: VpnService() {
             return
         }
 
-        updateRuntimeState(address, STATE_ENABLED)
-        yggLog(applicationContext, "Yggdrasil started in SYSTEM VPN (TUN) mode with IPv6: $address")
         val builder = Builder()
             .addAddress(address, 7)
             // 200::/7 covers the complete Yggdrasil allocation (200:: through
@@ -358,11 +372,27 @@ open class PacketTunnelProvider: VpnService() {
         var establishedParcel: ParcelFileDescriptor? = null
         for (attempt in 1..3) {
             try {
+                if (VpnService.prepare(this) != null) {
+                    startupFailed = true
+                    stop()
+                    return
+                }
                 establishedParcel = builder.establish()
-                if (establishedParcel != null && establishedParcel.fileDescriptor.valid()) {
+                if (establishedParcel == null) {
+                    startupFailed = true
+                    stop()
+                    return
+                }
+                if (establishedParcel.fileDescriptor.valid()) {
                     break
                 }
-            } catch (e: Throwable) {
+                establishedParcel.close()
+                establishedParcel = null
+            } catch (e: SecurityException) {
+                throw e
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
                 yggLog(applicationContext, "builder.establish() threw on attempt $attempt/3", "WARN", e)
             }
             yggLog(applicationContext, "VPN establish returned null on attempt $attempt/3, waiting for kernel FD release...", "WARN")
@@ -403,7 +433,13 @@ open class PacketTunnelProvider: VpnService() {
             }
         }
 
+        if (!promoteToForeground(State.Enabled)) {
+            startupFailed = true
+            stop()
+            return
+        }
         isTunnelActive = true
+        updateRuntimeState(address, STATE_ENABLED)
         yggLog(applicationContext, "Yggdrasil SYSTEM VPN (TUN) tunnel active. MTU=${ygg.mtu}")
 
         val intent = Intent(YGG_STATE_INTENT)
@@ -450,6 +486,11 @@ open class PacketTunnelProvider: VpnService() {
         readerThread = null
         writerThread = null
 
+        multicastLock?.let { lock ->
+            runCatching { if (lock.isHeld) lock.release() }
+        }
+        multicastLock = null
+
         var intent = Intent(STATE_INTENT)
         intent.putExtra("type", "state")
         intent.putExtra("started", false)
@@ -466,12 +507,6 @@ open class PacketTunnelProvider: VpnService() {
         if (stopService) {
             stopSelf()
         }
-        multicastLock?.let { lock ->
-            if (lock.isHeld) {
-                runCatching { lock.release() }
-            }
-        }
-        multicastLock = null
     }
 
     private fun connect() {

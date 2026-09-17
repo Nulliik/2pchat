@@ -90,7 +90,7 @@ object TrackerPreferences {
     fun announceEnabled(context: Context): Boolean =
         P2PPreferences.prefs(context).getBoolean(ANNOUNCE_ENABLED, true)
 
-    fun getActiveTrackerUrls(context: Context): List<String> {
+    fun getActiveTrackerUrls(context: Context): List<String> = synchronized(P2PPreferences) {
         val disabled = disabledBuiltIns(context)
         val protocols = enabledProtocols(context)
         val clearnetEnabled = clearnetTrackersEnabled(context)
@@ -116,35 +116,35 @@ object TrackerPreferences {
         )
     }
 
-    fun setAnnounceEnabled(context: Context, enabled: Boolean) {
+    fun setAnnounceEnabled(context: Context, enabled: Boolean): Unit = synchronized(P2PPreferences) {
         P2PPreferences.prefs(context).edit().putBoolean(ANNOUNCE_ENABLED, enabled).apply()
     }
 
     fun clearnetTrackersEnabled(context: Context): Boolean =
         P2PPreferences.prefs(context).getBoolean(CLEARNET_TRACKERS_ENABLED, true)
 
-    fun setClearnetTrackersEnabled(context: Context, enabled: Boolean) {
+    fun setClearnetTrackersEnabled(context: Context, enabled: Boolean): Unit = synchronized(P2PPreferences) {
         P2PPreferences.prefs(context).edit().putBoolean(CLEARNET_TRACKERS_ENABLED, enabled).apply()
     }
 
     fun yggTrackersEnabled(context: Context): Boolean =
         P2PPreferences.prefs(context).getBoolean(YGG_TRACKERS_ENABLED, true)
 
-    fun setYggTrackersEnabled(context: Context, enabled: Boolean) {
+    fun setYggTrackersEnabled(context: Context, enabled: Boolean): Unit = synchronized(P2PPreferences) {
         P2PPreferences.prefs(context).edit().putBoolean(YGG_TRACKERS_ENABLED, enabled).apply()
     }
 
     fun ipv4AnnounceMode(context: Context): String =
         P2PPreferences.prefs(context).getString(IPV4_ANNOUNCE_MODE, "always") ?: "always"
 
-    fun setIpv4AnnounceMode(context: Context, mode: String) {
+    fun setIpv4AnnounceMode(context: Context, mode: String): Unit = synchronized(P2PPreferences) {
         P2PPreferences.prefs(context).edit().putString(IPV4_ANNOUNCE_MODE, mode).apply()
     }
 
     fun dhtEnabled(context: Context): Boolean =
         P2PPreferences.prefs(context).getBoolean(DHT_ENABLED, true)
 
-    fun setDhtEnabled(context: Context, enabled: Boolean) {
+    fun setDhtEnabled(context: Context, enabled: Boolean): Unit = synchronized(P2PPreferences) {
         P2PPreferences.prefs(context).edit().putBoolean(DHT_ENABLED, enabled).apply()
     }
 
@@ -154,7 +154,7 @@ object TrackerPreferences {
             .orEmpty()
             .filterTo(mutableSetOf()) { it in supportedProtocols }
 
-    fun setProtocolEnabled(context: Context, protocol: String, enabled: Boolean) {
+    fun setProtocolEnabled(context: Context, protocol: String, enabled: Boolean): Unit = synchronized(P2PPreferences) {
         require(protocol in supportedProtocols)
         val updated = enabledProtocols(context).toMutableSet().apply {
             if (enabled) add(protocol) else remove(protocol)
@@ -168,7 +168,7 @@ object TrackerPreferences {
             .orEmpty()
             .filterTo(mutableSetOf()) { name -> builtInTrackers.any { it.name == name } }
 
-    fun setBuiltInEnabled(context: Context, name: String, enabled: Boolean) {
+    fun setBuiltInEnabled(context: Context, name: String, enabled: Boolean): Unit = synchronized(P2PPreferences) {
         require(builtInTrackers.any { it.name == name })
         val disabled = disabledBuiltIns(context).toMutableSet().apply {
             if (enabled) remove(name) else add(name)
@@ -198,7 +198,7 @@ object TrackerPreferences {
         }
     }
 
-    fun addCustomTracker(context: Context, name: String, url: String): String? {
+    fun addCustomTracker(context: Context, name: String, url: String): String? = synchronized(P2PPreferences) {
         val cleanName = name.trim()
         val cleanUrl = url.trim()
         if (cleanName.isEmpty() || cleanName.length > 60 || cleanName.any { it.code < 32 }) {
@@ -218,29 +218,30 @@ object TrackerPreferences {
         return null
     }
 
-    fun setCustomTrackerEnabled(context: Context, id: String, enabled: Boolean) {
+    fun setCustomTrackerEnabled(context: Context, id: String, enabled: Boolean): Unit = synchronized(P2PPreferences) {
         saveCustomTrackers(
             context,
             customTrackers(context).map { if (it.id == id) it.copy(enabled = enabled) else it },
         )
     }
 
-    fun deleteCustomTracker(context: Context, id: String) {
+    fun deleteCustomTracker(context: Context, id: String): Unit = synchronized(P2PPreferences) {
         saveCustomTrackers(context, customTrackers(context).filterNot { it.id == id })
     }
 
-    private val inMemoryDiagnostics = java.util.concurrent.ConcurrentHashMap<String, TrackerDiagnosticItem>()
-    private val isLoadedFromDisk = java.util.concurrent.atomic.AtomicBoolean(false)
-    private val isFlushScheduled = java.util.concurrent.atomic.AtomicBoolean(false)
+    private val inMemoryDiagnostics = mutableMapOf<String, TrackerDiagnosticItem>()
+    private var isLoadedFromDisk = false
+    private var flushGeneration = 0L
+    private var isFlushScheduled = false
     private val ioScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO + kotlinx.coroutines.SupervisorJob())
     private val WHITESPACE_REGEX = Regex("[\\r\\n]+")
 
     private fun ensureLoaded(context: Context) {
-        if (isLoadedFromDisk.compareAndSet(false, true)) {
+        if (!isLoadedFromDisk) {
             val prefs = P2PPreferences.prefs(context)
-            val raw = prefs.getString(TRACKER_DIAGNOSTICS_JSON, null) ?: return
+            val raw = prefs.getString(TRACKER_DIAGNOSTICS_JSON, null)
             runCatching {
-                val json = JSONObject(raw)
+                val json = JSONObject(raw ?: "{}")
                 val keys = json.keys()
                 while (keys.hasNext()) {
                     val url = keys.next()
@@ -259,11 +260,19 @@ object TrackerPreferences {
             }.onFailure { e ->
                 com.example.twopchat.logging.SafeLog.w("TrackerPreferences", "Failed to parse cached diagnostics JSON", e)
             }
+            isLoadedFromDisk = true
         }
     }
 
-    fun resetDefaults(context: Context) {
+    internal fun clearInMemoryState(): Unit = synchronized(P2PPreferences) {
+        flushGeneration++
+        isFlushScheduled = false
         inMemoryDiagnostics.clear()
+        isLoadedFromDisk = false
+    }
+
+    fun resetDefaults(context: Context): Unit = synchronized(P2PPreferences) {
+        clearInMemoryState()
         P2PPreferences.prefs(context).edit()
             .remove(ANNOUNCE_ENABLED)
             .remove(DHT_ENABLED)
@@ -285,7 +294,8 @@ object TrackerPreferences {
         peerCount: Int,
         elapsedMs: Long,
         detail: String,
-    ) {
+    ): Unit = synchronized(P2PPreferences) {
+        ensureLoaded(context)
         val cleanDetail = detail.replace(WHITESPACE_REGEX, " ").take(160)
         inMemoryDiagnostics[trackerUrl] = TrackerDiagnosticItem(
             success = success,
@@ -295,13 +305,21 @@ object TrackerPreferences {
             updatedAt = System.currentTimeMillis(),
         )
 
-        // Throttle disk writes: schedule debounced flush every 2 seconds
-        if (isFlushScheduled.compareAndSet(false, true)) {
+        if (!isFlushScheduled) {
             val appContext = context.applicationContext
+            val generation = flushGeneration
+            isFlushScheduled = true
             ioScope.launch {
                 kotlinx.coroutines.delay(2000L)
-                isFlushScheduled.set(false)
-                flushDiagnosticsToPrefs(appContext)
+                synchronized(P2PPreferences) {
+                    if (generation == flushGeneration) {
+                        try {
+                            flushDiagnosticsToPrefs(appContext)
+                        } finally {
+                            isFlushScheduled = false
+                        }
+                    }
+                }
             }
         }
     }
@@ -325,7 +343,7 @@ object TrackerPreferences {
     }
 
     /** Maps built-in and custom trackers to their latest actual announce result. */
-    fun diagnosticStatuses(context: Context): Map<String, String> {
+    fun diagnosticStatuses(context: Context): Map<String, String> = synchronized(P2PPreferences) {
         ensureLoaded(context)
         val allTrackers = builtInTrackers.map { it.name to it.url } +
             customTrackers(context).map { it.name to it.url }
@@ -347,12 +365,16 @@ object TrackerPreferences {
         }
     }
 
-    fun activeTrackerSuccessCount(context: Context): Int {
+    fun activeTrackerSuccessCount(context: Context): Int = synchronized(P2PPreferences) {
         ensureLoaded(context)
         return getActiveTrackerUrls(context).count { url -> inMemoryDiagnostics[url]?.success == true }
     }
 
-    fun configJson(context: Context): String = JSONObject().apply {
+    fun configJson(context: Context): String = synchronized(P2PPreferences) {
+        configJsonLocked(context)
+    }
+
+    private fun configJsonLocked(context: Context): String = JSONObject().apply {
         put("announce_enabled", announceEnabled(context))
         put("dht_enabled", dhtEnabled(context))
         put("clearnet_trackers_enabled", clearnetTrackersEnabled(context))

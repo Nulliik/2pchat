@@ -29,7 +29,18 @@ class OutboxDrainWorker(
     parameters: WorkerParameters,
 ) : CoroutineWorker(appContext, parameters) {
 
-    override suspend fun doWork(): Result {
+    override suspend fun doWork(): Result = drain(
+        drainGroups = {
+            GroupChatCoordinator.initialize(applicationContext)
+            GroupChatCoordinator.flushDueOutbox(limit = 200)
+        },
+        drainDirectMessages = { P2PMessageRelay.processAllOfflineQueues(applicationContext) },
+    )
+
+    internal suspend fun drain(
+        drainGroups: suspend () -> Int,
+        drainDirectMessages: () -> Unit,
+    ): Result {
         val context = applicationContext
         SafeLog.d(TAG, "Starting outbox drain execution")
 
@@ -64,24 +75,10 @@ class OutboxDrainWorker(
             }
 
             // 1. Drain group chat outbox
-            var flushedGroupCount = 0
-            try {
-                GroupChatCoordinator.initialize(context)
-                flushedGroupCount = GroupChatCoordinator.flushDueOutbox(limit = 200)
-            } catch (e: Exception) {
-                if (e is CancellationException) throw e
-                if (e is SQLiteDatabaseLockedException) throw e
-                SafeLog.w(TAG, "Non-fatal error draining group outbox", e)
-            }
+            val flushedGroupCount = drainGroups()
 
             // 2. Drain 1-on-1 offline messages across all peers
-            try {
-                P2PMessageRelay.processAllOfflineQueues(context)
-            } catch (e: Exception) {
-                if (e is CancellationException) throw e
-                if (e is SQLiteDatabaseLockedException) throw e
-                SafeLog.w(TAG, "Non-fatal error draining offline queues", e)
-            }
+            drainDirectMessages()
 
             SafeLog.i(TAG, "Outbox drain completed successfully (flushed $flushedGroupCount group task(s))")
             BackgroundDiagnostics.recordDrainOutcome(context, "success")

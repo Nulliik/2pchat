@@ -72,17 +72,27 @@ object NativeBridge {
     }
 
     private fun ensureStorageKey(context: Context? = null) {
-        if (!isLoaded) return
+        check(isLoaded) { "Native library unavailable" }
+        val ctx = context ?: com.example.twopchat.yggdrasil.GlobalApplication.getContext()
+        withStorageKey(
+            { com.example.twopchat.security.SecureStorage.getOrGenerateGoStorageKey(ctx) },
+            ::nativeSetStorageKey,
+        ) { }
+    }
+
+    internal fun <T> withStorageKey(
+        load: () -> ByteArray,
+        install: (ByteArray) -> Boolean,
+        action: () -> T,
+    ): T {
+        val storageKey = load()
         try {
-            val ctx = context ?: try { com.example.twopchat.yggdrasil.GlobalApplication.getContext() } catch (_: Throwable) { null }
-            if (ctx != null) {
-                val storageKey = com.example.twopchat.security.SecureStorage.getOrGenerateGoStorageKey(ctx)
-                nativeSetStorageKey(storageKey)
-                com.example.twopchat.security.SecurityUtils.zeroize(storageKey)
-            }
-        } catch (e: Throwable) {
-            SafeLog.e(TAG, "ensureStorageKey failed", e)
+            check(storageKey.size == 32) { "Invalid storage key length" }
+            check(install(storageKey)) { "Native storage key rejected" }
+        } finally {
+            com.example.twopchat.security.SecurityUtils.zeroize(storageKey)
         }
+        return action()
     }
 
     fun setStorageDir(dir: String) {

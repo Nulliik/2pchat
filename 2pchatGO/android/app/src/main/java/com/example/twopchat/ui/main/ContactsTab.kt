@@ -586,9 +586,9 @@ fun ContactsTab(
                                         activeChats = activeSet,
                                         sharedPrefs = sharedPrefs,
                                     )
+                                    com.example.twopchat.relay.ActiveChatStore.add(sharedPrefs, effectiveName)
                                     if (!activeSet.contains(effectiveName)) {
                                         sharedPrefs.edit()
-                                            .putStringSet("active_chats", activeSet + effectiveName)
                                             .putString("transport_${effectiveName}", if (endpointStr.contains(".onion")) "Tor Onion" else "DIRECT P2P")
                                             .putString("peer_fingerprint_${effectiveName}", request.expectedFingerprint.orEmpty())
                                             .putString("discovery_code_${effectiveName}", request.sharedCode)
@@ -653,6 +653,7 @@ fun ContactsTab(
                         }
                     }
                 } catch (e: Exception) {
+                    if (e is CancellationException) throw e
                     Toast.makeText(context, "Invalid link/QR", Toast.LENGTH_SHORT).show()
                 }
             } else if (isDirectOnionAddress(trimmed)) {
@@ -681,9 +682,9 @@ fun ContactsTab(
                     com.example.twopchat.relay.P2PMessageRelay.injectLocalDiscoveryCandidate(
                         effectiveName, "", directOnion.onionEndpoint,
                     )
+                    com.example.twopchat.relay.ActiveChatStore.add(sharedPrefs, effectiveName)
                     if (!activeSet.contains(effectiveName)) {
                         sharedPrefs.edit()
-                            .putStringSet("active_chats", activeSet + effectiveName)
                             .putString("transport_${effectiveName}", "Tor Onion")
                             .putString("last_endpoint_${effectiveName}", directOnion.onionEndpoint)
                             .apply()
@@ -730,9 +731,9 @@ fun ContactsTab(
                     com.example.twopchat.relay.P2PMessageRelay.injectLocalDiscoveryCandidate(
                         effectiveName, "", directIP.endpoint,
                     )
+                    com.example.twopchat.relay.ActiveChatStore.add(sharedPrefs, effectiveName)
                     if (!activeSet.contains(effectiveName)) {
                         sharedPrefs.edit()
-                            .putStringSet("active_chats", activeSet + effectiveName)
                             .putString("transport_${effectiveName}", "DIRECT P2P")
                             .putString("last_endpoint_${effectiveName}", directIP.endpoint)
                             .apply()
@@ -1597,7 +1598,8 @@ fun ContactsTab(
                             searchQuery = trimmed
                             performSearch(trimmed)
                         }
-                    } catch (e: Throwable) {
+                    } catch (e: Exception) {
+                        if (e is CancellationException) throw e
                         SafeLog.e("ContactsTab", "Error handling scanned QR code", e)
                         Toast.makeText(context, if (appLanguage == "Русский") "Ошибка обработки QR-кода" else "Error processing QR code", Toast.LENGTH_SHORT).show()
                     }
@@ -1654,10 +1656,8 @@ fun ContactsTab(
                                         activeChats = activeSet,
                                         sharedPrefs = sharedPrefs,
                                     )
+                                    com.example.twopchat.relay.ActiveChatStore.add(sharedPrefs, peerKey)
                                     if (!activeSet.contains(peerKey)) {
-                                        val newSet = activeSet.toMutableSet()
-                                        newSet.add(peerKey)
-                                        sharedPrefs.edit().putStringSet("active_chats", newSet).apply()
                                         val isYgg = contact.endpoints.split(',')
                                             .map(String::trim)
                                             .any { it.startsWith('[') }

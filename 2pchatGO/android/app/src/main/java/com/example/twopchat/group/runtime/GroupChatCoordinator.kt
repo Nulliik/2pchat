@@ -110,6 +110,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -240,11 +241,11 @@ object GroupChatCoordinator {
         val receivedAtMs: Long = System.currentTimeMillis(),
     )
 
-    private val pendingKeyPackages = ConcurrentHashMap<String, MutableList<PendingKeyPackageRecord>>()
-    private val pendingRosterSnapshots = ConcurrentHashMap<String, MutableList<PendingRosterSnapshotRecord>>()
-    private val pendingEpochEvents = ConcurrentHashMap<String, MutableList<PendingGroupEventRecord>>()
+    private val pendingKeyPackages = ConcurrentHashMap<String, GroupPendingBuffer<PendingKeyPackageRecord>>()
+    private val pendingRosterSnapshots = ConcurrentHashMap<String, GroupPendingBuffer<PendingRosterSnapshotRecord>>()
+    private val pendingEpochEvents = ConcurrentHashMap<String, GroupPendingBuffer<PendingGroupEventRecord>>()
     private val pendingOutgoingEpochEvents = ConcurrentHashMap<String, MutableList<PendingOutgoingEvent>>()
-    private val pendingTombstones = ConcurrentHashMap<String, MutableList<PendingTombstoneRecord>>()
+    private val pendingTombstones = ConcurrentHashMap<String, GroupPendingBuffer<PendingTombstoneRecord>>()
     private val PENDING_BUFFER_TTL_MS = 5 * 60 * 1000L
     private val MAX_PENDING_BUFFER_PER_GROUP = 50
     private val lastSyncRequestAtMs = ConcurrentHashMap<String, Long>()
@@ -339,12 +340,15 @@ object GroupChatCoordinator {
         }
         activeScope.launch {
             try {
-                runCatching {
+                try {
                     db().listGroups().forEach { drainStoredControlChain(it.groupId) }
                     reconcileDurableState()
+                    recoveryNeeded.set(false)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (error: Exception) {
+                    SafeLog.w(TAG, "Group recovery failed: ${error.message}")
                 }
-                    .onSuccess { recoveryNeeded.set(false) }
-                    .onFailure { SafeLog.w(TAG, "Group recovery failed: ${it.message}") }
                 refreshCreateState()
                 refreshPendingInvites()
                 refreshAllGroups()
@@ -368,6 +372,8 @@ object GroupChatCoordinator {
                     chatDb.getAllRevokedCertificates().forEach { (hash, _) ->
                         bridge.revokeCertificate(hash)
                     }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
                 } catch (e: Exception) {
                     SafeLog.w(TAG, "Failed restoring group succession state", e)
                 }
@@ -376,7 +382,7 @@ object GroupChatCoordinator {
                 activeScope.launch {
                     while (true) {
                         delay(MIN_HEARTBEAT_INTERVAL_MS)
-                        runCatching {
+                        try {
                             db().listGroups().forEach { g ->
                                 if (g.localDeviceId == g.ownerDeviceId) {
                                     val lastEmit = P2PPreferences.getLastHeartbeatEmitTime(appContext, g.groupId)
@@ -385,9 +391,15 @@ object GroupChatCoordinator {
                                     }
                                 }
                             }
+                        } catch (cancelled: CancellationException) {
+                            throw cancelled
+                        } catch (error: Exception) {
+                            SafeLog.w(TAG, "Idle heartbeat sweep failed: ${error.message}")
                         }
                     }
                 }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (e: Exception) {
                 SafeLog.e(TAG, "Failed during group coordinator startup initialization", e)
             }
@@ -1166,7 +1178,9 @@ object GroupChatCoordinator {
             )
             if (isMe) {
                 db.saveMessage(senderPeerName, inviteMessage)
-                P2PPreferences.lastMessageCache[senderPeerName] = inviteSummary
+                com.example.twopchat.relay.LastMessagePreviewStore.set(
+                    P2PPreferences.prefs(context), senderPeerName, inviteSummary,
+                )
                 P2PMessageRelay.runOnMain {
                     P2PMessageRelay.messageListeners.forEach { it.onMessageReceived(senderPeerName, inviteMessage) }
                 }
@@ -1369,21 +1383,24 @@ object GroupChatCoordinator {
         updateChatFlow(groupId) { it.copy(currentReply = null) }
     }
 
-    private suspend fun markReadAndSendReceipt(groupId: String) {
+    private suspend fun markReadAndSendReceipt(groupId: String) = emitMutex.withLock {
+        markReadAndSendReceiptLocked(groupId)
+    }
+
+    private suspend fun markReadAndSendReceiptLocked(groupId: String) {
         val group = db().getGroup(groupId) ?: return
         db().markRead(groupId)
         val latestRemote = db().loadTimeline(groupId, 50).firstOrNull {
             it.authorDeviceId != group.localDeviceId
         } ?: return
-        if (lastReadReceiptTargets.put(groupId, latestRemote.messageId) == latestRemote.messageId) {
-            return
-        }
-        emitEvent(
+        if (lastReadReceiptTargets[groupId] == latestRemote.messageId) return
+        emitEventLocked(
             groupId,
             GroupEventKind.READ_RECEIPT,
             JSONObject().put("event_id", latestRemote.messageId),
             latestRemote.messageId,
         )
+        lastReadReceiptTargets[groupId] = latestRemote.messageId
     }
 
     fun acceptInvite(inviteId: String) {
@@ -1418,10 +1435,13 @@ object GroupChatCoordinator {
             }
         }
         scope.launch {
-            runCatching { processIncoming(senderPeerName, json) }
-                .onFailure { error ->
-                    SafeLog.w(TAG, "Rejected group frame from $senderPeerName: ${error.message}")
-                }
+            try {
+                processIncoming(senderPeerName, json)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                SafeLog.w(TAG, "Rejected group frame from $senderPeerName: ${error.message}")
+            }
         }
         return true
     }
@@ -1543,9 +1563,14 @@ object GroupChatCoordinator {
         // acknowledged key packages again for every connected member.
         if (applicationContext == null) return 0
         if (recoveryNeeded.get()) {
-            runCatching { reconcileDurableState() }
-                .onSuccess { recoveryNeeded.set(false) }
-                .onFailure { SafeLog.w(TAG, "Deferred group recovery failed: ${it.message}") }
+            try {
+                reconcileDurableState()
+                recoveryNeeded.set(false)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                SafeLog.w(TAG, "Deferred group recovery failed: ${error.message}")
+            }
         }
         flushDeclinedInviteResponses()
         var flushed = flushDueOutbox()
@@ -3033,8 +3058,8 @@ object GroupChatCoordinator {
             if (isSerializedControl(event.kind)) {
                 applySerializedControl(group, event, payload)
                 drainStoredControlChain(group.groupId)
-                drainPendingKeyPackages(group.groupId)
-                drainPendingRosterSnapshots(group.groupId)
+                drainPendingKeyPackagesLocked(group.groupId)
+                drainPendingRosterSnapshotsLocked(group.groupId)
             }
             maybeProcessControlProposal(group, event, payload, author)
             if (acknowledge) {
@@ -3147,8 +3172,8 @@ object GroupChatCoordinator {
         if (isSerializedControl(event.kind)) {
             applySerializedControl(group, event, payload)
             drainStoredControlChain(group.groupId)
-            drainPendingKeyPackages(group.groupId)
-            drainPendingRosterSnapshots(group.groupId)
+            drainPendingKeyPackagesLocked(group.groupId)
+            drainPendingRosterSnapshotsLocked(group.groupId)
         } else {
             applyApplicationProjection(event)
         }
@@ -3240,7 +3265,7 @@ object GroupChatCoordinator {
                 GroupEventKind.REPLY,
             )
         ) {
-            markReadAndSendReceipt(group.groupId)
+            markReadAndSendReceiptLocked(group.groupId)
         }
     }
 
@@ -3465,7 +3490,12 @@ object GroupChatCoordinator {
         )
     }
 
-    private suspend fun receiveKeyPackage(senderPeerName: String, json: JSONObject) {
+    private suspend fun receiveKeyPackage(senderPeerName: String, json: JSONObject) =
+        withGroupEventLocks(controlMutex, emitMutex) {
+            receiveKeyPackageLocked(senderPeerName, json)
+        }
+
+    private suspend fun receiveKeyPackageLocked(senderPeerName: String, json: JSONObject) {
         val keyPackage = GroupControlFrames.parseKeyPackage(json)
         val group = db().getGroup(keyPackage.groupId) ?: return
         require(keyPackage.recipientDeviceId == group.localDeviceId)
@@ -3586,16 +3616,15 @@ object GroupChatCoordinator {
         json: JSONObject,
         keyPackage: GroupEpochKeyPackage,
     ) {
-        val list = pendingKeyPackages.computeIfAbsent(groupId) { mutableListOf() }
-        synchronized(list) {
-            val now = System.currentTimeMillis()
-            list.removeAll { (now - it.receivedAtMs) > PENDING_BUFFER_TTL_MS }
-            if (list.none { it.keyPackage.epoch == keyPackage.epoch && it.keyPackage.controlHead == keyPackage.controlHead }) {
-                if (list.size >= MAX_PENDING_BUFFER_PER_GROUP) {
-                    list.removeAt(0)
-                }
-                list.add(PendingKeyPackageRecord(senderPeerName, json, keyPackage, now))
-            }
+        val buffer = pendingKeyPackages.computeIfAbsent(groupId) {
+            GroupPendingBuffer(
+                MAX_PENDING_BUFFER_PER_GROUP, PENDING_BUFFER_TTL_MS,
+                { it.keyPackage.epoch to it.keyPackage.controlHead }, { it.receivedAtMs },
+            )
+        }
+        val now = System.currentTimeMillis()
+        check(buffer.add(PendingKeyPackageRecord(senderPeerName, json, keyPackage, now), now)) {
+            "pending key package buffer is fully claimed; frame not acknowledged"
         }
     }
 
@@ -3605,45 +3634,38 @@ object GroupChatCoordinator {
         json: JSONObject,
         event: GroupWireEvent,
     ) {
-        val list = pendingEpochEvents.computeIfAbsent(groupId) { mutableListOf() }
-        synchronized(list) {
-            val now = System.currentTimeMillis()
-            list.removeAll { (now - it.receivedAtMs) > PENDING_BUFFER_TTL_MS }
-            if (list.none { it.event.eventId == event.eventId }) {
-                if (list.size >= MAX_PENDING_BUFFER_PER_GROUP) {
-                    list.removeAt(0)
-                }
-                list.add(PendingGroupEventRecord(senderPeerName, json, event, now))
-            }
+        val buffer = pendingEpochEvents.computeIfAbsent(groupId) {
+            GroupPendingBuffer(
+                MAX_PENDING_BUFFER_PER_GROUP, PENDING_BUFFER_TTL_MS,
+                { it.event.eventId }, { it.receivedAtMs },
+            )
+        }
+        val now = System.currentTimeMillis()
+        check(buffer.add(PendingGroupEventRecord(senderPeerName, json, event, now), now)) {
+            "pending event buffer is fully claimed; frame not acknowledged"
         }
     }
 
-    private suspend fun drainPendingKeyPackages(groupId: String) {
-        val list = pendingKeyPackages[groupId] ?: return
-        val group = db().getGroup(groupId) ?: return
-        val now = System.currentTimeMillis()
-        val ready = mutableListOf<PendingKeyPackageRecord>()
-        synchronized(list) {
-            list.removeAll { (now - it.receivedAtMs) > PENDING_BUFFER_TTL_MS }
-            val iterator = list.iterator()
-            while (iterator.hasNext()) {
-                val item = iterator.next()
-                if (db().getEvent(groupId, item.keyPackage.controlHead) != null) {
-                    ready.add(item)
-                    iterator.remove()
-                }
-            }
+    private suspend fun drainPendingKeyPackages(groupId: String) =
+        withGroupEventLocks(controlMutex, emitMutex) {
+            drainPendingKeyPackagesLocked(groupId)
         }
-        for (item in ready) {
-            runCatching {
-                val sender = db().getMember(groupId, item.keyPackage.senderDeviceId) ?: return@runCatching
-                val control = db().getEvent(groupId, item.keyPackage.controlHead) ?: return@runCatching
-                applyKeyPackageWithControl(group, sender, item.senderPeerName, item.keyPackage, control)
-            }.onFailure { error ->
+
+    private suspend fun drainPendingKeyPackagesLocked(groupId: String) {
+        val buffer = pendingKeyPackages[groupId] ?: return
+        buffer.drain(
+            nowMs = System.currentTimeMillis(),
+            ready = { db().getEvent(groupId, it.keyPackage.controlHead) != null },
+            onFailure = { item, error ->
                 SafeLog.w(TAG, "Failed applying drained key package for group $groupId, epoch ${item.keyPackage.epoch}: ${error.message}")
-            }
+            },
+        ) { item ->
+            val group = db().getGroup(groupId) ?: return@drain
+            val sender = db().getMember(groupId, item.keyPackage.senderDeviceId) ?: return@drain
+            val control = db().getEvent(groupId, item.keyPackage.controlHead) ?: return@drain
+            applyKeyPackageWithControl(group, sender, item.senderPeerName, item.keyPackage, control)
         }
-        drainPendingRosterSnapshots(groupId)
+        drainPendingRosterSnapshotsLocked(groupId)
     }
 
     private fun bufferPendingRosterSnapshot(
@@ -3652,76 +3674,61 @@ object GroupChatCoordinator {
         json: JSONObject,
         snapshot: GroupRosterSnapshot,
     ) {
-        val list = pendingRosterSnapshots.computeIfAbsent(groupId) { mutableListOf() }
-        synchronized(list) {
-            val now = System.currentTimeMillis()
-            list.removeAll { (now - it.receivedAtMs) > PENDING_BUFFER_TTL_MS }
-            if (list.none { it.snapshot.controlHead == snapshot.controlHead && it.snapshot.pageIndex == snapshot.pageIndex }) {
-                if (list.size >= MAX_PENDING_BUFFER_PER_GROUP) {
-                    list.removeAt(0)
-                }
-                list.add(PendingRosterSnapshotRecord(senderPeerName, json, snapshot, now))
-            }
+        val buffer = pendingRosterSnapshots.computeIfAbsent(groupId) {
+            GroupPendingBuffer(
+                MAX_PENDING_BUFFER_PER_GROUP, PENDING_BUFFER_TTL_MS,
+                { it.snapshot.controlHead to it.snapshot.pageIndex }, { it.receivedAtMs },
+            )
+        }
+        val now = System.currentTimeMillis()
+        check(buffer.add(PendingRosterSnapshotRecord(senderPeerName, json, snapshot, now), now)) {
+            "pending roster buffer is fully claimed; frame not acknowledged"
         }
     }
 
-    private suspend fun drainPendingRosterSnapshots(groupId: String) {
-        val list = pendingRosterSnapshots[groupId] ?: return
-        val group = db().getGroup(groupId) ?: return
-        val now = System.currentTimeMillis()
-        val ready = mutableListOf<PendingRosterSnapshotRecord>()
-        synchronized(list) {
-            list.removeAll { (now - it.receivedAtMs) > PENDING_BUFFER_TTL_MS }
-            val iterator = list.iterator()
-            while (iterator.hasNext()) {
-                val item = iterator.next()
-                if (item.snapshot.epoch < group.currentEpoch) {
-                    iterator.remove()
-                } else if (item.snapshot.controlHead == group.controlHead && item.snapshot.epoch == group.currentEpoch) {
-                    ready.add(item)
-                    iterator.remove()
-                }
-            }
+    private suspend fun drainPendingRosterSnapshots(groupId: String) =
+        withGroupEventLocks(controlMutex, emitMutex) {
+            drainPendingRosterSnapshotsLocked(groupId)
         }
-        ready.sortBy { it.snapshot.pageIndex }
-        for (item in ready) {
-            runCatching {
-                receiveRosterSnapshot(item.senderPeerName, item.json)
-            }.onFailure { error ->
+
+    private suspend fun drainPendingRosterSnapshotsLocked(groupId: String) {
+        val buffer = pendingRosterSnapshots[groupId] ?: return
+        val group = db().getGroup(groupId) ?: return
+        buffer.drain(
+            nowMs = System.currentTimeMillis(),
+            ready = { it.snapshot.controlHead == group.controlHead && it.snapshot.epoch == group.currentEpoch },
+            obsolete = { it.snapshot.epoch < group.currentEpoch },
+            comparator = compareBy { it.snapshot.pageIndex },
+            onFailure = { item, error ->
                 SafeLog.w(
                     TAG,
                     "Failed applying drained roster snapshot for group $groupId, epoch ${item.snapshot.epoch}, page ${item.snapshot.pageIndex}: ${error.message}",
                 )
-            }
+            },
+        ) { item ->
+            receiveRosterSnapshotLocked(item.senderPeerName, item.json)
         }
     }
 
     private suspend fun drainPendingEventsForEpoch(groupId: String, epoch: Long) {
-        val list = pendingEpochEvents[groupId] ?: return
-        val now = System.currentTimeMillis()
-        val ready = mutableListOf<PendingGroupEventRecord>()
-        synchronized(list) {
-            list.removeAll { (now - it.receivedAtMs) > PENDING_BUFFER_TTL_MS }
-            val iterator = list.iterator()
-            while (iterator.hasNext()) {
-                val item = iterator.next()
-                if (item.event.epoch == epoch) {
-                    ready.add(item)
-                    iterator.remove()
-                }
-            }
-        }
-        for (item in ready) {
-            runCatching {
-                receiveEvent(item.senderPeerName, item.json, acknowledge = true)
-            }.onFailure { error ->
+        pendingEpochEvents[groupId]?.drain(
+            nowMs = System.currentTimeMillis(),
+            ready = { it.event.epoch == epoch },
+            onFailure = { item, error ->
                 SafeLog.w(TAG, "Failed applying drained group event ${item.event.eventId} for epoch $epoch: ${error.message}")
-            }
+            },
+        ) { item ->
+            receiveEventLocked(item.senderPeerName, item.json, acknowledge = true, refreshUi = true)
         }
-        drainPendingOutgoingEventsForEpoch(groupId, epoch)
+        drainPendingOutgoingEventsForEpochLocked(groupId, epoch)
     }
 
-    internal suspend fun drainPendingOutgoingEventsForEpoch(groupId: String, epoch: Long) {
+    internal suspend fun drainPendingOutgoingEventsForEpoch(groupId: String, epoch: Long) =
+        withGroupEventLocks(controlMutex, emitMutex) {
+            drainPendingOutgoingEventsForEpochLocked(groupId, epoch)
+        }
+
+    private suspend fun drainPendingOutgoingEventsForEpochLocked(groupId: String, epoch: Long) {
         val tasks = db().loadAwaitingEpochKeyTasks(groupId).sortedBy { it.createdAtMs }
         if (tasks.isEmpty()) return
 
@@ -3745,9 +3752,10 @@ object GroupChatCoordinator {
                 break
             }
 
-            emitMutex.withLock {
-                val lockGroup = db().getGroup(groupId) ?: return@withLock
-                val lockKey = db().getEpochKey(groupId, lockGroup.currentEpoch) ?: return@withLock
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            run drainTask@{
+                val lockGroup = db().getGroup(groupId) ?: return@drainTask
+                val lockKey = db().getEpochKey(groupId, lockGroup.currentEpoch) ?: return@drainTask
                 val intentJson = runCatching { JSONObject(task.payload.decodeToString()) }.getOrDefault(JSONObject())
                 val kindStr = intentJson.optString("kind")
                 val kind = runCatching { GroupEventKind.valueOf(kindStr) }.getOrDefault(GroupEventKind.MESSAGE)
@@ -3848,53 +3856,50 @@ object GroupChatCoordinator {
         json: JSONObject,
         event: GroupWireEvent,
     ) {
-        val list = pendingTombstones.computeIfAbsent(groupId) { mutableListOf() }
-        synchronized(list) {
-            if (list.size >= MAX_PENDING_BUFFER_PER_GROUP) {
-                list.removeAt(0)
-            }
-            list.removeAll { it.event.eventId == event.eventId }
-            list.add(PendingTombstoneRecord(senderPeerName, json, event))
+        val buffer = pendingTombstones.computeIfAbsent(groupId) {
+            GroupPendingBuffer(
+                MAX_PENDING_BUFFER_PER_GROUP, null,
+                { it.event.eventId }, { it.receivedAtMs },
+                GroupPendingBuffer.DuplicatePolicy.REPLACE,
+            )
+        }
+        val now = System.currentTimeMillis()
+        check(buffer.add(PendingTombstoneRecord(senderPeerName, json, event, now), now)) {
+            "pending tombstone buffer is fully claimed; frame not acknowledged"
         }
     }
 
     private suspend fun drainPendingTombstones(groupId: String, targetEventId: String) {
-        val list = pendingTombstones[groupId] ?: return
-        val matching = synchronized(list) {
-            val iterator = list.iterator()
-            val result = mutableListOf<PendingTombstoneRecord>()
-            while (iterator.hasNext()) {
-                val item = iterator.next()
-                if (item.event.eventId == targetEventId) {
-                    result.add(item)
-                    iterator.remove()
-                }
-            }
-            result
-        }
-        for (item in matching) {
-            try {
-                receiveEventLocked(
-                    senderPeerName = item.senderPeerName,
-                    json = item.json,
-                    acknowledge = false,
-                    refreshUi = true,
-                )
-            } catch (e: Exception) {
-                SafeLog.w(TAG, "Failed draining pending tombstone ${item.event.eventId}: ${e.message}")
-            }
+        pendingTombstones[groupId]?.drain(
+            nowMs = System.currentTimeMillis(),
+            ready = { it.event.eventId == targetEventId },
+            onFailure = { item, error ->
+                SafeLog.w(TAG, "Failed draining pending tombstone ${item.event.eventId}: ${error.message}")
+            },
+        ) { item ->
+            receiveEventLocked(
+                senderPeerName = item.senderPeerName,
+                json = item.json,
+                acknowledge = false,
+                refreshUi = true,
+            )
         }
     }
 
     internal fun getPendingTombstonesCount(groupId: String): Int {
-        return pendingTombstones[groupId]?.size ?: 0
+        return pendingTombstones[groupId]?.size() ?: 0
     }
 
     internal fun getPendingRosterSnapshotsCount(groupId: String): Int {
-        return pendingRosterSnapshots[groupId]?.size ?: 0
+        return pendingRosterSnapshots[groupId]?.size() ?: 0
     }
 
-    private suspend fun receiveRosterSnapshot(senderPeerName: String, json: JSONObject) {
+    private suspend fun receiveRosterSnapshot(senderPeerName: String, json: JSONObject) =
+        withGroupEventLocks(controlMutex, emitMutex) {
+            receiveRosterSnapshotLocked(senderPeerName, json)
+        }
+
+    private suspend fun receiveRosterSnapshotLocked(senderPeerName: String, json: JSONObject) {
         val snapshot = GroupControlFrames.parseRosterSnapshot(json)
         val group = db().getGroup(snapshot.groupId) ?: return
         require(snapshot.recipientDeviceId == group.localDeviceId)
@@ -4048,7 +4053,7 @@ object GroupChatCoordinator {
             ),
         )
         refreshGroup(group.groupId)
-        drainPendingKeyPackages(group.groupId)
+        drainPendingKeyPackagesLocked(group.groupId)
         drainPendingEventsForEpoch(group.groupId, snapshot.epoch)
     }
 
@@ -4235,11 +4240,20 @@ object GroupChatCoordinator {
         payload: JSONObject,
         targetEventId: String? = null,
     ): GroupWireEvent? = emitMutex.withLock {
+        emitEventLocked(groupId, kind, payload, targetEventId)
+    }
+
+    private suspend fun emitEventLocked(
+        groupId: String,
+        kind: GroupEventKind,
+        payload: JSONObject,
+        targetEventId: String? = null,
+    ): GroupWireEvent? {
         val storage = db()
-        val group = storage.getGroup(groupId) ?: return@withLock null
+        val group = storage.getGroup(groupId) ?: return null
         val local = localIdentity()
-        val author = storage.getMember(groupId, local.deviceId) ?: return@withLock null
-        if (!validatePolicy(group, author, kind, targetEventId, payload)) return@withLock null
+        val author = storage.getMember(groupId, local.deviceId) ?: return null
+        if (!validatePolicy(group, author, kind, targetEventId, payload)) return null
         val key = storage.getEpochKey(groupId, group.currentEpoch)
         if (key == null) {
             if (!isSerializedControl(kind)) {
@@ -4260,7 +4274,7 @@ object GroupChatCoordinator {
                     }
                 }
             }
-            return@withLock null
+            return null
         }
         val sequence = storage.nextAuthorSequence(groupId, local.deviceId)
         val latestAuthor = storage.latestAuthorEvent(groupId, local.deviceId)
@@ -4337,7 +4351,7 @@ object GroupChatCoordinator {
         if (group.localDeviceId == group.ownerDeviceId) {
             maybeEmitHeartbeat(groupId, force = false)
         }
-        event
+        return event
     }
 
     private fun validatePolicy(

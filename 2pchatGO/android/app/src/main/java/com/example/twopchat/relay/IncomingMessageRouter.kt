@@ -29,7 +29,8 @@ internal class IncomingMessageRouter(
         sendControlMessage: (Context, String, JSONObject) -> Unit,
         acknowledgeControl: (Context, String) -> Unit,
     ) {
-        if (runCatching { P2PPreferences.isPeerBlocked(context, sender) }.getOrDefault(false)) {
+        if (runCatching { P2PPreferences.isPeerBlocked(context, sender) }
+                .onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }.getOrDefault(false)) {
             log(context, "Ignored message from a blocked peer", "INFO", null)
             return
         }
@@ -226,7 +227,9 @@ internal class IncomingMessageRouter(
                                         listOf(formatted),
                                         EndpointSource.AUTHENTICATED,
                                     )
-                                } catch (_: Exception) { /* non-critical */ }
+                                } catch (error: Exception) {
+                                    if (error is kotlinx.coroutines.CancellationException) throw error
+                                }
                             }
                             P2PMessageRelay.rememberAuthenticatedPeerEndpoint(effectiveName, formatted, context, EndpointSource.AUTHENTICATED)
                             log(context, "Saved Tor .onion endpoint from onion_address_share for $effectiveName: $formatted", "INFO", null)

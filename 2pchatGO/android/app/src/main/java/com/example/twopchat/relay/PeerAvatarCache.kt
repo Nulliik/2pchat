@@ -99,6 +99,7 @@ internal class PeerAvatarCache(
                     }
                 }
             } catch (error: Throwable) {
+                if (error is kotlinx.coroutines.CancellationException) throw error
                 onError(error)
             }
         }
@@ -201,7 +202,8 @@ internal class PeerAvatarCache(
                 val bitmap = BitmapFactory.decodeByteArray(image, 0, image.size, options) ?: return null
                 peerName to bitmap
             }
-        } catch (_: Throwable) {
+        } catch (error: Exception) {
+            if (error is kotlinx.coroutines.CancellationException) throw error
             null
         }
     }

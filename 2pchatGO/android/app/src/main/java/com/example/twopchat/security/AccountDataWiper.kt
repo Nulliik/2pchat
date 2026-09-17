@@ -19,8 +19,21 @@ import java.io.File
 object AccountDataWiper {
     private val preservedRuntimeFiles = setOf("profileInstalled")
 
-    fun wipe(context: Context): Boolean {
+    internal val isWiping: Boolean get() = AccountLifecycle.mutations.isWiping
+
+    fun wipe(context: Context): Boolean = AccountLifecycle.mutations.run("wipe") {
         val appContext = context.applicationContext
+        performAccountDeletion(
+            shutdownRuntime = { com.example.twopchat.relay.P2PMessageRelay.shutdownForAccountDeletion(appContext) },
+            wipePersistentData = {
+                synchronized(com.example.twopchat.relay.ActiveChatStore.persistenceLock) {
+                    wipeQuiesced(appContext)
+                }
+            },
+        )
+    }
+
+    private fun wipeQuiesced(appContext: Context): Boolean {
         val steps = listOf(
             "cancel background group work" to {
                 GroupWorkScheduler.cancel(appContext)
@@ -39,8 +52,13 @@ object AccountDataWiper {
                 true
             },
             "clear all SharedPreferences" to {
-                P2PPreferences.clearInMemoryState()
-                clearAllSharedPreferences(appContext)
+                synchronized(P2PPreferences) {
+                    com.example.twopchat.relay.ActiveChatStore.retire(P2PPreferences.prefs(appContext))
+                    com.example.twopchat.relay.LastMessagePreviewStore.clearSensitiveMemory()
+                    val cleared = clearAllSharedPreferences(appContext)
+                    P2PPreferences.clearInMemoryState()
+                    cleared
+                }
             },
             "delete chat databases" to { deleteDatabases(appContext) },
             "delete internal account files" to {

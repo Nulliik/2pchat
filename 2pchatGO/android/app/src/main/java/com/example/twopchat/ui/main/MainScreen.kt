@@ -45,6 +45,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation3.runtime.NavKey
 import com.example.twopchat.NativeBridge
+import com.example.twopchat.logging.SafeLog
 import com.example.twopchat.bridge.P2PBridgeProvider
 import com.example.twopchat.Chat
 import com.example.twopchat.relay.P2PMessageRelay
@@ -141,16 +142,30 @@ fun MainScreen(
             if (mode == P2PPreferences.YggdrasilMode.PROXY) {
                 com.example.twopchat.yggdrasil.YggdrasilCoordinator.start(context, P2PPreferences.YggdrasilMode.PROXY)
             } else {
-                val vpnPrepareIntent = try { VpnService.prepare(context) } catch (_: Exception) { null }
-                if (vpnPrepareIntent != null) {
-                    try {
+                var vpnPrepareIntent: Intent? = null
+                try {
+                    vpnPrepareIntent = VpnService.prepare(context)
+                } catch (_: SecurityException) {
+                    vpnPrepareIntent = null
+                } catch (_: IllegalStateException) {
+                    vpnPrepareIntent = null
+                } catch (_: Exception) {
+                    vpnPrepareIntent = null
+                }
+                when {
+                    vpnPrepareIntent == null -> {
+                        com.example.twopchat.yggdrasil.YggdrasilCoordinator.start(context, P2PPreferences.YggdrasilMode.VPN)
+                    }
+                    else -> try {
                         vpnPrepareIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                         context.startActivity(vpnPrepareIntent)
                     } catch (e: Exception) {
-                        e.printStackTrace()
+                        SafeLog.w(
+                            "MainScreen",
+                            "VPN consent prompt could not be launched; consent was not granted",
+                            e,
+                        )
                     }
-                } else {
-                    com.example.twopchat.yggdrasil.YggdrasilCoordinator.start(context, P2PPreferences.YggdrasilMode.VPN)
                 }
             }
         }

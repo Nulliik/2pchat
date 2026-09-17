@@ -90,6 +90,7 @@ internal class AvatarManager(
                         try {
                             sharedAvatarCache.savePersisted(context, k, rawBitmap)
                         } catch (saveEx: Exception) {
+                            if (saveEx is kotlinx.coroutines.CancellationException) throw saveEx
                             log(context, "Failed to save avatar file for $k: ${saveEx.message}", "ERROR", saveEx)
                         }
                     }

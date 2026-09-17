@@ -32,6 +32,7 @@ import java.io.File
 import java.io.FileOutputStream
 import androidx.activity.compose.BackHandler
 import androidx.compose.ui.viewinterop.AndroidView
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
@@ -212,6 +213,8 @@ fun rememberSampledImage(filePath: String?, targetWidth: Int = 400, targetHeight
                 } else {
                     null
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 e.printStackTrace()
                 null
@@ -267,6 +270,8 @@ fun rememberVideoThumbnail(filePath: String?, targetWidth: Int = 400, targetHeig
                 } else {
                     null
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 e.printStackTrace()
                 null

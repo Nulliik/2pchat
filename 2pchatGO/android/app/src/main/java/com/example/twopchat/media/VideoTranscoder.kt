@@ -11,6 +11,7 @@ import androidx.media3.transformer.ExportException
 import androidx.media3.transformer.ExportResult
 import androidx.media3.transformer.ProgressHolder
 import androidx.media3.transformer.Transformer
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -123,17 +124,23 @@ object VideoTranscoder {
             }
         }
 
+        var completed = false
         try {
             val result = deferred.await()
             onProgress(100)
+            completed = true
             Result.success(result)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
-            outputFile.delete()
             Result.failure(e)
         } finally {
             progressJob.cancel()
             // Stop the hardware codec pipeline on coroutine cancellation or error
             runCatching<Unit> { transformer.cancel() }
+            if (!completed) {
+                outputFile.delete()
+            }
         }
     }
 }

@@ -889,12 +889,9 @@ fun ChatScreen(
             persistDatabase { db.saveMessage(peerName, outMsg) }
         }
         if (peerName != "Saved Messages") {
-            val activeSet = sharedPrefs.getStringSet("active_chats", emptySet()) ?: emptySet()
-            if (!activeSet.contains(peerName)) {
-                sharedPrefs.edit { putStringSet("active_chats", activeSet.toMutableSet().apply { add(peerName) }) }
-            }
+            com.example.twopchat.relay.ActiveChatStore.add(sharedPrefs, peerName)
         }
-        sharedPrefs.edit { putString("last_msg_$peerName", SecureStorage.encrypt("$youPrefix: $voiceMsgText")) }
+        com.example.twopchat.relay.LastMessagePreviewStore.set(sharedPrefs, peerName, "$youPrefix: $voiceMsgText")
 
         if (peerName != "Saved Messages") {
             P2PMessageRelay.sendFile(context, peerName, endpoint, recording.file.absolutePath, outMsg.id) { success ->
@@ -929,12 +926,9 @@ fun ChatScreen(
                 persistDatabase { db.saveMessage(peerName, outMsg) }
             }
             if (peerName != "Saved Messages") {
-                val activeSet = sharedPrefs.getStringSet("active_chats", emptySet()) ?: emptySet()
-                if (!activeSet.contains(peerName)) {
-                    sharedPrefs.edit { putStringSet("active_chats", activeSet.toMutableSet().apply { add(peerName) }) }
-                }
+                com.example.twopchat.relay.ActiveChatStore.add(sharedPrefs, peerName)
             }
-            sharedPrefs.edit { putString("last_msg_$peerName", SecureStorage.encrypt("$youPrefix: $trimmed")) }
+            com.example.twopchat.relay.LastMessagePreviewStore.set(sharedPrefs, peerName, "$youPrefix: $trimmed")
             val myAboutMe = com.example.twopchat.config.P2PPreferences.aboutMe(context).trim()
             val payload = org.json.JSONObject().apply {
                 put("type", "text")
@@ -1386,12 +1380,7 @@ fun ChatScreen(
                 persistDatabase { db.saveMessage(peerName, outMsg) }
             }
             if (peerName != "Saved Messages") {
-                val activeSet = sharedPrefs.getStringSet("active_chats", emptySet()) ?: emptySet()
-                if (peerName !in activeSet) {
-                    sharedPrefs.edit {
-                        putStringSet("active_chats", activeSet.toMutableSet().apply { add(peerName) })
-                    }
-                }
+                com.example.twopchat.relay.ActiveChatStore.add(sharedPrefs, peerName)
             }
 
             val stickerLabel = Localizations.tr(
@@ -1405,7 +1394,7 @@ fun ChatScreen(
                 tr = "Çıkartma"
             )
             val lastText = "$youPrefix: $stickerLabel"
-            sharedPrefs.edit { putString("last_msg_$peerName", SecureStorage.encrypt(lastText)) }
+            com.example.twopchat.relay.LastMessagePreviewStore.set(sharedPrefs, peerName, lastText)
 
             if (peerName != "Saved Messages") {
                 P2PMessageRelay.sendFile(
@@ -1480,19 +1469,9 @@ fun ChatScreen(
                 persistDatabase { db.saveMessage(peerName, outMsg) }
             }
             if (peerName != "Saved Messages") {
-                val activeSet = sharedPrefs.getStringSet("active_chats", emptySet()).orEmpty()
-                if (peerName !in activeSet) {
-                    sharedPrefs.edit {
-                        putStringSet("active_chats", activeSet + peerName)
-                    }
-                }
+                com.example.twopchat.relay.ActiveChatStore.add(sharedPrefs, peerName)
             }
-            sharedPrefs.edit {
-                putString(
-                    "last_msg_$peerName",
-                    SecureStorage.encrypt("$youPrefix: GIF"),
-                )
-            }
+            com.example.twopchat.relay.LastMessagePreviewStore.set(sharedPrefs, peerName, "$youPrefix: GIF")
             if (peerName != "Saved Messages") {
                 P2PMessageRelay.sendFile(
                     context,
@@ -2269,7 +2248,9 @@ fun ChatScreen(
                     initialMessages.clear()
                     chatViewModel.loadedPersistedMessageCount.intValue = 0
                     chatViewModel.hasMoreHistory.value = false
-                    sharedPrefs.edit {
+                    com.example.twopchat.relay.ActiveChatStore.update(sharedPrefs, { it }) {
+                        com.example.twopchat.relay.LastMessagePreviewStore.remove(peerName)
+                        aliases.forEach(com.example.twopchat.relay.LastMessagePreviewStore::remove)
                         remove("last_msg_$peerName")
                         remove("unread_count_$peerName")
                         remove(P2PPreferences.pinnedMessageId(peerName))
@@ -2830,14 +2811,9 @@ fun ChatScreen(
 
                                     // Persist in shared preferences last message list
                                     if (peerName != "Saved Messages") {
-                                        val activeSet = sharedPrefs.getStringSet("active_chats", emptySet()) ?: emptySet()
-                                        if (!activeSet.contains(peerName)) {
-                                            val newSet = activeSet.toMutableSet()
-                                            newSet.add(peerName)
-                                            sharedPrefs.edit { putStringSet("active_chats", newSet) }
-                                        }
+                                        com.example.twopchat.relay.ActiveChatStore.add(sharedPrefs, peerName)
                                     }
-                                    sharedPrefs.edit { putString("last_msg_$peerName", SecureStorage.encrypt("You: $userText")) }
+                                    com.example.twopchat.relay.LastMessagePreviewStore.set(sharedPrefs, peerName, "You: $userText")
 
                                     // Send message payload
                                     val myAboutMe = com.example.twopchat.config.P2PPreferences.aboutMe(context).trim()

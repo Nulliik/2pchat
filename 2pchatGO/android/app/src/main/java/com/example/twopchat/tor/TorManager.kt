@@ -855,19 +855,19 @@ object TorManager {
         ports.all { port -> isPortFree(port, host) }
     }
 
-    suspend fun renewTorIdentity(context: Context): Boolean = withContext(Dispatchers.IO) {
+    suspend fun renewTorIdentity(context: Context): Boolean =
+        renewTorIdentity(File(context.filesDir, "app_tor/control_auth_cookie"), effectiveControlPort)
+
+    internal suspend fun renewTorIdentity(cookieFile: File, controlPort: Int): Boolean = withContext(Dispatchers.IO) {
         _isRotatingCircuit.value = true
         try {
-            val appTorDir = File(context.filesDir, "app_tor")
-            val cookieFile = File(appTorDir, "control_auth_cookie")
             if (!cookieFile.exists()) {
                 SafeLog.w(TAG, "ControlPort auth cookie not found")
-                _circuitStatus.value = "[🛡️ Вход] ➔ [🔄 Средн] ➔ [🌍 Выход (Обновлен)]"
-                return@withContext true
+                return@withContext false
             }
             val hexAuthCookie = formatControlAuthCookie(cookieFile.readBytes())
-            val controlPort = effectiveControlPort
             java.net.Socket().use { socket ->
+                socket.soTimeout = 1000
                 socket.connect(java.net.InetSocketAddress("127.0.0.1", controlPort), 1000)
                 val writer = socket.getOutputStream().bufferedWriter()
                 val reader = socket.getInputStream().bufferedReader()
@@ -910,8 +910,7 @@ object TorManager {
             }
         } catch (exc: Exception) {
             SafeLog.w(TAG, "Failed to send SIGNAL NEWNYM to ControlPort (${exc.javaClass.simpleName})")
-            _circuitStatus.value = "[🛡️ Вход] ➔ [🔄 Средн] ➔ [🌍 Выход (Обновлен)]"
-            return@withContext true
+            return@withContext false
         } finally {
             _isRotatingCircuit.value = false
         }

@@ -263,17 +263,27 @@ object P2PPreferences : com.example.twopchat.security.SensitiveMemoryHolder {
     }
 
     fun getRendezvousCode(context: Context): String {
-        val sp = prefs(context)
-        var code = sp.getString("local_discovery_code", null)
-        if (code.isNullOrBlank() || code == "dce7d654") {
+        while (true) {
+            val generation = synchronized(this) {
+                prefs(context).getString("local_discovery_code", null)
+                    ?.takeIf { it.isNotBlank() && it != "dce7d654" }?.let { return it }
+                preferencesGeneration
+            }
             val fp = P2PMessageRelay.getBridge(context).getLocalFingerprint().takeIf { it.isNotBlank() }
-                ?: sp.getString("local_fingerprint", null)?.takeIf { it.isNotBlank() }
+                ?: prefs(context).getString("local_fingerprint", null)?.takeIf { it.isNotBlank() }
                 ?: UUID.randomUUID().toString()
             val digest = java.security.MessageDigest.getInstance("SHA-256").digest(fp.toByteArray(Charsets.UTF_8))
-            code = digest.take(4).joinToString("") { "%02x".format(it) }
-            sp.edit().putString("local_discovery_code", code).apply()
+            val code = digest.take(4).joinToString("") { "%02x".format(it) }
+            synchronized(this) {
+                if (generation == preferencesGeneration) {
+                    val sp = prefs(context)
+                    sp.getString("local_discovery_code", null)
+                        ?.takeIf { it.isNotBlank() && it != "dce7d654" }?.let { return it }
+                    sp.edit().putString("local_discovery_code", code).apply()
+                    return code
+                }
+            }
         }
-        return code
     }
 
     fun getOrCreateDiscoveryCode(context: Context): String = getRendezvousCode(context)
@@ -408,19 +418,22 @@ object P2PPreferences : com.example.twopchat.security.SensitiveMemoryHolder {
     fun setTorDeterministicOnionEnabled(context: Context, enabled: Boolean): Boolean =
         prefs(context).edit().putBoolean(TOR_DETERMINISTIC_ONION_ENABLED, enabled).commit()
 
+    @Synchronized
     fun getTorOnionIndex(context: Context): Int =
         prefs(context).getInt(TOR_ONION_INDEX, 0)
 
+    @Synchronized
     fun setTorOnionIndex(context: Context, index: Int): Boolean =
         prefs(context).edit().putInt(TOR_ONION_INDEX, index).commit()
 
+    @Synchronized
     fun incrementTorOnionIndex(context: Context): Int {
         val current = getTorOnionIndex(context)
         if (current >= Int.MAX_VALUE - 1) {
             throw IllegalStateException("Onion index exhausted (4 billion rotations)")
         }
         val next = current + 1
-        setTorOnionIndex(context, next)
+        check(setTorOnionIndex(context, next)) { "Unable to persist onion index" }
         return next
     }
 
@@ -473,8 +486,8 @@ object P2PPreferences : com.example.twopchat.security.SensitiveMemoryHolder {
                 runCatching { p.edit().clear().commit() }
             }
             cachedPrefs = testingPrefsProvider?.invoke()
-            fingerprintToPeerNameCache.clear()
-            fingerprintCacheInitialized = false
+            invalidateFingerprintCache()
+            TrackerPreferences.clearInMemoryState()
             isAppLockedState = false
             lastMessageCache.clear()
         }
@@ -489,56 +502,69 @@ object P2PPreferences : com.example.twopchat.security.SensitiveMemoryHolder {
             } else {
                 testingPrefsProvider = null
             }
-            fingerprintToPeerNameCache.clear()
-            fingerprintCacheInitialized = false
+            invalidateFingerprintCache()
+            TrackerPreferences.clearInMemoryState()
         }
     }
 
-    private val fingerprintToPeerNameCache = ConcurrentHashMap<String, String>()
-    @Volatile
+    private val fingerprintToPeerNameCache = mutableMapOf<String, String>()
     private var fingerprintCacheInitialized = false
+
+    private var fingerprintCacheGeneration = 0L
+    private var preferencesGeneration = 0L
+
+    private fun invalidateFingerprintCache() {
+        fingerprintCacheGeneration++
+        preferencesGeneration++
+        fingerprintToPeerNameCache.clear()
+        fingerprintCacheInitialized = false
+    }
+
+    private fun ensureFingerprintCache(context: Context) {
+        if (fingerprintCacheInitialized) return
+        val loaded = mutableMapOf<String, String>()
+        for ((key, value) in prefs(context).all) {
+            if (key.startsWith("peer_fingerprint_") && value is String && value.isNotBlank()) {
+                loaded[value] = key.removePrefix("peer_fingerprint_")
+            }
+        }
+        for ((fingerprint, peerName) in loaded) {
+            fingerprintToPeerNameCache.putIfAbsent(fingerprint, peerName)
+        }
+        fingerprintCacheInitialized = true
+    }
 
     fun findPeerNameByFingerprint(context: Context, fingerprint: String): String? {
         if (fingerprint.isBlank()) return null
-        if (!fingerprintCacheInitialized) {
-            synchronized(this) {
-                if (!fingerprintCacheInitialized) {
-                    val allEntries = prefs(context).all
-                    for ((key, value) in allEntries) {
-                        if (key.startsWith("peer_fingerprint_") && value is String && value.isNotBlank()) {
-                            val peerName = key.removePrefix("peer_fingerprint_")
-                            fingerprintToPeerNameCache[value] = peerName
-                        }
-                    }
-                    fingerprintCacheInitialized = true
-                }
-            }
+        val generation = synchronized(this) {
+            ensureFingerprintCache(context)
+            fingerprintToPeerNameCache[fingerprint]?.takeIf { it.isNotBlank() }?.let { return it }
+            fingerprintCacheGeneration
         }
-        val cached = fingerprintToPeerNameCache[fingerprint]
-        if (!cached.isNullOrBlank()) return cached
         val fromDb = try {
             com.example.twopchat.data.ChatDatabaseHelper.getInstance(context).getPeerNameByFingerprint(fingerprint)
         } catch (_: Throwable) {
             null
         }
-        if (!fromDb.isNullOrBlank()) {
+        return synchronized(this) {
+            fingerprintToPeerNameCache[fingerprint]?.takeIf { it.isNotBlank() }?.let { return it }
+            if (generation != fingerprintCacheGeneration || fromDb.isNullOrBlank()) return null
+            val pinned = prefs(context).getString(peerFingerprint(fromDb), null)
+            if (!pinned.isNullOrBlank() && pinned != fingerprint) return null
             fingerprintToPeerNameCache[fingerprint] = fromDb
-            return fromDb
+            fromDb
         }
-        return null
     }
 
-    fun findPeerByDiscoveryToken(context: Context, discoveryToken: String): Pair<String, String>? {
+    fun findPeerByDiscoveryToken(context: Context, discoveryToken: String): Pair<String, String>? = synchronized(this) {
         if (discoveryToken.isBlank()) return null
-        if (!fingerprintCacheInitialized) {
-            findPeerNameByFingerprint(context, "dummy")
-        }
+        ensureFingerprintCache(context)
         for ((fingerprint, peerName) in fingerprintToPeerNameCache) {
             if (LocalDiscoveryToken.matchesFingerprint(discoveryToken, fingerprint)) {
                 return Pair(peerName, fingerprint)
             }
         }
-        return null
+        null
     }
 
     fun findPeerNameByEndpoint(context: Context, targetEndpoint: String): String? {
@@ -593,8 +619,10 @@ object P2PPreferences : com.example.twopchat.security.SensitiveMemoryHolder {
         return null
     }
 
+    @Synchronized
     fun updateFingerprintCache(fingerprint: String, peerName: String) {
         if (fingerprint.isNotBlank() && peerName.isNotBlank()) {
+            fingerprintCacheGeneration++
             fingerprintToPeerNameCache[fingerprint] = peerName
         }
     }
@@ -618,20 +646,8 @@ object P2PPreferences : com.example.twopchat.security.SensitiveMemoryHolder {
                     EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
                     EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
                 )
-                try {
-                    p.all
-                    p
-                } catch (t: Throwable) {
-                    SafeLog.w("P2PPreferences", "Corrupted or orphaned encrypted prefs detected, recreating clean instance", t)
-                    appContext.deleteSharedPreferences(ENCRYPTED_FILE_NAME)
-                    EncryptedSharedPreferences.create(
-                        appContext,
-                        ENCRYPTED_FILE_NAME,
-                        masterKey,
-                        EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-                        EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
-                    )
-                }
+                p.all
+                p
             } catch (e: Exception) {
                 SafeLog.e("P2PPreferences", "Failed to initialize EncryptedSharedPreferences", e)
                 throw IllegalStateException("EncryptedSharedPreferences initialization failed: Keystore unavailable", e)
@@ -727,17 +743,15 @@ object P2PPreferences : com.example.twopchat.security.SensitiveMemoryHolder {
         prefs(context).edit().putLong(LAST_CACHE_MAINTENANCE_TIME, timestamp).apply()
     }
 
-    private val cacheSizeBytesLock = Any()
-
-    fun getCachedMediaBytes(context: Context): Long = synchronized(cacheSizeBytesLock) {
+    fun getCachedMediaBytes(context: Context): Long = synchronized(this) {
         prefs(context).getLong(CACHED_MEDIA_BYTES, 0L)
     }
 
-    fun setCachedMediaBytes(context: Context, bytes: Long): Unit = synchronized(cacheSizeBytesLock) {
+    fun setCachedMediaBytes(context: Context, bytes: Long): Unit = synchronized(this) {
         prefs(context).edit().putLong(CACHED_MEDIA_BYTES, bytes.coerceAtLeast(0L)).apply()
     }
 
-    fun adjustCachedMediaBytes(context: Context, delta: Long): Unit = synchronized(cacheSizeBytesLock) {
+    fun adjustCachedMediaBytes(context: Context, delta: Long): Unit = synchronized(this) {
         val current = prefs(context).getLong(CACHED_MEDIA_BYTES, 0L)
         val updated = (current + delta).coerceAtLeast(0L)
         prefs(context).edit().putLong(CACHED_MEDIA_BYTES, updated).apply()
@@ -1226,17 +1240,55 @@ object P2PPreferences : com.example.twopchat.security.SensitiveMemoryHolder {
         editor.apply()
     }
 
+    @Synchronized
+    internal fun publishPeerIdentityIfExpected(
+        context: Context,
+        peerName: String,
+        fingerprint: String,
+        endpoint: String = "",
+        aboutMe: String = "",
+    ): Boolean {
+        if (peerName.isBlank() || fingerprint.isBlank() || com.example.twopchat.relay.ActiveChatStore.accountClosed) return false
+        val prefs = prefs(context)
+        if (com.example.twopchat.relay.ActiveChatStore.isRetired(prefs) ||
+            com.example.twopchat.relay.ActiveChatStore.isDeleting(prefs, peerName)) return false
+        if (isPeerIdentityChangePending(context, peerName)) return false
+        val current = prefs.getString(peerFingerprint(peerName), null)
+        if (!com.example.twopchat.relay.isExpectedPeerFingerprint(current, fingerprint, peerName)) {
+            recordPendingPeerIdentity(context, peerName, fingerprint, endpoint)
+            return false
+        }
+        try {
+            prefs.edit().apply {
+                putString(peerFingerprint(peerName), fingerprint)
+                if (aboutMe.isNotBlank()) {
+                    putString("peer_about_me_$peerName", aboutMe)
+                    putString("peer_about_me_$fingerprint", aboutMe)
+                }
+                apply()
+            }
+        } finally {
+            invalidateFingerprintCache()
+        }
+        return true
+    }
+
+    @Synchronized
     fun isPeerIdentityChangePending(context: Context, peerName: String): Boolean {
         val prefs = prefs(context)
         val current = prefs.getString(peerFingerprint(peerName), null).orEmpty()
         val pending = prefs.getString(pendingPeerFingerprint(peerName), null).orEmpty()
         if (pending.isNotBlank() && (current.isBlank() || current.equals(peerName, ignoreCase = true) || current == pending)) {
-            prefs.edit()
-                .putString(peerFingerprint(peerName), pending)
-                .putBoolean(fingerprintMismatch(peerName), false)
-                .remove(pendingPeerFingerprint(peerName))
-                .remove(pendingPeerEndpoint(peerName))
-                .apply()
+            try {
+                prefs.edit()
+                    .putString(peerFingerprint(peerName), pending)
+                    .putBoolean(fingerprintMismatch(peerName), false)
+                    .remove(pendingPeerFingerprint(peerName))
+                    .remove(pendingPeerEndpoint(peerName))
+                    .apply()
+            } finally {
+                invalidateFingerprintCache()
+            }
             return false
         }
         return shouldBlockPeerTraffic(
@@ -1249,6 +1301,7 @@ object P2PPreferences : com.example.twopchat.security.SensitiveMemoryHolder {
      * Pins the first unexpected identity until the user makes an explicit choice.
      * A later connection cannot silently replace the fingerprint shown in the warning.
      */
+    @Synchronized
     fun recordPendingPeerIdentity(
         context: Context,
         peerName: String,
@@ -1271,6 +1324,7 @@ object P2PPreferences : com.example.twopchat.security.SensitiveMemoryHolder {
         editor.apply()
     }
 
+    @Synchronized
     internal fun acceptPendingPeerIdentity(context: Context, peerName: String): AcceptedPeerIdentity? {
         val prefs = prefs(context)
         val current = prefs.getString(peerFingerprint(peerName), null).orEmpty()
@@ -1286,7 +1340,12 @@ object P2PPreferences : com.example.twopchat.security.SensitiveMemoryHolder {
             .remove(pendingPeerFingerprint(peerName))
             .remove(pendingPeerEndpoint(peerName))
         if (endpoint.isNotBlank()) editor.putString(lastEndpoint(peerName), endpoint)
-        if (!editor.commit()) return null
+        val committed = try {
+            editor.commit()
+        } finally {
+            invalidateFingerprintCache()
+        }
+        if (!committed) return null
         return AcceptedPeerIdentity(current, targetFingerprint, endpoint)
     }
 
@@ -1308,6 +1367,7 @@ object P2PPreferences : com.example.twopchat.security.SensitiveMemoryHolder {
         return SecureStorage.decrypt(stored) ?: stored
     }
 
+    @Synchronized
     fun rejectPendingPeerIdentity(context: Context, peerName: String): Boolean {
         prefs(context).edit()
             .putBoolean(fingerprintMismatch(peerName), false)

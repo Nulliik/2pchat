@@ -78,8 +78,8 @@ internal object GroupE2EControl {
                 val prefs = P2PPreferences.prefs(context)
                 prefs.edit().putString(P2PPreferences.peerFingerprint(arg("name")), arg("fingerprint"))
                     .putString(P2PPreferences.lastEndpoint(arg("name")), arg("endpoints"))
-                    .putStringSet("active_chats", prefs.getStringSet("active_chats", emptySet()).orEmpty() + arg("name"))
                     .commit()
+                com.example.twopchat.relay.ActiveChatStore.add(prefs, arg("name"))
             }
             "peer_status" -> {
                 val name = arg("name")

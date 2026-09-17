@@ -108,10 +108,16 @@ internal class RelayMaintenanceCoordinator(
                         com.example.twopchat.group.runtime.GroupChatCoordinator
                             .listActiveGroupMemberPeerNames(appContext)
                             .filterNot { isPlaceholderPeerName(it) }
-                    } catch (_: Throwable) { emptyList() }
+                    } catch (error: Exception) {
+                        if (error is CancellationException) throw error
+                        emptyList()
+                    }
                     val knownPeers = try {
                         com.example.twopchat.data.ChatDatabaseHelper.getInstance(appContext).getAllPeersWithOnion().keys
-                    } catch (_: Throwable) { emptySet() }.filterNot { isPlaceholderPeerName(it) }
+                    } catch (error: Exception) {
+                        if (error is CancellationException) throw error
+                        emptySet()
+                    }.filterNot { isPlaceholderPeerName(it) }
                     val chats = (oneOnOneChats + groupMemberPeers + knownPeers).distinct()
                     val presenceVersions = chats.associateWith(presenceVersion)
                     val bridge = com.example.twopchat.bridge.P2PBridgeProvider.get(appContext)

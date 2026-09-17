@@ -57,6 +57,7 @@ internal class BridgeEventDispatcher(
 
                 onSessionEstablishedHook?.invoke(peerName, fingerprint, endpoint)
             } catch (e: Throwable) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
                 SafeLog.e(TAG, "Error in onSessionEstablished", e)
             }
         }
@@ -75,6 +76,7 @@ internal class BridgeEventDispatcher(
                 }
                 onSessionClosedHook?.invoke(peerName, fingerprint, reason)
             } catch (e: Throwable) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
                 SafeLog.e(TAG, "Error in onSessionClosed", e)
             }
         }
@@ -86,6 +88,7 @@ internal class BridgeEventDispatcher(
                 SafeLog.d(TAG, "Discovered peer (source: $source)")
                 onPeerDiscoveredHook?.invoke(infoHash, endpoint, source)
             } catch (e: Throwable) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
                 SafeLog.e(TAG, "Error in onPeerDiscovered", e)
             }
         }
@@ -157,6 +160,7 @@ internal class BridgeEventDispatcher(
                     }
                 )
             } catch (e: Throwable) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
                 SafeLog.e(TAG, "Error processing incoming message", e)
             }
         }
