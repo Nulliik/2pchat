@@ -175,15 +175,15 @@ class YggdrasilProxyRoutingTest {
 
         val segments = YggdrasilUserSpaceStack.segmentPayload(largePayload, YggdrasilUserSpaceStack.MAX_TCP_PAYLOAD)
 
-        // 14725 / 1200 = 12 full segments (12 * 1200 = 14400) + 1 remainder (325 bytes) = 13 segments
-        assertEquals(13, segments.size)
+        // 14725 / 900 = 16 full segments (16 * 900 = 14400) + 1 remainder (325 bytes) = 17 segments
+        assertEquals(17, segments.size)
 
         var totalBytes = 0
         val reassembled = ByteArray(14725)
 
         for (seg in segments) {
-            assertTrue("Segment size must be <= MAX_TCP_PAYLOAD (1200)", seg.size <= YggdrasilUserSpaceStack.MAX_TCP_PAYLOAD)
-            // IPv6 header (40) + TCP header (20) + payload (<= 1200) = total packet <= 1260 bytes <= 1280 Yggdrasil link MTU
+            assertTrue("Segment size must be <= MAX_TCP_PAYLOAD (900)", seg.size <= YggdrasilUserSpaceStack.MAX_TCP_PAYLOAD)
+            // The 900-byte payload preserves overlay headroom beyond the IPv6/TCP headers.
             val totalPacketLen = 40 + 20 + seg.size
             assertTrue("Total IPv6 packet must not exceed Yggdrasil MTU (1280)", totalPacketLen <= 1280)
 

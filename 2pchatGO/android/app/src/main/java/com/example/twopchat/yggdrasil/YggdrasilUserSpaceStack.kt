@@ -707,6 +707,8 @@ class YggdrasilUserSpaceStack(
                             SafeLog.w(TAG, "Closing Ygg stream after unacknowledged segment seq=${segment.sequence}, bytes=${segment.payload.size}")
                             session.isClosed.set(true)
                             runCatching { session.clientSocket?.close() }
+                            session.unacknowledged.clear()
+                            activeSessions.remove(session.streamKey, session)
                             break
                         }
                         segment.retries += 1
@@ -802,11 +804,11 @@ class YggdrasilUserSpaceStack(
 
         /**
          * Maximum TCP segment payload size for Yggdrasil mesh link.
-         * Minimum IPv6 MTU is 1280 bytes.
-         * 40 bytes (IPv6 header) + 20 bytes (TCP header) + 1200 bytes (payload) = 1260 bytes <= 1280 MTU.
-         * Prevents dropping packets exceeding link MTU when sending avatars or large metadata frames.
+         * The raw IPv6 packet is further encapsulated by Yggdrasil. Keep 320
+         * bytes of headroom below the IPv6 minimum MTU; 1200-byte payloads
+         * were observed to black-hole on real mesh paths.
          */
-        const val MAX_TCP_PAYLOAD = 1200
+        const val MAX_TCP_PAYLOAD = 900
         private const val LOCAL_CORE_CONNECT_TIMEOUT_MS = 5_000
         private const val RETRANSMIT_SCAN_MS = 150L
         private const val RETRANSMIT_AFTER_MS = 450L

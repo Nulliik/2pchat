@@ -812,6 +812,17 @@ class NativeBridgeImpl(
             // A queued tracker callback may run just after another candidate
             // has authenticated. Never replace that live ratchet session.
             if (NativeBridge.isPeerOnline(fingerprint)) return true
+            // Both authenticated devices discover each other at once. Pick a
+            // stable initiator for automatic reconnects so two virtual Ygg
+            // streams do not race through the ratchet tie-breaker. Explicit
+            // user reconnects retain their ability to override this delay.
+            if (!includeReserve) {
+                val localFingerprint = getLocalFingerprint()
+                if (localFingerprint.isNotBlank() && localFingerprint > fingerprint) {
+                    SafeLog.d(TAG, "[GoCore] Waiting for deterministic initiator for ${SafeLog.fp(fingerprint)}")
+                    return true
+                }
+            }
         }
         val context = com.example.twopchat.yggdrasil.GlobalApplication.appContext
         val pref = P2PPreferences.getPeerTransportPreference(context, peerName)
