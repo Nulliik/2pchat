@@ -79,7 +79,7 @@ class OutboxDrainWorkerTest {
         NativeBridge.isInitializeOverride = true
 
         val worker = TestListenableWorkerBuilder<OutboxDrainWorker>(context).build()
-        val result = worker.doWork()
+        val result = worker.drain(drainGroups = { 0 }, drainDirectMessages = {})
 
         // P0.1: Best-effort delivery MUST return Result.success() to prevent battery-draining retry loops
         assertTrue(
@@ -199,6 +199,61 @@ class OutboxDrainWorkerTest {
         assertEquals("Expedited drain count should be recorded", 1, stats.expeditedCount)
 
         OutboxWorkScheduler.cancelAll(context)
+    }
+
+    @Test
+    fun drainFailuresAreNotReportedAsSuccess() = runBlocking {
+        fakePrefs.edit().putBoolean("onboarding_completed", true)
+            .putString("username_profile", "Alice").commit()
+        NativeBridge.isInitializeOverride = true
+        val worker = TestListenableWorkerBuilder<OutboxDrainWorker>(context).build()
+        val failures = listOf(
+            SecurityException("storage unavailable"),
+            android.database.sqlite.SQLiteException("database unavailable"),
+            IllegalStateException("unexpected failure"),
+        )
+        for (failure in failures) {
+            var directCalled = false
+            assertTrue(worker.drain({ throw failure }, { directCalled = true }) is ListenableWorker.Result.Failure)
+            assertFalse(directCalled)
+            assertTrue(worker.drain({ 0 }, { throw failure }) is ListenableWorker.Result.Failure)
+        }
+        assertEquals(6, BackgroundDiagnostics.getStats(context).drainOutcomes["failure"])
+        assertEquals(null, BackgroundDiagnostics.getStats(context).drainOutcomes["success"])
+    }
+
+    @Test
+    fun databaseLockRetriesAtEitherDrainStage() = runBlocking {
+        fakePrefs.edit().putBoolean("onboarding_completed", true)
+            .putString("username_profile", "Alice").commit()
+        NativeBridge.isInitializeOverride = true
+        val worker = TestListenableWorkerBuilder<OutboxDrainWorker>(context).build()
+        val locked = android.database.sqlite.SQLiteDatabaseLockedException("locked")
+        assertTrue(worker.drain({ throw locked }, {}) is ListenableWorker.Result.Retry)
+        assertTrue(worker.drain({ 0 }, { throw locked }) is ListenableWorker.Result.Retry)
+        assertEquals(2, BackgroundDiagnostics.getStats(context).drainOutcomes["retry_db_locked"])
+    }
+
+    @Test
+    fun cancellationEscapesEitherDrainStage() = runBlocking {
+        fakePrefs.edit().putBoolean("onboarding_completed", true)
+            .putString("username_profile", "Alice").commit()
+        NativeBridge.isInitializeOverride = true
+        val worker = TestListenableWorkerBuilder<OutboxDrainWorker>(context).build()
+        val cancelled = kotlinx.coroutines.CancellationException("cancelled")
+        for (groupStage in listOf(true, false)) {
+            try {
+                worker.drain(
+                    { if (groupStage) throw cancelled else 0 },
+                    { throw cancelled },
+                )
+                org.junit.Assert.fail("Cancellation must escape")
+            } catch (actual: kotlinx.coroutines.CancellationException) {
+                org.junit.Assert.assertSame(cancelled, actual)
+            }
+        }
+        assertEquals(null, BackgroundDiagnostics.getStats(context).drainOutcomes["failure"])
+        assertEquals(null, BackgroundDiagnostics.getStats(context).drainOutcomes["success"])
     }
 
     private class TestSharedPreferences(private val map: MutableMap<String, Any?>) : SharedPreferences, SharedPreferences.Editor {

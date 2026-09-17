@@ -1,5 +1,12 @@
 package com.example.twopchat
 
+import android.content.Context
+import android.content.ContextWrapper
+import android.content.SharedPreferences
+import androidx.security.crypto.EncryptedSharedPreferences
+import com.example.twopchat.security.KeystoreProvider
+import java.io.File
+import java.util.UUID
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.example.twopchat.config.P2PPreferences
@@ -8,6 +15,8 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertArrayEquals
+import org.junit.Assert.assertThrows
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -101,5 +110,86 @@ class P2PPreferencesTest {
         P2PPreferences.setDirectWallpaper(context, "UnconfiguredPeer", null, 0, false)
         org.junit.Assert.assertNull(P2PPreferences.getDirectWallpaperPath(context, "UnconfiguredPeer"))
         assertFalse(dummyFile.exists())
+    }
+}
+
+@RunWith(AndroidJUnit4::class)
+@Suppress("DEPRECATION")
+class P2PPreferencesInitializationTest {
+    @Test
+    fun corruptValueFailsInitializationWithoutDeletingPreferencesOrReplacingKeys() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        check(context.packageName == "com.example.twopchat.qa.bug17")
+        val prefix = "bug17_${UUID.randomUUID()}"
+        val secureName = "${prefix}_secure"
+        val legacyName = "${prefix}_legacy"
+        var deletes = 0
+        val isolatedContext = object : ContextWrapper(context) {
+            override fun getApplicationContext(): Context = this
+
+            override fun getSharedPreferences(name: String, mode: Int): SharedPreferences =
+                super.getSharedPreferences(isolatedName(name), mode)
+
+            override fun deleteSharedPreferences(name: String): Boolean {
+                deletes++
+                return super.deleteSharedPreferences(isolatedName(name))
+            }
+
+            private fun isolatedName(name: String): String = when (name) {
+                "2pchat_secure_prefs" -> secureName
+                P2PPreferences.FILE_NAME -> legacyName
+                else -> error("Unexpected preferences file: $name")
+            }
+        }
+        val masterKey = KeystoreProvider.getOrBuildMasterKey(context)
+        try {
+            val encrypted = EncryptedSharedPreferences.create(
+                isolatedContext,
+                "2pchat_secure_prefs",
+                masterKey,
+                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
+            )
+            assertTrue(encrypted.edit().putString("sentinel", "retained").commit())
+            val raw = context.getSharedPreferences(secureName, Context.MODE_PRIVATE)
+            val originalEntries = raw.all.toMap()
+            val encryptedEntry = originalEntries.keys.single { !it.startsWith("__androidx_security_crypto_") }
+            val originalValue = raw.getString(encryptedEntry, null)
+            assertTrue(raw.edit().putString(encryptedEntry, "AAAA").commit())
+            assertThrows(SecurityException::class.java) { encrypted.all }
+            val corruptedEntries = raw.all.toMap()
+            val file = File(context.applicationInfo.dataDir, "shared_prefs/$secureName.xml")
+            val corruptedBytes = file.readBytes()
+            val legacy = context.getSharedPreferences(legacyName, Context.MODE_PRIVATE)
+            assertTrue(legacy.edit().putString("legacy_sentinel", "unmigrated").commit())
+            P2PPreferences.setCachedPrefsForTesting(null)
+
+            repeat(2) {
+                val failure = assertThrows(IllegalStateException::class.java) {
+                    P2PPreferences.prefs(isolatedContext)
+                }
+                assertEquals(
+                    "EncryptedSharedPreferences initialization failed: Keystore unavailable",
+                    failure.message,
+                )
+                assertTrue(failure.cause is SecurityException)
+                assertEquals(0, deletes)
+                assertEquals(corruptedEntries, raw.all)
+                assertArrayEquals(corruptedBytes, file.readBytes())
+                assertEquals("unmigrated", legacy.getString("legacy_sentinel", null))
+            }
+
+            assertTrue(raw.edit().putString(encryptedEntry, originalValue).commit())
+            assertEquals(originalEntries, raw.all)
+            val recovered = P2PPreferences.prefs(isolatedContext)
+            assertEquals("retained", recovered.getString("sentinel", null))
+            assertEquals("unmigrated", recovered.getString("legacy_sentinel", null))
+            assertTrue(legacy.all.isEmpty())
+            assertEquals(0, deletes)
+        } finally {
+            P2PPreferences.setCachedPrefsForTesting(null)
+            context.deleteSharedPreferences(secureName)
+            context.deleteSharedPreferences(legacyName)
+        }
     }
 }

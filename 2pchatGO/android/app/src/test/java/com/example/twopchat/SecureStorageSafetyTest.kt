@@ -44,12 +44,24 @@ class SecureStorageSafetyTest {
     }
 
     @Test
-    fun testDecryptRepeatedDecryptionsAreCached() {
+    fun testEncryptFailsClosedWhenKeystoreUnavailableAndRoundTripsOtherwise() {
         val plain = "Hello world cached string"
-        val encrypted = SecureStorage.encrypt(plain)
+        val encrypted = try {
+            SecureStorage.encrypt(plain)
+        } catch (e: Exception) {
+            // BUG-17: no plaintext fallback on failure; JVM has no AndroidKeyStore.
+            // KeyStoreException/NoSuchAlgorithmException are the expected JVM absence paths.
+            org.junit.Assert.assertTrue(
+                "encrypt must fail closed with a keystore error, not silently pass",
+                e is java.security.KeyStoreException || e.cause is java.security.NoSuchAlgorithmException,
+            )
+            null
+        } ?: return
+        org.junit.Assert.assertTrue(SecureStorage.isEncrypted(encrypted))
+        org.junit.Assert.assertNotEquals(plain, encrypted)
         val decryptedFirst = SecureStorage.decrypt(encrypted)
         val decryptedSecond = SecureStorage.decrypt(encrypted)
-        assertEquals(plain, decryptedFirst)
-        assertEquals(plain, decryptedSecond)
+        org.junit.Assert.assertEquals(plain, decryptedFirst)
+        org.junit.Assert.assertEquals(plain, decryptedSecond)
     }
 }

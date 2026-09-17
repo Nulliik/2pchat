@@ -3,5 +3,6 @@
     "java.import.gradle.wrapper.enabled": true,
     "java.import.gradle.version": "9.5",
     "robotcode.disableExtension": true,
-    "python.defaultInterpreterPath": "/Users/kodzy/Documents/GitHub/2pchat/.venv/bin/python"
+    "python.defaultInterpreterPath": "/Users/kodzy/Documents/GitHub/2pchat/.venv/bin/python",
+    "python.useEnvironmentsExtension": false
 }

@@ -7,7 +7,11 @@ import com.example.twopchat.NativeBridge
 import com.example.twopchat.config.P2PPreferences
 import com.example.twopchat.data.ProfileBackupManager
 import com.example.twopchat.tor.TorManager
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -27,6 +31,14 @@ class TorOnionRecoveryTest {
 
     @get:Rule
     val tempFolder = TemporaryFolder()
+
+    private val mainDispatcher = StandardTestDispatcher()
+
+    @get:Rule
+    val mainDispatcherRule = object : org.junit.rules.ExternalResource() {
+        override fun before() = Dispatchers.setMain(mainDispatcher)
+        override fun after() = Dispatchers.resetMain()
+    }
 
     private val prefMap = mutableMapOf<String, Any?>()
     private lateinit var fakePrefs: SharedPreferences

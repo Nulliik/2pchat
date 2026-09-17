@@ -22,6 +22,94 @@ import java.io.File
 class TorManagerTest {
 
     @Test
+    fun renewalWithoutCookieDoesNotReportSuccess() = runBlocking {
+        val directory = java.nio.file.Files.createTempDirectory("tor-renewal").toFile()
+        try {
+            val status = TorManager.circuitStatus.value
+            assertFalse(TorManager.renewTorIdentity(File(directory, "missing-cookie"), 1))
+            assertEquals(status, TorManager.circuitStatus.value)
+            assertFalse(TorManager.isRotatingCircuit.value)
+        } finally {
+            directory.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun renewalWithUnreadableCookieDoesNotReportSuccess() = runBlocking {
+        val directory = java.nio.file.Files.createTempDirectory("tor-renewal").toFile()
+        try {
+            val status = TorManager.circuitStatus.value
+            assertFalse(TorManager.renewTorIdentity(directory, 1))
+            assertEquals(status, TorManager.circuitStatus.value)
+            assertFalse(TorManager.isRotatingCircuit.value)
+        } finally {
+            directory.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun renewalRequiresAuthenticationAndNewnymAcknowledgements() = runBlocking {
+        assertRenewalExchange("515 Authentication failed", null, false)
+        assertRenewalExchange("250 OK", "552 Signal rejected", false)
+        assertRenewalExchange(null, null, false)
+        assertRenewalExchange("250 OK", null, false)
+        assertRenewalExchange("250 OK", "250 OK", true)
+    }
+
+    private suspend fun assertRenewalExchange(authReply: String?, signalReply: String?, expected: Boolean) {
+        val cookie = File.createTempFile("tor-renewal", ".cookie")
+        val bytes = byteArrayOf(0, 1, 15, 16, 127, -128, -1)
+        cookie.writeBytes(bytes)
+        val commands = mutableListOf<String?>()
+        try {
+            java.net.ServerSocket(0, 1, java.net.InetAddress.getLoopbackAddress()).use { server ->
+                server.soTimeout = 5000
+                val executor = java.util.concurrent.Executors.newSingleThreadExecutor()
+                try {
+                    val exchange = executor.submit {
+                        server.accept().use { socket ->
+                            socket.soTimeout = 5000
+                            val reader = socket.getInputStream().bufferedReader()
+                            val writer = socket.getOutputStream().bufferedWriter()
+                            commands += reader.readLine()
+                            if (authReply != null) {
+                                writer.write("$authReply\r\n")
+                                writer.flush()
+                                if (authReply == "250 OK") {
+                                    commands += reader.readLine()
+                                    if (signalReply != null) {
+                                        writer.write("$signalReply\r\n")
+                                        writer.flush()
+                                        if (signalReply == "250 OK") {
+                                            commands += reader.readLine()
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    val status = TorManager.circuitStatus.value
+                    assertEquals(expected, TorManager.renewTorIdentity(cookie, server.localPort))
+                    exchange.get(5, java.util.concurrent.TimeUnit.SECONDS)
+                    assertEquals("00010F107F80FF", TorManager.formatControlAuthCookie(bytes))
+                    assertEquals("AUTHENTICATE 00010F107F80FF", commands.first())
+                    if (authReply == "250 OK") assertEquals("SIGNAL NEWNYM", commands[1])
+                    if (expected) {
+                        assertEquals("GETINFO circuit-status", commands[2])
+                    } else {
+                        assertEquals(status, TorManager.circuitStatus.value)
+                    }
+                    assertFalse(TorManager.isRotatingCircuit.value)
+                } finally {
+                    executor.shutdownNow()
+                }
+            }
+        } finally {
+            cookie.delete()
+        }
+    }
+
+    @Test
     fun testDefaultStateIsNotRunning() {
         assertFalse(TorManager.isTorRunning.value)
         assertEquals(0, TorManager.bootstrapProgress.value)
