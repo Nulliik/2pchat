@@ -154,7 +154,8 @@ fun OnboardingScreen(
             onDismiss = { showRestoreDialog = false },
             onSuccess = {
                 showRestoreDialog = false
-                onComplete()
+                val enableYgg = sharedPrefs.getBoolean("settings_yggdrasil", true)
+                startYggdrasilAndComplete(enableYggdrasil = enableYgg)
             }
         )
     }
