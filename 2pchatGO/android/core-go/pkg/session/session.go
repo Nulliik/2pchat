@@ -61,9 +61,10 @@ type Session struct {
 	closeOnce      sync.Once
 	closeChan      chan struct{}
 	online         int32
-	counter        uint64
-	receivedCount  uint64
-	createdAt      time.Time
+	counter               uint64
+	receivedCount         uint64
+	userMessagesExchanged uint64
+	createdAt             time.Time
 
 	ackTimeout time.Duration
 	maxRetries int
@@ -480,6 +481,8 @@ func (s *Session) readerLoop() {
 					continue
 				}
 
+				atomic.AddUint64(&s.userMessagesExchanged, 1)
+
 				format := transport.FileChunkFormatV2
 				if fileChunk.VersionType == transport.LegacyPythonFileChunkFrameTypeV1 {
 					format = transport.LegacyFileChunkFormatV1
@@ -523,6 +526,8 @@ func (s *Session) readerLoop() {
 					}
 					s.receivedIDsMu.Unlock()
 
+					atomic.AddUint64(&s.userMessagesExchanged, 1)
+
 					msgMap := map[string]any{
 						"type":    "binary",
 						"id":      msgID,
@@ -543,6 +548,9 @@ func (s *Session) readerLoop() {
 		}
 
 		msgType, _ := msgMap["type"].(string)
+		if isUserMessageType(msgType) {
+			atomic.AddUint64(&s.userMessagesExchanged, 1)
+		}
 		if strings.HasPrefix(msgType, "group_") {
 			if err := protocol.CheckMessage(plaintext, s.NegotiatedProtocol()); err != nil {
 				continue
@@ -657,6 +665,10 @@ func (s *Session) SendReliable(msg map[string]any) (string, error) {
 	if err := protocol.CheckMessage(raw, s.NegotiatedProtocol()); err != nil {
 		return "", err
 	}
+	msgType, _ := msg["type"].(string)
+	if isUserMessageType(msgType) {
+		atomic.AddUint64(&s.userMessagesExchanged, 1)
+	}
 	return s.sendReliablePlaintext(msgID, raw)
 }
 
@@ -718,6 +730,7 @@ func (s *Session) SendReliableFileChunk(fileID []byte, chunkIndex uint32, payloa
 	if err != nil {
 		return "", err
 	}
+	atomic.AddUint64(&s.userMessagesExchanged, 1)
 	return s.sendReliablePlaintext(msgID, frame)
 }
 
@@ -751,6 +764,7 @@ func (s *Session) SendReliableBinary(payload []byte) (string, error) {
 	if delay <= 0 {
 		delay = DefaultAckTimeout
 	}
+	atomic.AddUint64(&s.userMessagesExchanged, 1)
 	for attempt := 0; attempt <= s.maxRetries; attempt++ {
 		if err := s.sendEncryptedFrame(frame); err != nil {
 			return "", err
@@ -826,9 +840,20 @@ func (s *Session) IsOnline() bool {
 	return atomic.LoadInt32(&s.online) == 1
 }
 
-// HasExchangedMessages returns true if this session has transmitted or received any messages.
+// isUserMessageType reports whether a wire message type represents application/user payload
+// rather than protocol control/handshake/status messages.
+func isUserMessageType(msgType string) bool {
+	switch WireMessageType(msgType) {
+	case TypeIdentityInfo, TypeIdentityProbe, TypeAck, TypeStatus, TypeHandshake:
+		return false
+	default:
+		return true
+	}
+}
+
+// HasExchangedMessages returns true if this session has transmitted or received any user/application messages.
 func (s *Session) HasExchangedMessages() bool {
-	return atomic.LoadUint64(&s.counter) > 0 || atomic.LoadUint64(&s.receivedCount) > 0
+	return atomic.LoadUint64(&s.userMessagesExchanged) > 0
 }
 
 // Close gracefully closes the session and underlying TCP connection.

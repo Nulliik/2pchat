@@ -39,6 +39,9 @@ func TestSimultaneousConnectionTieBreaking(t *testing.T) {
 		OnPeerConnected: func(peerFP, endpoint string) {
 			noteConnection()
 		},
+		OnPeerDisconnected: func(peerFP string, reason string) {
+			noteConnection()
+		},
 		OnMessageReceived: func(peerFP string, payload []byte, msgID string) {
 			// Exclude authenticated compatibility control frames from chat assertions.
 			var envelope struct {
@@ -54,6 +57,9 @@ func TestSimultaneousConnectionTieBreaking(t *testing.T) {
 	bob := &bridge.SessionManager{}
 	bob.SetCallbacks(session.EventCallbacks{
 		OnPeerConnected: func(peerFP, endpoint string) {
+			noteConnection()
+		},
+		OnPeerDisconnected: func(peerFP string, reason string) {
 			noteConnection()
 		},
 		OnMessageReceived: func(peerFP string, payload []byte, msgID string) {
@@ -126,7 +132,7 @@ func TestSimultaneousConnectionTieBreaking(t *testing.T) {
 	// online session can therefore be the non-canonical half of a simultaneous
 	// dial and may be replaced immediately.  Require a quiet window after the
 	// last authenticated connection event before exercising the retained route.
-	settleDeadline := time.Now().Add(2 * time.Second)
+	settleDeadline := time.Now().Add(5 * time.Second)
 	lastConnectionChange := time.Now()
 	settled := false
 	for time.Now().Before(settleDeadline) {

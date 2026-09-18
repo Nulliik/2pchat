@@ -125,6 +125,10 @@ func (e *LANEngine) Start() error {
 
 	lAddr := &net.UDPAddr{Port: e.udpPort}
 	conn, err := net.ListenUDP("udp4", lAddr)
+	if err != nil && e.udpPort != 0 {
+		// Fallback to dynamic ephemeral port if preferred port is already occupied
+		conn, err = net.ListenUDP("udp4", &net.UDPAddr{Port: 0})
+	}
 	if err != nil {
 		return fmt.Errorf("failed to bind LAN UDP listener on port %d: %w", e.udpPort, err)
 	}
