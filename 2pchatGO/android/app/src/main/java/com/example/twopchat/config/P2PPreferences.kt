@@ -99,9 +99,9 @@ object P2PPreferences : com.example.twopchat.security.SensitiveMemoryHolder {
         prefs(context).edit().putBoolean(YGGDRASIL_EVER_ENABLED, enabled).apply()
     }
 
-    /** Multicast beacon (advertising) toggle; defaults to off to reduce battery/radio use. */
+    /** Multicast beacon (advertising) toggle; defaults to on for local discovery. */
     fun isYggdrasilMulticastBeaconEnabled(context: Context): Boolean =
-        prefs(context).getBoolean(YGGDRASIL_MULTICAST_BEACON, false)
+        prefs(context).getBoolean(YGGDRASIL_MULTICAST_BEACON, true)
 
     fun setYggdrasilMulticastBeaconEnabled(context: Context, enabled: Boolean) {
         prefs(context).edit().putBoolean(YGGDRASIL_MULTICAST_BEACON, enabled).apply()
@@ -785,6 +785,7 @@ object P2PPreferences : com.example.twopchat.security.SensitiveMemoryHolder {
 
     fun peerFingerprint(peerName: String) = "peer_fingerprint_$peerName"
     fun peerOnionAddress(peerName: String) = "peer_onion_$peerName"
+    fun peerYggAddress(peerName: String) = "peer_ygg_$peerName"
     fun fingerprintMismatch(peerName: String) = "fingerprint_mismatch_$peerName"
     fun pendingPeerFingerprint(peerName: String) = "pending_peer_fingerprint_$peerName"
     fun pendingPeerEndpoint(peerName: String) = "pending_peer_endpoint_$peerName"
@@ -1146,6 +1147,31 @@ object P2PPreferences : com.example.twopchat.security.SensitiveMemoryHolder {
             db.getPeerOnionAddress(peerName)
                 ?: (if (!fp.isNullOrBlank()) db.getPeerOnionAddress(fp) else null)
         }.getOrNull()?.takeIf { it.isNotBlank() }
+    }
+
+    /** Persist the authenticated Yggdrasil IPv6 endpoint for [peerName] so it
+     *  survives app restarts and is available for reconnection without Tor. */
+    fun setPeerYggdrasilAddress(context: Context, peerName: String, yggEndpoint: String) {
+        val clean = yggEndpoint.trim()
+        if (clean.isEmpty()) return
+        val editor = prefs(context).edit().putString(peerYggAddress(peerName), clean)
+        val fp = getPeerFingerprint(context, peerName)
+        if (!fp.isNullOrBlank() && fp != peerName) {
+            editor.putString(peerYggAddress(fp), clean)
+        }
+        editor.apply()
+    }
+
+    /** Returns the last known authenticated Yggdrasil endpoint for [peerName], or null. */
+    fun getPeerYggdrasilAddress(context: Context, peerName: String): String? {
+        val sp = prefs(context)
+        val prefVal = sp.getString(peerYggAddress(peerName), null)?.takeIf { it.isNotBlank() }
+        if (prefVal != null) return prefVal
+        val fp = getPeerFingerprint(context, peerName)
+        if (!fp.isNullOrBlank() && fp != peerName) {
+            return sp.getString(peerYggAddress(fp), null)?.takeIf { it.isNotBlank() }
+        }
+        return null
     }
 
     private const val PINNED_STATE_LOCAL_ACTOR = "pinned_state_local_actor"

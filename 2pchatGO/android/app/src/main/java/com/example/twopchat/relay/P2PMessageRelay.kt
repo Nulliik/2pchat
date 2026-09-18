@@ -1559,6 +1559,10 @@ object P2PMessageRelay {
             if (savedOnion != null) {
                 rememberAuthenticatedPeerEndpoint(peerName, savedOnion, appContext, EndpointSource.MIGRATED)
             }
+            val savedYgg = P2PPreferences.getPeerYggdrasilAddress(appContext, peerName)
+            if (savedYgg != null) {
+                rememberAuthenticatedPeerEndpoint(peerName, savedYgg, appContext, EndpointSource.MIGRATED)
+            }
         }
         synchronized(identityLock) {
             for (peerName in persistedChats) {
@@ -2800,6 +2804,20 @@ object P2PMessageRelay {
                             }
                             log(appContext, "Saved authenticated Tor .onion address for $resolvedPeerName: $onionHost")
                         }
+                    }
+
+                    // Extract and persist the Yggdrasil endpoint if present in route list.
+                    // This ensures the peer's mesh address is available for reconnection
+                    // after an app restart even when Tor is not running.
+                    val yggRoute = endpoints.split(",")
+                        .map { it.trim() }
+                        .firstOrNull { P2PPreferences.isYggdrasilEndpoint(it) }
+                    if (!yggRoute.isNullOrBlank()) {
+                        P2PPreferences.setPeerYggdrasilAddress(appContext, resolvedPeerName, yggRoute)
+                        if (fingerprint.isNotBlank() && fingerprint != resolvedPeerName) {
+                            P2PPreferences.setPeerYggdrasilAddress(appContext, fingerprint, yggRoute)
+                        }
+                        log(appContext, "Saved authenticated Yggdrasil endpoint for $resolvedPeerName: $yggRoute")
                     }
                 }
 

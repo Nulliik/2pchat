@@ -552,17 +552,24 @@ class YggdrasilUserSpaceStack(
         if (isSyn && !isAck) {
             val existingInbound = activeSessions[sessionKeyInbound]
             if (existingInbound != null) {
-                // Duplicate SYN (peer retransmitting because our SYN-ACK was lost/delayed in mesh)
-                sendTcpPacket(
-                    srcIp = localIp,
-                    dstIp = srcIp,
-                    srcPort = dstPort,
-                    dstPort = srcPort,
-                    seq = existingInbound.initialSeqSent,
-                    ack = existingInbound.seqRecv.get(),
-                    flags = 0x12 // SYN | ACK
-                )
-                return
+                if (existingInbound.isClosed.get()) {
+                    // Stale closed session – evict it so the new handshake can proceed.
+                    runCatching { existingInbound.clientSocket?.close() }
+                    activeSessions.remove(sessionKeyInbound)
+                    SafeLog.d(TAG, "Evicted stale closed session for $sessionKeyInbound; accepting new SYN")
+                } else {
+                    // Duplicate SYN – peer retransmitting because our SYN-ACK was lost/delayed in mesh.
+                    sendTcpPacket(
+                        srcIp = localIp,
+                        dstIp = srcIp,
+                        srcPort = dstPort,
+                        dstPort = srcPort,
+                        seq = existingInbound.initialSeqSent,
+                        ack = existingInbound.seqRecv.get(),
+                        flags = 0x12 // SYN | ACK
+                    )
+                    return
+                }
             }
             if (!pendingInboundSessions.add(sessionKeyInbound)) {
                 return
@@ -676,9 +683,9 @@ class YggdrasilUserSpaceStack(
             val sess = activeSessions[sessionKey]
             sess?.isClosed?.set(true)
             runCatching { sess?.clientSocket?.close() }
-            if (sess == null || sess.unacknowledged.isEmpty()) {
-                activeSessions.remove(sessionKey)
-            }
+            // Always evict from activeSessions – the retransmit loop checks isClosed
+            // independently, so leaving a dead entry here only blocks future reconnects.
+            activeSessions.remove(sessionKey)
         }
     }
 
