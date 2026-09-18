@@ -435,6 +435,17 @@ func (m *Manager) handleIncomingConnection(conn net.Conn) {
 	}
 
 	peerFP := sess.PeerFingerprint()
+	// Tracker responses are untrusted and may include our own stale Yggdrasil
+	// endpoint. A self-session has no valid P2P meaning and can race the real
+	// contact session for the same listener/virtual-TCP resources.
+	if peerFP == m.fingerprint {
+		_ = sess.Close()
+		callbacks := m.callbacksSnapshot()
+		if callbacks.OnError != nil {
+			callbacks.OnError(1, "incoming self-connection rejected")
+		}
+		return
+	}
 	m.RegisterSession(sess, peerFP, endpoint, false)
 }
 
@@ -485,6 +496,9 @@ func remainingCandidates(candidates []string, attempted string) []string {
 }
 
 func (m *Manager) connectPeerInternal(endpoint, expectedFingerprint string, contactPolicy *transport.NetworkPolicy) (*Session, error) {
+	if expectedFingerprint != "" && expectedFingerprint == m.fingerprint {
+		return nil, errors.New("refusing self-connection")
+	}
 	if expectedFingerprint != "" {
 		m.mu.RLock()
 		existing, ok := m.sessions[expectedFingerprint]
@@ -508,6 +522,15 @@ func (m *Manager) connectPeerInternal(endpoint, expectedFingerprint string, cont
 			m.diagnostics.Finish(observation, observationKind, observationOutcome, time.Since(observationStarted))
 		}
 	}()
+
+	if expectedFingerprint != "" && m.IsPeerOnline(expectedFingerprint) {
+		m.mu.RLock()
+		s, exists := m.sessions[expectedFingerprint]
+		m.mu.RUnlock()
+		if exists && s != nil && s.IsOnline() {
+			return s, nil
+		}
+	}
 
 	rawEndpoints := strings.Split(endpoint, ",")
 	m.mu.RLock()
@@ -667,6 +690,10 @@ func (m *Manager) connectPeerInternal(endpoint, expectedFingerprint string, cont
 	}
 
 	peerFP := sess.PeerFingerprint()
+	if peerFP == m.fingerprint {
+		_ = sess.Close()
+		return nil, errors.New("refusing self-connection")
+	}
 	observationOutcome = diagnostics.Success
 	m.RegisterSession(sess, peerFP, winEndpoint, true)
 	return sess, nil
@@ -678,6 +705,23 @@ func (m *Manager) RegisterSession(newSess *Session, peerFP, endpoint string, ini
 
 	existing, exists := m.sessions[peerFP]
 	if exists && existing.IsOnline() {
+		// Tie-breaking applies ONLY to simultaneous connection collisions, where both sessions
+		// were initiated within a very tight collision window (< 2 seconds) and neither
+		// has exchanged user messages yet.
+		// If the existing session is already established beyond the collision window,
+		// or has already exchanged messages, the existing session is canonical and healthy:
+		// reject the redundant new session.
+		isSimultaneousCollision := time.Since(existing.createdAt) < 2*time.Second &&
+			time.Since(newSess.createdAt) < 2*time.Second &&
+			!existing.HasExchangedMessages() &&
+			!newSess.HasExchangedMessages()
+
+		if !isSimultaneousCollision {
+			m.mu.Unlock()
+			go func() { _ = newSess.Close() }()
+			return
+		}
+
 		// Tie-breaking: the peer with lexicographically smaller fingerprint keeps outbound dial
 		preferInitiator := m.fingerprint < peerFP
 		existingIsPreferred := existing.initiator == preferInitiator

@@ -42,6 +42,9 @@ class YggStateReceiver(var receiver: StateReceiver): BroadcastReceiver() {
         // from its package-scoped state broadcast.
         if (stateValue in setOf(STATE_ENABLED, STATE_CONNECTED, STATE_RECONNECTING, STATE_DISABLED)) {
             val runtimeIp = intent?.getStringExtra("ip").orEmpty()
+            if (runtimeIp.isNotBlank()) {
+                com.example.twopchat.relay.P2PMessageRelay.updateCachedYggdrasilAddress(runtimeIp)
+            }
             com.example.twopchat.config.P2PPreferences.prefs(context).edit()
                 .putString("yggdrasil_runtime_state", stateValue)
                 .apply { if (runtimeIp.isNotBlank()) putString("yggdrasil_runtime_ip", runtimeIp) }

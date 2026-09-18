@@ -369,10 +369,18 @@ object P2PMessageRelay {
         return ip
     }
 
+    fun updateCachedYggdrasilAddress(ip: String) {
+        val clean = ip.trim().split("%")[0]
+        if (clean.isNotEmpty() && (clean.startsWith("0200:") || clean.startsWith("0300:") || clean.startsWith("200:") || clean.startsWith("300:"))) {
+            cachedYggIp = clean
+            cachedYggIpExpiryMs = System.currentTimeMillis() + IP_CACHE_TTL_MS
+        }
+    }
+
     fun getYggdrasilAddress(): String {
         val now = System.currentTimeMillis()
         val cached = cachedYggIp
-        if (cached != null && now < cachedYggIpExpiryMs) {
+        if (cached != null && cached.isNotEmpty() && now < cachedYggIpExpiryMs) {
             return cached
         }
         val ip = try {
@@ -380,6 +388,7 @@ object P2PMessageRelay {
             val interfaces = java.net.NetworkInterface.getNetworkInterfaces()
             while (interfaces.hasMoreElements()) {
                 val iface = interfaces.nextElement()
+                if (iface.isLoopback || !iface.isUp) continue
                 val addrs = iface.inetAddresses
                 while (addrs.hasMoreElements()) {
                     val addr = addrs.nextElement()
@@ -392,7 +401,8 @@ object P2PMessageRelay {
                 if (found.isNotEmpty()) break
             }
             if (found.isEmpty()) {
-                storedAppContext?.let { ctx ->
+                val ctx = storedAppContext ?: runCatching { com.example.twopchat.yggdrasil.GlobalApplication.appContext }.getOrNull()
+                if (ctx != null) {
                     val prefs = P2PPreferences.prefs(ctx)
                     val state = prefs.getString("yggdrasil_runtime_state", "")?.trim().orEmpty()
                     val runtimeIp = prefs.getString("yggdrasil_runtime_ip", "")?.trim().orEmpty()
@@ -405,8 +415,13 @@ object P2PMessageRelay {
         } catch (_: Exception) {
             ""
         }
-        cachedYggIp = ip
-        cachedYggIpExpiryMs = now + IP_CACHE_TTL_MS
+        if (ip.isNotEmpty()) {
+            cachedYggIp = ip
+            cachedYggIpExpiryMs = now + IP_CACHE_TTL_MS
+        } else {
+            cachedYggIp = null
+            cachedYggIpExpiryMs = 0L
+        }
         return ip
     }
 
@@ -508,6 +523,7 @@ object P2PMessageRelay {
     val peerSessionStates = mutableStateMapOf<String, Boolean>()
     val peerRttMs = mutableStateMapOf<String, Long>()
     private const val OFFLINE_UI_GRACE_MS = 2_500L
+    private const val YGG_SESSION_SETTLE_MS = 1_500L
     private val peerPresenceVersions = PeerPresenceVersionTracker()
     private val fingerprintToPeerName = ConcurrentHashMap<String, String>()
     private val avatarSharesInFlight = ConcurrentHashMap.newKeySet<String>()
@@ -2723,7 +2739,23 @@ object P2PMessageRelay {
                     clearAvatarShareCooldown(fingerprint)
                     resetPeerBackoffs(resolvedPeerName)
                     resetPeerBackoffs(fingerprint)
-                    shareAvatar(appContext, resolvedPeerName, endpoint, force = true)
+                    // A simultaneous Ygg dial can briefly expose the losing
+                    // stream to this callback before Go's deterministic
+                    // tie-break has closed it.  Do not pour a full profile
+                    // onto that stream: wait for the canonical session to
+                    // survive, then re-check the authenticated fingerprint.
+                    if (canonicalTransport == "Yggdrasil") {
+                        relayScope.launch {
+                            delay(YGG_SESSION_SETTLE_MS)
+                            if (getBridge(appContext).isPeerOnline(resolvedPeerName, fingerprint)) {
+                                shareAvatar(appContext, resolvedPeerName, endpoint, force = true)
+                            } else {
+                                log(appContext, "Skipped profile share on unsettled Ygg session for $resolvedPeerName")
+                            }
+                        }
+                    } else {
+                        shareAvatar(appContext, resolvedPeerName, endpoint, force = true)
+                    }
                     shareOnionAddress(appContext, resolvedPeerName, endpoint)
                     processOfflineQueue(appContext, resolvedPeerName, endpoint)
                     GroupChatCoordinator.onPeerConnected(appContext, resolvedPeerName)

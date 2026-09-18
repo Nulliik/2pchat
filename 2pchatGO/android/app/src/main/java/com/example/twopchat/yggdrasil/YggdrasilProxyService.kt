@@ -466,7 +466,7 @@ class YggdrasilProxyService : Service() {
         peersJson: String = ""
     ) {
         try {
-            val sharedPrefs = com.example.twopchat.config.P2PPreferences.prefs(applicationContext)
+            val sharedPrefs = applicationContext.getSharedPreferences("yggdrasil_runtime_ephemeral", Context.MODE_PRIVATE)
             val editor = sharedPrefs.edit()
                 .putString(PREF_YGG_RUNTIME_IP, address)
                 .putString(PREF_YGG_RUNTIME_STATE, state)

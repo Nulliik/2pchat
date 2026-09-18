@@ -31,11 +31,39 @@ class ConfigurationProxy(applicationContext: Context) {
             return plain
         }
 
+        private fun atomicReplace(source: File, target: File): Boolean =
+            try {
+                if (source.renameTo(target)) {
+                    true
+                } else {
+                    java.nio.file.Files.move(
+                        source.toPath(),
+                        target.toPath(),
+                        java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+                        java.nio.file.StandardCopyOption.ATOMIC_MOVE
+                    )
+                    true
+                }
+            } catch (_: java.nio.file.AtomicMoveNotSupportedException) {
+                try {
+                    java.nio.file.Files.move(
+                        source.toPath(),
+                        target.toPath(),
+                        java.nio.file.StandardCopyOption.REPLACE_EXISTING
+                    )
+                    true
+                } catch (_: Throwable) {
+                    false
+                }
+            } catch (_: Throwable) {
+                false
+            }
+
         internal fun persistConfig(
             file: File,
             plainText: String,
             encrypt: (String) -> String = SecureStorage::encrypt,
-            replace: (File, File) -> Boolean = { source, target -> source.renameTo(target) },
+            replace: (File, File) -> Boolean = ::atomicReplace,
         ) {
             val encrypted = encrypt(plainText)
             check(encrypted.startsWith("enc:v1:")) { "Configuration encryption failed" }
@@ -48,8 +76,8 @@ class ConfigurationProxy(applicationContext: Context) {
         }
 
         private const val PREF_POOL_SEEDED = "yggdrasil_public_pool_seeded_v1"
-        private const val PREF_POOL_PRUNED = "yggdrasil_public_pool_pruned_v1"
-        private const val MAX_RETAINED_PUBLIC_PEERS = 6
+        private const val PREF_POOL_MIGRATED_V2 = "yggdrasil_public_pool_migrated_v2"
+        private const val MAX_RETAINED_PUBLIC_PEERS = YggdrasilPeerPreferences.MAX_PUBLIC_PEERS
         // Bootstrap peers taken from the official public-peers repository on
         // 2026-07-09.  They are intentionally nearby (Russia/Finland) and use
         // TCP/TLS, which are supported by the bundled Android library.
@@ -149,7 +177,7 @@ class ConfigurationProxy(applicationContext: Context) {
             val candidates = if (preferences.getBoolean(PREF_POOL_SEEDED, false)) {
                 emptyList()
             } else {
-                publicPeerSnapshot()
+                YggdrasilPeerPreferences.DEFAULT_PUBLIC_PEERS.take(MAX_RETAINED_PUBLIC_PEERS)
             }
             val missingCandidates = candidates.filterNot(configured::contains)
             if (missingCandidates.isNotEmpty() || peers == null) {
@@ -162,15 +190,26 @@ class ConfigurationProxy(applicationContext: Context) {
                 preferences.edit().putBoolean(PREF_POOL_SEEDED, true).apply()
             }
 
+            val poolMigrated = preferences.getBoolean(PREF_POOL_MIGRATED_V2, false)
+            if (!poolMigrated) {
+                YggdrasilPeerPreferences.replacePublicPeers(
+                    appContext,
+                    YggdrasilPeerPreferences.DEFAULT_PUBLIC_PEERS.take(MAX_RETAINED_PUBLIC_PEERS),
+                )
+                preferences.edit().putBoolean(PREF_POOL_MIGRATED_V2, true).apply()
+            }
+
             val configuredAfterSeed = peerUris(json)
             val customUris = YggdrasilPeerPreferences.customPeers(appContext)
                 .mapTo(mutableSetOf()) { it.uri.lowercase() }
-            val storedPublicPeers = if (YggdrasilPeerPreferences.hasStoredPublicPeers(appContext)) {
+            val storedPublicPeers = (if (YggdrasilPeerPreferences.hasStoredPublicPeers(appContext)) {
                 YggdrasilPeerPreferences.publicPeers(appContext)
             } else {
                 configuredAfterSeed.filterNot { it.lowercase() in customUris }
-            }
+            }).take(MAX_RETAINED_PUBLIC_PEERS)
             if (!YggdrasilPeerPreferences.hasStoredPublicPeers(appContext) && storedPublicPeers.isNotEmpty()) {
+                YggdrasilPeerPreferences.replacePublicPeers(appContext, storedPublicPeers)
+            } else if (YggdrasilPeerPreferences.publicPeers(appContext).size > MAX_RETAINED_PUBLIC_PEERS) {
                 YggdrasilPeerPreferences.replacePublicPeers(appContext, storedPublicPeers)
             }
             json.put(
@@ -209,7 +248,6 @@ class ConfigurationProxy(applicationContext: Context) {
 
     /** Persist the lowest-cost live public links after the one-time probe. */
     fun retainBestLivePeers(peersJson: String): Boolean {
-        if (preferences.getBoolean(PREF_POOL_PRUNED, false)) return false
         return try {
             val customUris = YggdrasilPeerPreferences.customPeers(appContext)
                 .mapTo(mutableSetOf()) { it.uri.lowercase() }
@@ -230,7 +268,6 @@ class ConfigurationProxy(applicationContext: Context) {
                     JSONArray(YggdrasilPeerPreferences.effectivePeerUris(appContext, live)),
                 )
             }
-            preferences.edit().putBoolean(PREF_POOL_PRUNED, true).apply()
             true
         } catch (_: Exception) {
             false

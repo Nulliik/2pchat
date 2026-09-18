@@ -32,7 +32,9 @@ object YggdrasilPeerPreferences {
     const val CUSTOM_PEERS_JSON = "yggdrasil_custom_peers_json"
     const val PEER_SORT = "yggdrasil_peer_sort"
     const val MAX_CUSTOM_PEERS = 32
-    private const val MAX_PUBLIC_PEERS = 256
+    // A mobile Yggdrasil node needs a small, stable neighbour set.  Hundreds
+    // of public TCP/TLS peers cause connection churn and route flapping.
+    const val MAX_PUBLIC_PEERS = 6
     private val supportedProtocols = setOf("tcp", "tls")
 
     val TLS_BYPASS_PEERS = listOf(
@@ -57,14 +59,14 @@ object YggdrasilPeerPreferences {
     }
 
     val DEFAULT_PUBLIC_PEERS = listOf(
-        "tls://45.95.202.21:443",
         "tls://ygg-msk-1.averyan.ru:8362",
+        "tls://box.paulll.cc:13338",
+        "tcp://u-neroit.ru:7000",
+        "tls://yggno.de:18227",
+        "tls://kursk.cleverfox.org:15015",
+        "tls://45.95.202.21:443",
         "tls://95.217.35.92:1337",
         "tcp://89.44.86.85:65535",
-        "tls://yggno.de:18227",
-        "tcp://51.15.204.214:18227",
-        "tls://ygg.mikaela.info:443",
-        "tcp://ygg.in.tula.ru:65535",
     )
 
     fun publicPeers(context: Context): List<String> {

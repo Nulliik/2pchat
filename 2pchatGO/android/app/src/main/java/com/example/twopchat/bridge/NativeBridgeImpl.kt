@@ -744,6 +744,10 @@ class NativeBridgeImpl(
 
     private fun scheduleReconnect(peerName: String, endpoint: String, fingerprint: String?, includeReserve: Boolean): Boolean {
         if (endpoint.isBlank() && fingerprint.isNullOrBlank()) return false
+        if (isPeerOnline(peerName, fingerprint)) {
+            SafeLog.d(TAG, "[GoCore] Peer $peerName (${SafeLog.fp(fingerprint)}) is already online; skipping reconnect")
+            return true
+        }
         val reconnectKey = fingerprint?.takeIf { it.isNotBlank() } ?: peerName
         if (!reconnectsInFlight.add(reconnectKey)) {
             SafeLog.d(TAG, "[GoCore] Reconnect already scheduled for ${SafeLog.fp(reconnectKey)}")
@@ -763,21 +767,23 @@ class NativeBridgeImpl(
     }
 
     private fun retainedCandidates(peerName: String, fingerprint: String?, fallback: String, includeReserve: Boolean): List<String> {
-        if (fingerprint.isNullOrBlank()) return fallback.split(',').mapNotNull(EndpointRetention::normalize).distinct().take(16)
+        val fallbackList = fallback.split(',').mapNotNull(EndpointRetention::normalize).filter { it.isNotBlank() }
+        if (fingerprint.isNullOrBlank()) return fallbackList.distinct().take(16)
         val context = com.example.twopchat.yggdrasil.GlobalApplication.appContext
         val bootstrap = P2PMessageRelay.bootstrapEndpointsForInitialHandshake(peerName)
-        // Do not feed the transient search result through legacy import: an
+        val discovery = P2PMessageRelay.localDiscoveryEndpoints(peerName)
+        // Do not feed transient search or discovery results through legacy import: an
         // unsigned route remains memory-only until the handshake authenticates
-        // it.  It nevertheless has to reach the first dial attempt even when
-        // an old contact already has a stored fingerprint.
+        // it. It nevertheless has to reach dial attempts even when an existing contact
+        // already has a stored fingerprint.
         val persisted = PeerEndpointStore.candidates(
             context,
             peerName,
             fingerprint,
             includeReserve,
-            legacyEndpoints = if (bootstrap.isEmpty()) fallback.split(',') else emptyList(),
+            legacyEndpoints = if (bootstrap.isEmpty() && discovery.isEmpty()) fallbackList else emptyList(),
         )
-        return (bootstrap + persisted).distinct().take(16)
+        return (bootstrap + discovery + fallbackList + persisted).distinct().take(16)
     }
 
     private fun dialRetainedCandidates(peerName: String, fingerprint: String?, candidates: List<String>, includeReserve: Boolean, policyFlags: Int = 0): Boolean {
@@ -790,14 +796,14 @@ class NativeBridgeImpl(
             P2PPreferences.PeerTransportPreference.AUTO -> 0
         }
         val bootstrap = P2PMessageRelay.bootstrapEndpointsForInitialHandshake(peerName)
+        val discovery = P2PMessageRelay.localDiscoveryEndpoints(peerName)
         val fresh = if (fingerprint.isNullOrBlank()) {
             candidates
         } else {
             val persistedFresh = PeerEndpointStore.candidates(context, peerName, fingerprint, includeReserve = false)
-            // The persistent cache deliberately does not contain an unsigned
-            // first-contact endpoint. Preserve that bounded, expiring route
-            // for this one initial handshake attempt.
-            candidates.filter { it in persistedFresh || it in bootstrap }
+            val ephemeral = (bootstrap + discovery).toSet()
+            val matched = candidates.filter { it in persistedFresh || it in ephemeral }
+            if (matched.isEmpty() && candidates.isNotEmpty()) candidates else matched
         }
         val reserve = if (includeReserve) candidates.filter { it !in fresh } else emptyList()
         if (fresh.isEmpty() && reserve.isEmpty()) return false
@@ -809,9 +815,10 @@ class NativeBridgeImpl(
         if (!fingerprint.isNullOrBlank()) {
             peerNameMap[fingerprint] = peerName
             nameToFpMap[peerName] = fingerprint
-            // A queued tracker callback may run just after another candidate
-            // has authenticated. Never replace that live ratchet session.
-            if (NativeBridge.isPeerOnline(fingerprint)) return true
+        }
+        if (isPeerOnline(peerName, fingerprint)) {
+            SafeLog.d(TAG, "[GoCore] Peer $peerName (${SafeLog.fp(fingerprint)}) is already online; aborting retained route dial")
+            return true
         }
         val context = com.example.twopchat.yggdrasil.GlobalApplication.appContext
         val pref = P2PPreferences.getPeerTransportPreference(context, peerName)

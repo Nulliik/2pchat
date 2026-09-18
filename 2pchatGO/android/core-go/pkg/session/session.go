@@ -62,6 +62,8 @@ type Session struct {
 	closeChan      chan struct{}
 	online         int32
 	counter        uint64
+	receivedCount  uint64
+	createdAt      time.Time
 
 	ackTimeout time.Duration
 	maxRetries int
@@ -145,6 +147,7 @@ func NewSession(
 		receivedOrder:     make([]string, 0, MaxReceivedIDsHistory),
 		ackTimeout:        initAckTimeout,
 		maxRetries:        DefaultMaxRetries,
+		createdAt:         time.Now(),
 		localCapabilities: protocol.LocalCapabilities(),
 	}
 	for _, opt := range opts {
@@ -441,6 +444,7 @@ func (s *Session) readerLoop() {
 		if err != nil {
 			continue
 		}
+		atomic.AddUint64(&s.receivedCount, 1)
 		if s.localCapabilities.MinSupportedVersion > 1 && s.NegotiatedProtocol() == nil {
 			pending, err := DecodeMessage(plaintext)
 			if err != nil || (pending["type"] != string(TypeIdentityInfo) && pending["type"] != string(TypeAck)) {
@@ -820,6 +824,11 @@ func (s *Session) PeerFingerprint() string {
 // IsOnline returns true if the session is currently connected.
 func (s *Session) IsOnline() bool {
 	return atomic.LoadInt32(&s.online) == 1
+}
+
+// HasExchangedMessages returns true if this session has transmitted or received any messages.
+func (s *Session) HasExchangedMessages() bool {
+	return atomic.LoadUint64(&s.counter) > 0 || atomic.LoadUint64(&s.receivedCount) > 0
 }
 
 // Close gracefully closes the session and underlying TCP connection.

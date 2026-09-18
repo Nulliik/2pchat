@@ -57,6 +57,8 @@ class E2EControlReceiver : BroadcastReceiver() {
                         result.put("name", name)
                         result.put("code", P2PPreferences.getRendezvousCode(context))
                         result.put("fingerprint", NativeBridge.getLocalIdentity()?.fingerprint.orEmpty())
+                        // Read-only diagnostic metadata; this receiver is absent from release builds.
+                        result.put("ygg", com.example.twopchat.relay.P2PMessageRelay.getYggdrasilAddress())
                     }
                     ACTION_TRACKER -> {
                         val tracker = intent.getStringExtra(EXTRA_TRACKER).orEmpty()

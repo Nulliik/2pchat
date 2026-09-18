@@ -79,23 +79,28 @@ class YggdrasilUserSpaceStack(
     // contract, so serialize every outbound mesh packet here.
     private val yggSendLock = Any()
 
-    private val localIp: ByteArray by lazy {
-        try {
-            Inet6Address.getByName(ygg.addressString).address
-        } catch (_: Throwable) {
-            ByteArray(16)
+    private val localIp: ByteArray
+        get() {
+            val addr = runCatching { ygg.addressString }.getOrNull()
+            if (!addr.isNullOrBlank()) {
+                try {
+                    val parsed = InetAddress.getByName(addr.trim().removeSurrounding("[", "]")).address
+                    if (parsed.size == 16) return parsed
+                } catch (_: Throwable) {}
+            }
+            return ByteArray(16)
         }
-    }
 
     private class StreamSession(
         val streamKey: String,
         val remoteIp: ByteArray,
         val remotePort: Int,
         val localPort: Int,
+        val initialSeqSent: Long = 1000L,
         var clientSocket: Socket? = null,
         var clientIn: InputStream? = null,
         var clientOut: OutputStream? = null,
-        var seqSent: AtomicLong = AtomicLong(1000L),
+        var seqSent: AtomicLong = AtomicLong(initialSeqSent),
         var seqRecv: AtomicLong = AtomicLong(0L),
         var receiveWindow: TcpReceiveWindow = TcpReceiveWindow(0L),
         val unacknowledged: ConcurrentSkipListMap<Long, PendingSegment> = ConcurrentSkipListMap(),
@@ -207,6 +212,8 @@ class YggdrasilUserSpaceStack(
     }
 
     private fun handleSocksClient(client: Socket) {
+        var session: StreamSession? = null
+        var sessionKey: String? = null
         try {
             client.soTimeout = 15000
             val input = client.getInputStream()
@@ -292,9 +299,10 @@ class YggdrasilUserSpaceStack(
             val localPort = portCounter.getAndIncrement()
             if (localPort > 60000) portCounter.set(40000)
 
-            val sessionKey = "${bytesToHex(targetIpBytes)}:$targetPort:$localPort"
-            val session = StreamSession(
-                streamKey = sessionKey,
+            val currentKey = "${bytesToHex(targetIpBytes)}:$targetPort:$localPort"
+            sessionKey = currentKey
+            val currentSession = StreamSession(
+                streamKey = currentKey,
                 remoteIp = targetIpBytes,
                 remotePort = targetPort,
                 localPort = localPort,
@@ -302,30 +310,34 @@ class YggdrasilUserSpaceStack(
                 clientIn = input,
                 clientOut = output
             )
-            activeSessions[sessionKey] = session
+            session = currentSession
+            activeSessions[currentKey] = currentSession
 
             val handshakeFuture = java.util.concurrent.CompletableFuture<Boolean>()
             pendingHandshakes[sessionKey] = handshakeFuture
 
-            // Send TCP SYN packet
-            sendTcpPacket(
-                srcIp = localIp,
-                dstIp = targetIpBytes,
-                srcPort = localPort,
-                dstPort = targetPort,
-                // A SYN consumes one sequence number.  The ACK and the first
-                // application payload must therefore begin at SYN+1; reusing
-                // the SYN number makes the receiving user-space stack discard
-                // the X3DH bytes as out-of-order.
-                seq = consumeSynSequence(session.seqSent),
-                ack = 0L,
-                flags = 0x02 // SYN
-            )
-
-            val success = try {
-                handshakeFuture.get(10, java.util.concurrent.TimeUnit.SECONDS)
-            } catch (_: Throwable) {
-                false
+            val synSeq = consumeSynSequence(session.seqSent)
+            val deadline = System.currentTimeMillis() + 12_000L
+            var rto = 1_000L
+            var success = false
+            while (System.currentTimeMillis() < deadline && !handshakeFuture.isDone && running.get()) {
+                sendTcpPacket(
+                    srcIp = localIp,
+                    dstIp = targetIpBytes,
+                    srcPort = localPort,
+                    dstPort = targetPort,
+                    seq = synSeq,
+                    ack = 0L,
+                    flags = 0x02 // SYN
+                )
+                try {
+                    success = handshakeFuture.get(rto, java.util.concurrent.TimeUnit.MILLISECONDS)
+                    if (success) break
+                } catch (_: java.util.concurrent.TimeoutException) {
+                    rto = minOf(rto * 2, 4_000L)
+                } catch (_: Throwable) {
+                    break
+                }
             }
             pendingHandshakes.remove(sessionKey)
 
@@ -347,13 +359,21 @@ class YggdrasilUserSpaceStack(
                 if (read <= 0) break
 
                 var offset = 0
-                while (offset < read) {
+                while (offset < read && !session.isClosed.get() && running.get()) {
                     awaitSendWindow(session)
                     val segLen = minOf(read - offset, MAX_TCP_PAYLOAD)
                     val chunk = buf.copyOfRange(offset, offset + segLen)
                     val currentSeq = session.seqSent.getAndAdd(segLen.toLong())
                     sendTrackedPayload(session, targetIpBytes, localPort, targetPort, currentSeq, chunk)
                     offset += segLen
+                    if (offset < read) {
+                        try {
+                            Thread.sleep(SEND_WINDOW_WAIT_MS)
+                        } catch (_: InterruptedException) {
+                            Thread.currentThread().interrupt()
+                            break
+                        }
+                    }
                 }
             }
 
@@ -370,7 +390,13 @@ class YggdrasilUserSpaceStack(
         } catch (e: Exception) {
             SafeLog.d(TAG, "Failed sending FIN packet: ${e.javaClass.simpleName}")
         } finally {
+            val s = session
+            s?.isClosed?.set(true)
             runCatching { client.close() }
+            val key = sessionKey
+            if (key != null && (s == null || s.unacknowledged.isEmpty())) {
+                activeSessions.remove(key)
+            }
         }
     }
 
@@ -453,6 +479,9 @@ class YggdrasilUserSpaceStack(
 
         // Check if this is a reply to our outbound SOCKS connection
         val outSession = activeSessions[sessionKeyOutbound]
+        if (com.example.twopchat.BuildConfig.DEBUG) {
+            SafeLog.d(TAG, "TCP RX ports=$srcPort->$dstPort seq=$seq ack=$ack flags=$flags bytes=$payloadLen expected=${outSession?.seqRecv?.get()} flight=${outSession?.unacknowledged?.size}")
+        }
         if (outSession != null) {
             acknowledgeOutbound(outSession, ack)
             if (isSyn && isAck) {
@@ -521,7 +550,21 @@ class YggdrasilUserSpaceStack(
 
         // Inbound connection from mesh peer destined to local app port
         if (isSyn && !isAck) {
-            if (activeSessions.containsKey(sessionKeyInbound) || !pendingInboundSessions.add(sessionKeyInbound)) {
+            val existingInbound = activeSessions[sessionKeyInbound]
+            if (existingInbound != null) {
+                // Duplicate SYN (peer retransmitting because our SYN-ACK was lost/delayed in mesh)
+                sendTcpPacket(
+                    srcIp = localIp,
+                    dstIp = srcIp,
+                    srcPort = dstPort,
+                    dstPort = srcPort,
+                    seq = existingInbound.initialSeqSent,
+                    ack = existingInbound.seqRecv.get(),
+                    flags = 0x12 // SYN | ACK
+                )
+                return
+            }
+            if (!pendingInboundSessions.add(sessionKeyInbound)) {
                 return
             }
             thread(name = "Ygg-Inbound-Worker") {
@@ -559,6 +602,7 @@ class YggdrasilUserSpaceStack(
                 remoteIp = srcIp,
                 remotePort = srcPort,
                 localPort = dstPort,
+                initialSeqSent = 5000L,
                 clientSocket = localSocket,
                 clientIn = localSocket.getInputStream(),
                 clientOut = localSocket.getOutputStream(),
@@ -588,13 +632,21 @@ class YggdrasilUserSpaceStack(
                 if (read <= 0) break
 
                 var offset = 0
-                while (offset < read) {
+                while (offset < read && !session.isClosed.get() && running.get()) {
                     awaitSendWindow(session)
                     val segLen = minOf(read - offset, MAX_TCP_PAYLOAD)
                     val chunk = buf.copyOfRange(offset, offset + segLen)
                     val currentSeq = session.seqSent.getAndAdd(segLen.toLong())
                     sendTrackedPayload(session, srcIp, dstPort, srcPort, currentSeq, chunk)
                     offset += segLen
+                    if (offset < read) {
+                        try {
+                            Thread.sleep(SEND_WINDOW_WAIT_MS)
+                        } catch (_: InterruptedException) {
+                            Thread.currentThread().interrupt()
+                            break
+                        }
+                    }
                 }
             }
 
@@ -621,7 +673,12 @@ class YggdrasilUserSpaceStack(
             )
         } finally {
             pendingInboundSessions.remove(sessionKey)
-            activeSessions.remove(sessionKey)
+            val sess = activeSessions[sessionKey]
+            sess?.isClosed?.set(true)
+            runCatching { sess?.clientSocket?.close() }
+            if (sess == null || sess.unacknowledged.isEmpty()) {
+                activeSessions.remove(sessionKey)
+            }
         }
     }
 
@@ -636,6 +693,9 @@ class YggdrasilUserSpaceStack(
         payload: ByteArray? = null
     ) {
         val payloadLen = payload?.size ?: 0
+        if (com.example.twopchat.BuildConfig.DEBUG) {
+            SafeLog.d(TAG, "TCP TX ports=$srcPort->$dstPort seq=$seq ack=$ack flags=$flags bytes=$payloadLen")
+        }
         val tcpLen = 20 + payloadLen
         val totalLen = 40 + tcpLen
 
@@ -719,21 +779,27 @@ class YggdrasilUserSpaceStack(
                 Thread.sleep(RETRANSMIT_SCAN_MS)
                 val now = System.currentTimeMillis()
                 for (session in activeSessions.values) {
-                    for (segment in session.unacknowledged.values) {
-                        if (now - segment.lastSentAtMs < RETRANSMIT_AFTER_MS) continue
-                        if (segment.retries >= MAX_SEGMENT_RETRIES) {
-                            SafeLog.w(TAG, "Closing Ygg stream after unacknowledged segment seq=${segment.sequence}, bytes=${segment.payload.size}")
-                            session.isClosed.set(true)
-                            runCatching { session.clientSocket?.close() }
-                            session.unacknowledged.clear()
-                            activeSessions.remove(session.streamKey, session)
-                            break
-                        }
-                        segment.retries += 1
-                        segment.lastSentAtMs = now
-                        SafeLog.d(TAG, "Retransmitting Ygg segment seq=${segment.sequence}, retry=${segment.retries}")
-                        sendTcpPacket(localIp, segment.dstIp, segment.srcPort, segment.dstPort, segment.sequence, session.seqRecv.get(), 0x18, segment.payload)
+                    if (session.isClosed.get() && session.unacknowledged.isEmpty()) {
+                        activeSessions.remove(session.streamKey, session)
+                        continue
                     }
+                    val oldestEntry = session.unacknowledged.firstEntry() ?: continue
+                    val segment = oldestEntry.value
+                    val backoffFactor = 1L shl minOf(segment.retries, 5)
+                    val rtoMs = minOf(INITIAL_RTO_MS * backoffFactor, MAX_RTO_MS)
+                    if (now - segment.lastSentAtMs < rtoMs) continue
+                    if (segment.retries >= MAX_SEGMENT_RETRIES) {
+                        SafeLog.w(TAG, "Closing Ygg stream after unacknowledged segment seq=${segment.sequence}, bytes=${segment.payload.size}, retries=${segment.retries}")
+                        session.isClosed.set(true)
+                        runCatching { session.clientSocket?.close() }
+                        session.unacknowledged.clear()
+                        activeSessions.remove(session.streamKey, session)
+                        continue
+                    }
+                    segment.retries += 1
+                    segment.lastSentAtMs = now
+                    SafeLog.d(TAG, "Retransmitting Ygg segment seq=${segment.sequence}, retry=${segment.retries}, rtoMs=$rtoMs")
+                    sendTcpPacket(localIp, segment.dstIp, segment.srcPort, segment.dstPort, segment.sequence, session.seqRecv.get(), 0x18, segment.payload)
                 }
             } catch (_: InterruptedException) {
                 if (!running.get()) return
@@ -827,12 +893,17 @@ class YggdrasilUserSpaceStack(
          * were observed to black-hole on real mesh paths.
          */
         const val MAX_TCP_PAYLOAD = 900
+        // Four segments (at most 3.6 KiB of application data) is deliberately
+        // conservative for public Yggdrasil routes. It bounds buffering and
+        // prevents an avatar/profile burst from creating a mesh-wide retry
+        // storm before cumulative ACKs have returned.
         private const val MAX_IN_FLIGHT_SEGMENTS = 4
         private const val SEND_WINDOW_WAIT_MS = 5L
         private const val LOCAL_CORE_CONNECT_TIMEOUT_MS = 5_000
         private const val RETRANSMIT_SCAN_MS = 150L
-        private const val RETRANSMIT_AFTER_MS = 450L
-        private const val MAX_SEGMENT_RETRIES = 8
+        private const val INITIAL_RTO_MS = 600L
+        private const val MAX_RTO_MS = 8_000L
+        private const val MAX_SEGMENT_RETRIES = 12
 
         fun segmentPayload(data: ByteArray, maxSegSize: Int = MAX_TCP_PAYLOAD): List<ByteArray> {
             if (data.isEmpty()) return emptyList()
