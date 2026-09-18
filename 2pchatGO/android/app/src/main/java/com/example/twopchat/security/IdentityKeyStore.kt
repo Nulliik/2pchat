@@ -22,7 +22,16 @@ object IdentityKeyStore {
         return synchronized(this) {
             cachedKey?.let { return it }
             val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
-            val key = (store.getKey(ALIAS, null) as? SecretKey) ?: KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore").run {
+            val existing = runCatching { store.getKey(ALIAS, null) as? SecretKey }.getOrNull()
+            if (existing != null) {
+                cachedKey = existing
+                return existing
+            }
+            if (store.containsAlias(ALIAS)) {
+                com.example.twopchat.logging.SafeLog.w("IdentityKeyStore", "Keystore alias $ALIAS exists but key is unrecoverable; clearing broken entry")
+                runCatching { store.deleteEntry(ALIAS) }
+            }
+            val key = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore").run {
                 init(
                     KeyGenParameterSpec.Builder(
                         ALIAS,

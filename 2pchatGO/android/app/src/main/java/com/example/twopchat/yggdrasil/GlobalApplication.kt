@@ -345,7 +345,7 @@ object AppForegroundTracker {
 
     private fun onForegroundTransition() {
         backgroundLimitAction?.let { it(true); return }
-        val context = GlobalApplication.appContext ?: return
+        val context = runCatching { GlobalApplication.appContext }.getOrNull() ?: return
         if (shouldLimitBackground(context) && !YggdrasilCoordinator.isRunning(context)) {
             YggdrasilCoordinator.start(context)
         }
@@ -353,7 +353,7 @@ object AppForegroundTracker {
 
     private fun onBackgroundTransition() {
         backgroundLimitAction?.let { it(false); return }
-        val context = GlobalApplication.appContext ?: return
+        val context = runCatching { GlobalApplication.appContext }.getOrNull() ?: return
         if (shouldLimitBackground(context)) {
             YggdrasilCoordinator.stop(context)
         }

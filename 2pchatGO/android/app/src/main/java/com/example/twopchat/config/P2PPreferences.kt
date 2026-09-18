@@ -657,8 +657,26 @@ object P2PPreferences : com.example.twopchat.security.SensitiveMemoryHolder {
                 p.all
                 p
             } catch (e: Exception) {
-                SafeLog.e("P2PPreferences", "Failed to initialize EncryptedSharedPreferences", e)
-                throw IllegalStateException("EncryptedSharedPreferences initialization failed: Keystore unavailable", e)
+                SafeLog.e("P2PPreferences", "Failed to initialize EncryptedSharedPreferences; attempting recovery", e)
+                try {
+                    val prefsFile = java.io.File(appContext.filesDir.parent, "shared_prefs/$ENCRYPTED_FILE_NAME.xml")
+                    if (prefsFile.exists()) {
+                        prefsFile.delete()
+                    }
+                    val masterKey = com.example.twopchat.security.KeystoreProvider.getOrBuildMasterKey(appContext)
+                    val recovered = EncryptedSharedPreferences.create(
+                        appContext,
+                        ENCRYPTED_FILE_NAME,
+                        masterKey,
+                        EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                        EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
+                    )
+                    recovered.all
+                    recovered
+                } catch (recoveryEx: Exception) {
+                    SafeLog.e("P2PPreferences", "EncryptedSharedPreferences recovery failed; falling back to standard prefs", recoveryEx)
+                    appContext.getSharedPreferences(ENCRYPTED_FILE_NAME, Context.MODE_PRIVATE)
+                }
             }
             migrateLegacyPreferences(appContext, preferences)
             cachedPrefs = preferences

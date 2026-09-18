@@ -93,7 +93,7 @@ internal object PeerEndpointStore {
             EndpointRecord(fp, it, EndpointSource.MIGRATED, now, now, savedContact = friend)
         }
         write(db, EndpointRetention.retain(rows, now))
-        check(db.insertWithOnConflict("peer_endpoint_imports", null, ContentValues().apply { put("fingerprint", fp) }, SQLiteDatabase.CONFLICT_IGNORE) != -1L)
+        check(db.insertWithOnConflict("peer_endpoint_imports", null, ContentValues().apply { put("fingerprint", fp) }, SQLiteDatabase.CONFLICT_REPLACE) != -1L)
     }
 
     @Synchronized @WorkerThread
