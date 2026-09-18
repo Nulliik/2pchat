@@ -59,19 +59,18 @@ object YggdrasilPeerPreferences {
     }
 
     val DEFAULT_PUBLIC_PEERS = listOf(
-        "tls://ygg-msk-1.averyan.ru:8362",
-        "tls://box.paulll.cc:13338",
-        "tcp://u-neroit.ru:7000",
-        "tls://yggno.de:18227",
-        "tls://kursk.cleverfox.org:15015",
-        "tls://45.95.202.21:443",
+        "tcp://10.0.2.2:18227",
         "tls://95.217.35.92:1337",
-        "tcp://89.44.86.85:65535",
+        "tls://78.27.153.163:3784",
+        "tls://78.27.153.163:3785",
+        "tcp://188.225.9.167:18226",
+        "tcp://45.95.202.21:12403",
         // Reserve bootstrap routes. They are not opened together: publicPeers()
         // applies MAX_PUBLIC_PEERS before the configuration is written.
-        "tcp://51.15.204.214:18227",
-        "tls://ygg.mikaela.info:443",
-        "tcp://ygg.in.tula.ru:65535",
+        "tcp://51.15.204.214:12345",
+        "tls://62.210.85.80:39575",
+        "tcp://89.44.86.85:65535",
+        "tls://78.27.153.163:33166",
     )
 
     fun publicPeers(context: Context): List<String> {

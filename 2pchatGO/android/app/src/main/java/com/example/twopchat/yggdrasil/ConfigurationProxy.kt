@@ -81,6 +81,9 @@ class ConfigurationProxy(applicationContext: Context) {
 
         private const val PREF_POOL_SEEDED = "yggdrasil_public_pool_seeded_v1"
         private const val PREF_POOL_MIGRATED_V2 = "yggdrasil_public_pool_migrated_v2"
+        private const val PREF_POOL_MIGRATED_V3 = "yggdrasil_public_pool_migrated_v3"
+        private const val PREF_POOL_MIGRATED_V4 = "yggdrasil_public_pool_migrated_v4"
+        private const val PREF_POOL_MIGRATED_V5 = "yggdrasil_public_pool_migrated_v5"
         private const val MAX_RETAINED_PUBLIC_PEERS = YggdrasilPeerPreferences.MAX_PUBLIC_PEERS
         // Bootstrap peers taken from the official public-peers repository on
         // 2026-07-09.  They are intentionally nearby (Russia/Finland) and use
@@ -143,6 +146,10 @@ class ConfigurationProxy(applicationContext: Context) {
             json.put("IfName", "none")
             json.put("IfMTU", 65535)
 
+            val listenArr = JSONArray()
+            listenArr.put("tcp://0.0.0.0:18227")
+            json.put("Listen", listenArr)
+
             // Multicast config. Beacon (advertising) is off by default to save
             // battery/radio wakeups; Listen stays on so local peer discovery keeps
             // working. The user can re-enable the beacon from Settings.
@@ -201,6 +208,33 @@ class ConfigurationProxy(applicationContext: Context) {
                     YggdrasilPeerPreferences.DEFAULT_PUBLIC_PEERS.take(MAX_RETAINED_PUBLIC_PEERS),
                 )
                 preferences.edit().putBoolean(PREF_POOL_MIGRATED_V2, true).apply()
+            }
+
+            val poolMigratedV3 = preferences.getBoolean(PREF_POOL_MIGRATED_V3, false)
+            if (!poolMigratedV3) {
+                YggdrasilPeerPreferences.replacePublicPeers(
+                    appContext,
+                    YggdrasilPeerPreferences.DEFAULT_PUBLIC_PEERS.take(MAX_RETAINED_PUBLIC_PEERS),
+                )
+                preferences.edit().putBoolean(PREF_POOL_MIGRATED_V3, true).apply()
+            }
+
+            val poolMigratedV4 = preferences.getBoolean(PREF_POOL_MIGRATED_V4, false)
+            if (!poolMigratedV4) {
+                YggdrasilPeerPreferences.replacePublicPeers(
+                    appContext,
+                    YggdrasilPeerPreferences.DEFAULT_PUBLIC_PEERS.take(MAX_RETAINED_PUBLIC_PEERS),
+                )
+                preferences.edit().putBoolean(PREF_POOL_MIGRATED_V4, true).apply()
+            }
+
+            val poolMigratedV5 = preferences.getBoolean(PREF_POOL_MIGRATED_V5, false)
+            if (!poolMigratedV5) {
+                YggdrasilPeerPreferences.replacePublicPeers(
+                    appContext,
+                    YggdrasilPeerPreferences.DEFAULT_PUBLIC_PEERS.take(MAX_RETAINED_PUBLIC_PEERS),
+                )
+                preferences.edit().putBoolean(PREF_POOL_MIGRATED_V5, true).apply()
             }
 
             val configuredAfterSeed = peerUris(json)
