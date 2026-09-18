@@ -1,6 +1,8 @@
 package com.example.twopchat.yggdrasil
 
 import android.content.Context
+import android.os.Build
+import androidx.annotation.RequiresApi
 import mobile.Mobile
 import org.json.JSONArray
 import org.json.JSONObject
@@ -31,30 +33,30 @@ class ConfigurationProxy(applicationContext: Context) {
             return plain
         }
 
+        // Source and target are created in the same app-private directory. On API
+        // 24-25, rename is the only available atomic replacement. Do not fall back
+        // to delete-and-copy: a failed write must leave the old config intact.
         private fun atomicReplace(source: File, target: File): Boolean =
-            try {
-                if (source.renameTo(target)) {
-                    true
-                } else {
-                    java.nio.file.Files.move(
-                        source.toPath(),
-                        target.toPath(),
-                        java.nio.file.StandardCopyOption.REPLACE_EXISTING,
-                        java.nio.file.StandardCopyOption.ATOMIC_MOVE
-                    )
-                    true
-                }
-            } catch (_: java.nio.file.AtomicMoveNotSupportedException) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                atomicReplaceApi26(source, target)
+            } else {
                 try {
-                    java.nio.file.Files.move(
-                        source.toPath(),
-                        target.toPath(),
-                        java.nio.file.StandardCopyOption.REPLACE_EXISTING
-                    )
-                    true
+                    source.renameTo(target)
                 } catch (_: Throwable) {
                     false
                 }
+            }
+
+        @RequiresApi(Build.VERSION_CODES.O)
+        private fun atomicReplaceApi26(source: File, target: File): Boolean =
+            try {
+                java.nio.file.Files.move(
+                    source.toPath(),
+                    target.toPath(),
+                    java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+                    java.nio.file.StandardCopyOption.ATOMIC_MOVE,
+                )
+                true
             } catch (_: Throwable) {
                 false
             }
@@ -72,7 +74,9 @@ class ConfigurationProxy(applicationContext: Context) {
                 output.write(encrypted.toByteArray(Charsets.UTF_8))
                 output.fd.sync()
             }
-            check(replace(temp, file)) { "Could not replace configuration; original preserved" }
+            check(replace(temp, file)) {
+                "Could not replace configuration; original preserved"
+            }
         }
 
         private const val PREF_POOL_SEEDED = "yggdrasil_public_pool_seeded_v1"

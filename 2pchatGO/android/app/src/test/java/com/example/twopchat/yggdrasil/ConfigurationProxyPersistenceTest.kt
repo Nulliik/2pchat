@@ -9,6 +9,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
 import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 
 class ConfigurationProxyPersistenceTest {
 
@@ -98,6 +99,15 @@ class ConfigurationProxyPersistenceTest {
             file,
             """{"PrivateKey":"next"}""",
             encrypt = { "enc:v1:new" },
+            replace = { source, target ->
+                Files.move(
+                    source.toPath(),
+                    target.toPath(),
+                    StandardCopyOption.REPLACE_EXISTING,
+                    StandardCopyOption.ATOMIC_MOVE,
+                )
+                true
+            },
         )
         assertEquals("enc:v1:new", file.readText())
         assertFalse(File(directory, "yggdrasil.conf.tmp").exists())
