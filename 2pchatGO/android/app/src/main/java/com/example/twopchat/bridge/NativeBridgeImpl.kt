@@ -783,7 +783,7 @@ class NativeBridgeImpl(
             includeReserve,
             legacyEndpoints = if (bootstrap.isEmpty() && discovery.isEmpty()) fallbackList else emptyList(),
         )
-        return (bootstrap + discovery + fallbackList + persisted).distinct().take(16)
+        return (fallbackList + bootstrap + discovery + persisted).distinct().take(16)
     }
 
     private fun dialRetainedCandidates(peerName: String, fingerprint: String?, candidates: List<String>, includeReserve: Boolean, policyFlags: Int = 0): Boolean {

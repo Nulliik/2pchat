@@ -129,8 +129,12 @@ internal object PeerEndpointStore {
             if (fingerprint.isNullOrBlank()) {
                 db.update(TABLE, values, null, null)
             } else {
-                canonicalEndpointFingerprint(fingerprint)?.let { fp ->
-                    db.update(TABLE, values, "fingerprint = ?", arrayOf(fp))
+                val resolvedFp = canonicalEndpointFingerprint(fingerprint)
+                    ?: P2PPreferences.getPeerFingerprint(context, fingerprint)?.let(::canonicalEndpointFingerprint)
+                if (resolvedFp != null) {
+                    db.update(TABLE, values, "fingerprint = ?", arrayOf(resolvedFp))
+                } else {
+                    db.update(TABLE, values, null, null)
                 }
             }
         }
