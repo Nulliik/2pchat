@@ -67,6 +67,11 @@ object YggdrasilPeerPreferences {
         "tls://45.95.202.21:443",
         "tls://95.217.35.92:1337",
         "tcp://89.44.86.85:65535",
+        // Reserve bootstrap routes. They are not opened together: publicPeers()
+        // applies MAX_PUBLIC_PEERS before the configuration is written.
+        "tcp://51.15.204.214:18227",
+        "tls://ygg.mikaela.info:443",
+        "tcp://ygg.in.tula.ru:65535",
     )
 
     fun publicPeers(context: Context): List<String> {
