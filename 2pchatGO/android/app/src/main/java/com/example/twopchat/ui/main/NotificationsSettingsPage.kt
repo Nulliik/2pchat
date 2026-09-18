@@ -138,6 +138,33 @@ fun NotificationsSettingsPage(
                 mutableStateOf(powerManager?.isIgnoringBatteryOptimizations(context.packageName) ?: false)
             }
 
+            val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+            DisposableEffect(lifecycleOwner) {
+                val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+                    if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                        val ignored = powerManager?.isIgnoringBatteryOptimizations(context.packageName) ?: false
+                        isBatteryOptIgnored = ignored
+                        if (ignored) {
+                            P2PPreferences.setBatteryOptBannerDismissed(context, true)
+                        }
+                    }
+                }
+                lifecycleOwner.lifecycle.addObserver(observer)
+                onDispose {
+                    lifecycleOwner.lifecycle.removeObserver(observer)
+                }
+            }
+
+            val batteryLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+                contract = androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()
+            ) {
+                val ignored = powerManager?.isIgnoringBatteryOptimizations(context.packageName) ?: false
+                isBatteryOptIgnored = ignored
+                if (ignored) {
+                    P2PPreferences.setBatteryOptBannerDismissed(context, true)
+                }
+            }
+
             Card(
                 colors = CardDefaults.cardColors(containerColor = surfaceColor),
                 shape = RoundedCornerShape(16.dp),
@@ -216,18 +243,16 @@ fun NotificationsSettingsPage(
                             Spacer(modifier = Modifier.width(8.dp))
                             Button(
                                 onClick = {
+                                    val intent = android.content.Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                                        data = android.net.Uri.parse("package:${context.packageName}")
+                                    }
                                     runCatching {
-                                        val intent = android.content.Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
-                                            data = android.net.Uri.parse("package:${context.packageName}")
-                                        }
-                                        context.startActivity(intent)
+                                        batteryLauncher.launch(intent)
                                     }.onFailure {
                                         runCatching {
-                                            val fallback = android.content.Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
-                                            context.startActivity(fallback)
+                                            batteryLauncher.launch(android.content.Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
                                         }
                                     }
-                                    isBatteryOptIgnored = powerManager?.isIgnoringBatteryOptimizations(context.packageName) ?: false
                                 },
                                 colors = ButtonDefaults.buttonColors(containerColor = primaryColor),
                                 shape = RoundedCornerShape(10.dp),

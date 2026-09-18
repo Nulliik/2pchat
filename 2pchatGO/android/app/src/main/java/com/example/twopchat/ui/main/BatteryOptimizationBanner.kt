@@ -23,6 +23,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.example.twopchat.config.P2PPreferences
 import com.example.twopchat.data.Localizations
 
@@ -43,10 +48,32 @@ fun BatteryOptimizationBanner(
         mutableStateOf(P2PPreferences.isBatteryOptBannerDismissed(context))
     }
 
-    // Refresh state when returning to UI
-    DisposableEffect(Unit) {
-        isIgnored = powerManager?.isIgnoringBatteryOptimizations(context.packageName) ?: true
-        onDispose {}
+    // Refresh state on lifecycle ON_RESUME (e.g. after user grants permission in system dialog)
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                val ignored = powerManager?.isIgnoringBatteryOptimizations(context.packageName) ?: true
+                isIgnored = ignored
+                if (ignored) {
+                    P2PPreferences.setBatteryOptBannerDismissed(context, true)
+                }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
+    val launcher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) {
+        val ignored = powerManager?.isIgnoringBatteryOptimizations(context.packageName) ?: true
+        isIgnored = ignored
+        if (ignored) {
+            P2PPreferences.setBatteryOptBannerDismissed(context, true)
+        }
     }
 
     val visible = !isIgnored && !isDismissed
@@ -171,18 +198,16 @@ fun BatteryOptimizationBanner(
 
                     Button(
                         onClick = {
+                            val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                                data = Uri.parse("package:${context.packageName}")
+                            }
                             runCatching {
-                                val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
-                                    data = Uri.parse("package:${context.packageName}")
-                                }
-                                context.startActivity(intent)
+                                launcher.launch(intent)
                             }.onFailure {
                                 runCatching {
-                                    val fallback = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
-                                    context.startActivity(fallback)
+                                    launcher.launch(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
                                 }
                             }
-                            isIgnored = powerManager?.isIgnoringBatteryOptimizations(context.packageName) ?: false
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = primaryColor),
                         shape = RoundedCornerShape(10.dp),

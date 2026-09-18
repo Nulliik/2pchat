@@ -70,11 +70,9 @@ fun OnboardingScreen(
     var profilePhotoUri by remember { mutableStateOf<String?>(null) }
     var profileBitmap by remember { mutableStateOf<Bitmap?>(null) }
     var pendingCropUri by remember { mutableStateOf<Uri?>(null) }
-    var showYggdrasilDialog by remember { mutableStateOf(false) }
     var showRestoreDialog by remember { mutableStateOf(false) }
 
     fun startYggdrasilAndComplete(enableYggdrasil: Boolean = true) {
-        showYggdrasilDialog = false
         sharedPrefs.edit().putBoolean("settings_yggdrasil", enableYggdrasil).apply()
         if (enableYggdrasil) {
             // Onboarding always starts Yggdrasil in PROXY mode: it needs no VPN
@@ -143,66 +141,7 @@ fun OnboardingScreen(
         return
     }
 
-    // Yggdrasil Activation Prompt Dialog (Step 5 trigger)
-    if (showYggdrasilDialog) {
-        AlertDialog(
-            onDismissRequest = {
-                showYggdrasilDialog = false
-                startYggdrasilAndComplete(enableYggdrasil = false)
-            },
-            title = {
-                Text(
-                    text = Localizations.getString("enable_yggdrasil_prompt_title", appLanguage),
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 18.sp,
-                    color = onSurfaceColor
-                )
-            },
-            text = {
-                Text(
-                    text = Localizations.getString("enable_yggdrasil_prompt_desc", appLanguage),
-                    fontSize = 14.sp,
-                    color = onSurfaceColor.copy(alpha = 0.8f)
-                )
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        // Onboarding enables Yggdrasil in PROXY mode directly,
-                        // without showing the system VPN consent dialog. The VPN
-                        // consent is only requested later when the user enables
-                        // VPN mode from Settings.
-                        startYggdrasilAndComplete(enableYggdrasil = true)
-                    },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = primaryColor,
-                        contentColor = if (primaryColor == MintGreen) StealthBlack else Color.White
-                    ),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Text(
-                        text = Localizations.getString("enable_vpn_btn", appLanguage),
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = {
-                        showYggdrasilDialog = false
-                        startYggdrasilAndComplete(enableYggdrasil = false)
-                    }
-                ) {
-                    Text(
-                        text = Localizations.getString("skip_for_now", appLanguage),
-                        color = onSurfaceColor.copy(alpha = 0.6f)
-                    )
-                }
-            },
-            containerColor = surfaceColor,
-            shape = RoundedCornerShape(20.dp)
-        )
-    }
+
 
     // Account Restore Dialog
     if (showRestoreDialog) {
@@ -365,7 +304,7 @@ fun OnboardingScreen(
                         sharedPrefs.edit()
                             .putString("username_profile", normalizedNickname)
                             .apply()
-                        showYggdrasilDialog = true
+                        startYggdrasilAndComplete(enableYggdrasil = true)
                     }
                 },
                 colors = ButtonDefaults.buttonColors(
