@@ -14,4 +14,4 @@ core-go/bin/
 *.log
 egress_reports/
 *.pcap
-
+.kotlin/

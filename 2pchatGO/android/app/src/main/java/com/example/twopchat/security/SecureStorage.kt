@@ -50,7 +50,7 @@ object SecureStorage : SensitiveMemoryHolder {
         return Cipher.getInstance("AES/GCM/NoPadding")
     }
 
-    private fun key(allowCreate: Boolean = true): SecretKey {
+    private fun key(): SecretKey {
         cachedKey?.let { return it }
         return synchronized(this) {
             cachedKey?.let { return it }
@@ -58,13 +58,17 @@ object SecureStorage : SensitiveMemoryHolder {
                 SafeLog.w("SecureStorage", "Keystore key() requested synchronously on Main Thread before prewarm completed!")
             }
             val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
-            val existing = store.getKey(KEY_ALIAS, null) as? SecretKey
+            val existing = runCatching { store.getKey(KEY_ALIAS, null) as? SecretKey }.getOrNull()
             if (existing != null) {
                 cachedKey = existing
                 return existing
             }
 
-            check(allowCreate && !store.containsAlias(KEY_ALIAS)) { "Storage keystore key unavailable" }
+            if (store.containsAlias(KEY_ALIAS)) {
+                SafeLog.w("SecureStorage", "Keystore alias $KEY_ALIAS exists but SecretKey is unrecoverable; clearing broken entry")
+                runCatching { store.deleteEntry(KEY_ALIAS) }
+            }
+
             val keyGenerator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore")
             var key: SecretKey? = null
 
@@ -100,6 +104,7 @@ object SecureStorage : SensitiveMemoryHolder {
                 key = keyGenerator.generateKey()
             }
 
+            checkNotNull(key) { "Failed to initialize storage keystore key" }
             cachedKey = key
             key
         }
@@ -120,11 +125,16 @@ object SecureStorage : SensitiveMemoryHolder {
 
         fun decrypt(value: String?): String? {
             if (value == null || !isEncrypted(value)) return value
-            val plainBytes = decryptEnvelope(value, secretKey, cipher)
             return try {
-                String(plainBytes, Charsets.UTF_8)
-            } finally {
-                SecurityUtils.zeroize(plainBytes)
+                val plainBytes = decryptEnvelope(value, secretKey, cipher)
+                try {
+                    String(plainBytes, Charsets.UTF_8)
+                } finally {
+                    SecurityUtils.zeroize(plainBytes)
+                }
+            } catch (e: Exception) {
+                SafeLog.w("SecureStorage", "Failed to decrypt string envelope", e)
+                null
             }
         }
     }
@@ -144,7 +154,7 @@ object SecureStorage : SensitiveMemoryHolder {
         }
     }
 
-    private fun decryptEnvelope(value: String, secretKey: SecretKey = key(false), cipher: Cipher = createCipher()): ByteArray {
+    private fun decryptEnvelope(value: String, secretKey: SecretKey = key(), cipher: Cipher = createCipher()): ByteArray {
         check(value.startsWith(PREFIX)) { "Unsupported storage envelope" }
         val packed = Base64.decode(value.removePrefix(PREFIX), Base64.NO_WRAP)
         return try {
@@ -163,7 +173,12 @@ object SecureStorage : SensitiveMemoryHolder {
     /** Returns legacy plaintext unchanged, enabling non-destructive migration. */
     fun decrypt(value: String?): String? {
         if (value == null || !isEncrypted(value)) return value
-        return StringCipher(key(false), createCipher()).decrypt(value)
+        return try {
+            newStringCipher().decrypt(value)
+        } catch (e: Exception) {
+            SafeLog.w("SecureStorage", "Failed to decrypt storage value", e)
+            null
+        }
     }
 
     fun isEncrypted(value: String?) = value?.startsWith("enc:") == true
@@ -182,10 +197,18 @@ object SecureStorage : SensitiveMemoryHolder {
 
     fun decryptBytes(value: ByteArray): ByteArray {
         if (value.isEmpty() || value[0] != BINARY_VERSION) return value
-        check(value.size >= 29) { "Truncated binary storage envelope" }
-        val cipher = createCipher()
-        cipher.init(Cipher.DECRYPT_MODE, key(false), GCMParameterSpec(128, value, 1, 12))
-        return cipher.doFinal(value, 13, value.size - 13)
+        if (value.size < 29) {
+            SafeLog.w("SecureStorage", "Truncated binary storage envelope (${value.size} bytes)")
+            return value
+        }
+        return try {
+            val cipher = createCipher()
+            cipher.init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, value, 1, 12))
+            cipher.doFinal(value, 13, value.size - 13)
+        } catch (e: Exception) {
+            SafeLog.w("SecureStorage", "Failed to decrypt binary envelope", e)
+            value
+        }
     }
 
     @Synchronized

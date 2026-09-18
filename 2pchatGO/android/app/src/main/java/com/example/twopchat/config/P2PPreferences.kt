@@ -368,16 +368,18 @@ object P2PPreferences : com.example.twopchat.security.SensitiveMemoryHolder {
             .toList()
 
     fun setTorBridgeLines(context: Context, bridges: List<String>): Boolean {
-        return prefs(context).edit()
+        prefs(context).edit()
             .putString(TOR_BRIDGES, bridges.joinToString("\n") { it.trim() })
-            .commit()
+            .apply()
+        return true
     }
 
     fun publicTorBridgesEnabled(context: Context): Boolean =
         prefs(context).getBoolean(TOR_PUBLIC_BRIDGES_ENABLED, true)
 
     fun setPublicTorBridgesEnabled(context: Context, enabled: Boolean): Boolean {
-        return prefs(context).edit().putBoolean(TOR_PUBLIC_BRIDGES_ENABLED, enabled).commit()
+        prefs(context).edit().putBoolean(TOR_PUBLIC_BRIDGES_ENABLED, enabled).apply()
+        return true
     }
 
     fun torTransport(context: Context): TorTransport = TorTransport.fromStored(
@@ -385,14 +387,16 @@ object P2PPreferences : com.example.twopchat.security.SensitiveMemoryHolder {
     )
 
     fun setTorTransport(context: Context, transport: TorTransport): Boolean {
-        return prefs(context).edit().putString(TOR_TRANSPORT, transport.storedValue).commit()
+        prefs(context).edit().putString(TOR_TRANSPORT, transport.storedValue).apply()
+        return true
     }
 
     fun getTorOnionHostname(context: Context): String? =
         prefs(context).getString(TOR_ONION_HOSTNAME, null)?.takeIf { it.isNotBlank() }
 
     fun setTorOnionHostname(context: Context, hostname: String?): Boolean {
-        return prefs(context).edit().putString(TOR_ONION_HOSTNAME, hostname).commit()
+        prefs(context).edit().putString(TOR_ONION_HOSTNAME, hostname).apply()
+        return true
     }
 
     private const val KEY_TOR_HIDDEN_SERVICE_ENABLED = "tor_hidden_service_enabled"
@@ -402,21 +406,25 @@ object P2PPreferences : com.example.twopchat.security.SensitiveMemoryHolder {
         prefs(context).getBoolean(TOR_STRICT_MODE, false)
 
     fun setTorStrictMode(context: Context, enabled: Boolean): Boolean {
-        return prefs(context).edit().putBoolean(TOR_STRICT_MODE, enabled).commit()
+        prefs(context).edit().putBoolean(TOR_STRICT_MODE, enabled).apply()
+        return true
     }
 
     fun isTorHiddenServiceEnabled(context: Context): Boolean =
         prefs(context).getBoolean(KEY_TOR_HIDDEN_SERVICE_ENABLED, true)
 
     fun setTorHiddenServiceEnabled(context: Context, enabled: Boolean): Boolean {
-        return prefs(context).edit().putBoolean(KEY_TOR_HIDDEN_SERVICE_ENABLED, enabled).commit()
+        prefs(context).edit().putBoolean(KEY_TOR_HIDDEN_SERVICE_ENABLED, enabled).apply()
+        return true
     }
 
     fun isTorDeterministicOnionEnabled(context: Context): Boolean =
         prefs(context).getBoolean(TOR_DETERMINISTIC_ONION_ENABLED, false)
 
-    fun setTorDeterministicOnionEnabled(context: Context, enabled: Boolean): Boolean =
-        prefs(context).edit().putBoolean(TOR_DETERMINISTIC_ONION_ENABLED, enabled).commit()
+    fun setTorDeterministicOnionEnabled(context: Context, enabled: Boolean): Boolean {
+        prefs(context).edit().putBoolean(TOR_DETERMINISTIC_ONION_ENABLED, enabled).apply()
+        return true
+    }
 
     @Synchronized
     fun getTorOnionIndex(context: Context): Int =

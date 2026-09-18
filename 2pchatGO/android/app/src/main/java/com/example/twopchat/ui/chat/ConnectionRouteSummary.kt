@@ -43,6 +43,7 @@ import com.example.twopchat.relay.P2PMessageRelay
 import com.example.twopchat.relay.PeerEndpointStore
 import com.example.twopchat.relay.canonicalEndpointFingerprint
 import com.example.twopchat.relay.connectionTransportLabel
+import com.example.twopchat.relay.legacyUnpinnedReconnectCandidates
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -74,7 +75,25 @@ internal fun ConnectionRouteSummary(
     LaunchedEffect(peerName, fingerprint, reloadVersion) {
         historyLoaded = false
         history = withContext(Dispatchers.IO) {
-            fingerprint?.let { PeerEndpointStore.history(context, peerName, it) }.orEmpty()
+            val dbHistory = fingerprint?.let { PeerEndpointStore.history(context, peerName, it) }.orEmpty()
+            if (dbHistory.isNotEmpty()) {
+                dbHistory
+            } else {
+                val legacyEps = legacyUnpinnedReconnectCandidates(
+                    fingerprint,
+                    P2PPreferences.getEffectiveEndpointsForPeer(context, peerName),
+                )
+                legacyEps.map { ep ->
+                    EndpointRecord(
+                        fingerprint = fingerprint.orEmpty(),
+                        endpoint = ep,
+                        source = EndpointSource.MIGRATED,
+                        firstSeen = 0L,
+                        lastSeen = 0L,
+                        savedContact = true,
+                    )
+                }
+            }
         }
         historyLoaded = true
     }
@@ -200,8 +219,10 @@ internal fun ConnectionRouteSummary(
                             onClick = {
                                 coroutineScope.launch {
                                     withContext(Dispatchers.IO) {
-                                        PeerEndpointStore.resetCooldowns(context, fingerprint)
+                                        fingerprint?.let { PeerEndpointStore.resetCooldowns(context, it) }
                                     }
+                                    P2PMessageRelay.resetPeerBackoffs(peerName)
+                                    fingerprint?.let { P2PMessageRelay.resetPeerBackoffs(it) }
                                     com.example.twopchat.bridge.P2PBridgeProvider.get(context)
                                         .reconnectPeerSession(peerName, record.endpoint, fingerprint)
                                     reloadVersion++
@@ -254,7 +275,11 @@ private fun EndpointHistoryRow(
         EndpointSource.AUTHENTICATED -> Localizations.tr(appLanguage, "получен от контакта", "received from contact")
         EndpointSource.DISCOVERY -> Localizations.tr(appLanguage, "найден через поиск", "found by discovery")
         EndpointSource.MANUAL -> Localizations.tr(appLanguage, "добавлен вручную", "added manually")
-        EndpointSource.MIGRATED -> Localizations.tr(appLanguage, "сохранён ранее", "saved previously")
+        EndpointSource.MIGRATED -> if (record.fingerprint.isEmpty()) {
+            Localizations.tr(appLanguage, "сохранён ранее (bootstrap)", "saved previously (bootstrap)")
+        } else {
+            Localizations.tr(appLanguage, "сохранён ранее", "saved previously")
+        }
     }
     val detail = buildString {
         append(endpointNetworkLabel(record.endpoint, appLanguage))

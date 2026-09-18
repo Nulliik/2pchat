@@ -60,8 +60,25 @@ class SecureStorageSafetyTest {
         org.junit.Assert.assertTrue(SecureStorage.isEncrypted(encrypted))
         org.junit.Assert.assertNotEquals(plain, encrypted)
         val decryptedFirst = SecureStorage.decrypt(encrypted)
-        val decryptedSecond = SecureStorage.decrypt(encrypted)
         org.junit.Assert.assertEquals(plain, decryptedFirst)
+        val decryptedSecond = SecureStorage.decrypt(encrypted)
         org.junit.Assert.assertEquals(plain, decryptedSecond)
     }
+
+    @Test
+    fun testDecryptBytesTruncatedPayloadGracefulFallback() {
+        // A truncated envelope with BINARY_VERSION header (size < 29) must return original bytes without throwing
+        val truncatedPayload = byteArrayOf(0x01.toByte(), 1, 2, 3, 4)
+        val result = SecureStorage.decryptBytes(truncatedPayload)
+        assertArrayEquals(truncatedPayload, result)
+    }
+
+    @Test
+    fun testDecryptCorruptedEnvelopeGracefulFallback() {
+        // A corrupted envelope starting with enc: must return null without throwing IllegalStateException
+        val corruptedEnvelope = "enc:v1:corrupted_invalid_base64_or_truncated"
+        val result = SecureStorage.decrypt(corruptedEnvelope)
+        org.junit.Assert.assertNull(result)
+    }
 }
+
