@@ -49,4 +49,4 @@ Go и Android проверяются отдельно по [инструкции
 - [Roadmap](messenger/ROADMAP.md)
 - [Правила разработки](RULES.md), [инструкции агента](AGENTS.md), [политика безопасности](SECURITY.md)
 
-Лицензия: [MIT](LICENSE.txt).
+Лицензия: [WTFPL+](LICENSE.txt).
