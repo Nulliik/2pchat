@@ -305,7 +305,7 @@ fun GroupForwardDialog(
 
     val peerItems = allPeers.map { name ->
         val avatar = P2PMessageRelay.peerAvatars[name]
-        val isOnline = P2PMessageRelay.peerSessionStates[name] == true || name == "Saved Messages"
+        val isOnline = com.example.twopchat.presence.PresenceRepository.isOnline(name) || name == "Saved Messages"
         val subtitle = when {
             name == "Saved Messages" -> com.example.twopchat.data.Localizations.tr(
                 appLanguage,

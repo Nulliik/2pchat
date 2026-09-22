@@ -1521,14 +1521,14 @@ fun ChatsTab(
                                     val statusText = if (peer.name == Localizations.getString("saved_messages_title", appLanguage)) {
                                         if (appLanguage == "Русский") "Личное облако" else "Personal storage"
                                     } else {
-                                        val isOnline = com.example.twopchat.relay.P2PMessageRelay.peerSessionStates[peer.name] == true
+                                        val isOnline = com.example.twopchat.presence.PresenceRepository.isOnline(peer.name)
                                         if (isOnline) {
                                             if (appLanguage == "Русский") "В сети" else "Online"
                                         } else {
                                             if (appLanguage == "Русский") "Не в сети" else "Offline"
                                         }
                                     }
-                                    val isOnlineForColor = com.example.twopchat.relay.P2PMessageRelay.peerSessionStates[peer.name] == true
+                                    val isOnlineForColor = com.example.twopchat.presence.PresenceRepository.isOnline(peer.name)
                                     Text(
                                         text = statusText,
                                         fontSize = 11.sp,

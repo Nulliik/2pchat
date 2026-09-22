@@ -861,7 +861,7 @@ fun ChatScreen(
         val time = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
         val endpoint = P2PMessageRelay.peerEndpoints[peerName]
             ?: P2PPreferences.prefs(context).getString(P2PPreferences.lastEndpoint(peerName), null).orEmpty()
-        val isLive = P2PMessageRelay.peerSessionStates[peerName] == true || endpoint.isNotBlank()
+        val isLive = com.example.twopchat.presence.PresenceRepository.isOnline(peerName) || endpoint.isNotBlank()
         val initialStatus = if (peerName == "Saved Messages") "SENT" else if (isLive) "SENDING" else "PENDING"
         val voiceMsgText = Localizations.tr(
             appLanguage,
@@ -910,7 +910,7 @@ fun ChatScreen(
         if (trimmed.isNotEmpty()) {
             val time = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
             val endpoint = P2PMessageRelay.peerEndpoints[peerName]
-            val isConnected = P2PMessageRelay.peerSessionStates[peerName] == true || endpoint != null || peerName == "Saved Messages"
+            val isConnected = com.example.twopchat.presence.PresenceRepository.isOnline(peerName) || endpoint != null || peerName == "Saved Messages"
             val initialStatus = if (isConnected) "SENT" else "PENDING"
             val outMsg = Message(
                 id = newMessageId(),
@@ -1361,7 +1361,7 @@ fun ChatScreen(
             }
             val endpoint = P2PMessageRelay.peerEndpoints[peerName]
                 ?: P2PPreferences.prefs(context).getString(P2PPreferences.lastEndpoint(peerName), null).orEmpty()
-            val isLive = P2PMessageRelay.peerSessionStates[peerName] == true || endpoint.isNotBlank()
+            val isLive = com.example.twopchat.presence.PresenceRepository.isOnline(peerName) || endpoint.isNotBlank()
             val initialStatus = if (peerName == "Saved Messages") "SENT" else if (isLive) "SENDING" else "PENDING"
             val outMsg = Message(
                 id = newMessageId(),
@@ -1450,7 +1450,7 @@ fun ChatScreen(
             val file = File(stored.filePath)
             val endpoint = P2PMessageRelay.peerEndpoints[peerName]
                 ?: P2PPreferences.prefs(context).getString(P2PPreferences.lastEndpoint(peerName), null).orEmpty()
-            val isLive = P2PMessageRelay.peerSessionStates[peerName] == true || endpoint.isNotBlank()
+            val isLive = com.example.twopchat.presence.PresenceRepository.isOnline(peerName) || endpoint.isNotBlank()
             val initialStatus = if (peerName == "Saved Messages") "SENT" else if (isLive) "SENDING" else "PENDING"
             val outMsg = Message(
                 id = newMessageId(),
@@ -1591,7 +1591,7 @@ fun ChatScreen(
         val time = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
         val endpoint = P2PMessageRelay.peerEndpoints[peerName]
             ?: P2PPreferences.prefs(context).getString(P2PPreferences.lastEndpoint(peerName), null).orEmpty()
-        val isLive = P2PMessageRelay.peerSessionStates[peerName] == true || endpoint.isNotBlank()
+        val isLive = com.example.twopchat.presence.PresenceRepository.isOnline(peerName) || endpoint.isNotBlank()
         val initialStatus = if (peerName == "Saved Messages") "SENT" else if (isLive) "SENDING" else "PENDING"
 
         if (tempFiles.size == 1) {
@@ -1837,7 +1837,7 @@ fun ChatScreen(
                     val time = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
                     val endpoint = P2PMessageRelay.peerEndpoints[peerName]
                         ?: P2PPreferences.prefs(context).getString(P2PPreferences.lastEndpoint(peerName), null).orEmpty()
-                    val isLive = P2PMessageRelay.peerSessionStates[peerName] == true || endpoint.isNotBlank()
+                    val isLive = com.example.twopchat.presence.PresenceRepository.isOnline(peerName) || endpoint.isNotBlank()
                     val initialStatus = if (peerName == "Saved Messages") "SENT" else if (isLive) "SENDING" else "PENDING"
                     val msgText = caption.ifBlank {
                         Localizations.tr(
@@ -1947,7 +1947,7 @@ fun ChatScreen(
                 val time = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
                 val endpoint = P2PMessageRelay.peerEndpoints[peerName]
                     ?: P2PPreferences.prefs(context).getString(P2PPreferences.lastEndpoint(peerName), null).orEmpty()
-                val isLive = P2PMessageRelay.peerSessionStates[peerName] == true || endpoint.isNotBlank()
+                val isLive = com.example.twopchat.presence.PresenceRepository.isOnline(peerName) || endpoint.isNotBlank()
                 val initialStatus = if (peerName == "Saved Messages") "SENT" else if (isLive) "SENDING" else "PENDING"
                 // Some document providers return extensionless generated names
                 // for photos and stickers. Preserve their MIME type instead of
@@ -2019,7 +2019,7 @@ fun ChatScreen(
                     val time = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
                     val endpoint = P2PMessageRelay.peerEndpoints[peerName]
                         ?: P2PPreferences.prefs(context).getString(P2PPreferences.lastEndpoint(peerName), null).orEmpty()
-                    val isLive = P2PMessageRelay.peerSessionStates[peerName] == true || endpoint.isNotBlank()
+                    val isLive = com.example.twopchat.presence.PresenceRepository.isOnline(peerName) || endpoint.isNotBlank()
                     val initialStatus = if (peerName == "Saved Messages") "SENT" else if (isLive) "SENDING" else "PENDING"
                     val msgText = caption.ifBlank { if (appLanguage == "Русский") "Видеозапись" else "Sent a video" }
                     val outMsg = Message(
@@ -2788,7 +2788,7 @@ fun ChatScreen(
                                         replyingToMessage = null
 
                                     val endpoint = P2PMessageRelay.peerEndpoints[peerName]
-                                    val isConnected = P2PMessageRelay.peerSessionStates[peerName] == true || endpoint != null || peerName == "Saved Messages"
+                                    val isConnected = com.example.twopchat.presence.PresenceRepository.isOnline(peerName) || endpoint != null || peerName == "Saved Messages"
                                     val initialStatus = if (isConnected) "SENT" else "PENDING"
 
                                     // Add user message

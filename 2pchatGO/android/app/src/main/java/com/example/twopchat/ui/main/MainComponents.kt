@@ -349,7 +349,7 @@ fun PeerRow(
                         }
                     }
                     if (peer.name != "Saved Messages") {
-                        val isOnline = com.example.twopchat.relay.P2PMessageRelay.peerSessionStates[peer.name] == true
+                        val isOnline = com.example.twopchat.presence.PresenceRepository.isOnline(peer.name)
                         if (isOnline) {
                             val onlineGreen = Color(0xFF10B981)
                             Box(
@@ -449,7 +449,7 @@ fun PeerRow(
             // The route badge describes a live socket, not the last saved
             // endpoint or the user's next-connection preference.
             val hasActiveSession = !isGroup && !isSavedMessages &&
-                (com.example.twopchat.relay.P2PMessageRelay.peerSessionStates[peer.name] == true)
+                (com.example.twopchat.presence.PresenceRepository.isOnline(peer.name))
             val liveTransport = com.example.twopchat.relay.P2PMessageRelay.peerConnectionTransports[peer.name] ?: "Direct P2P"
             val liveEndpoint = com.example.twopchat.relay.P2PMessageRelay.peerEndpoints[peer.name]
             val transportKind = if (hasActiveSession) {

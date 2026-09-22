@@ -471,7 +471,7 @@ fun SharedMediaScreen(
                             }
 
                             Spacer(modifier = Modifier.height(4.dp))
-                            val isOnline = P2PMessageRelay.peerSessionStates[currentPeerName] == true
+                            val isOnline = com.example.twopchat.presence.PresenceRepository.isOnline(currentPeerName)
                             val statusText = if (currentPeerName == "Saved Messages") {
                                 Localizations.getString("local_storage", appLanguage)
                             } else if (isOnline) {

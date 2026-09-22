@@ -72,7 +72,7 @@ internal fun ConnectionRouteSummary(
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
     val fingerprint = P2PPreferences.getPeerFingerprint(context, peerName) ?: canonicalEndpointFingerprint(peerName)
-    val isOnline = P2PMessageRelay.peerSessionStates[peerName] == true
+    val isOnline = com.example.twopchat.presence.PresenceRepository.isOnline(peerName)
     val activeEndpoint = P2PMessageRelay.peerEndpoints[peerName].orEmpty()
     val activeTransport = P2PMessageRelay.peerConnectionTransports[peerName]
     val rttMs = P2PMessageRelay.peerRttMs[peerName]

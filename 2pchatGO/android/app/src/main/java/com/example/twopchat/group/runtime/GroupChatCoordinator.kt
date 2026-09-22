@@ -518,7 +518,7 @@ object GroupChatCoordinator {
             }
 
             for (member in members) {
-                if (P2PMessageRelay.peerSessionStates[member.peerName] == true) {
+                if (com.example.twopchat.presence.PresenceRepository.isOnline(member.peerName)) {
                     P2PMessageRelay.sendGroupFrame(context, member.peerName, typingJson)
                 }
             }
@@ -1583,7 +1583,7 @@ object GroupChatCoordinator {
                 .filter {
                     it.isParticipating() &&
                         it.deviceId != group.localDeviceId &&
-                        P2PMessageRelay.peerSessionStates[it.peerName] == true
+                        com.example.twopchat.presence.PresenceRepository.isOnline(it.peerName)
                 }
             val syncPeers = if (connected.size <= 3) {
                 connected
@@ -4149,7 +4149,7 @@ object GroupChatCoordinator {
             .filter {
                 it.isParticipating() &&
                 it.deviceId != group.localDeviceId &&
-                    (P2PMessageRelay.peerSessionStates[it.peerName] == true || it.peerName == preferredPeerName)
+                    (com.example.twopchat.presence.PresenceRepository.isOnline(it.peerName) || it.peerName == preferredPeerName)
             }
         val sourceEvent = db().getEvent(groupId, eventId)
         val plannedReplicaIds = sourceEvent?.let { event ->
@@ -5581,7 +5581,7 @@ object GroupChatCoordinator {
         ).mapTo(hashSetOf()) { it.value }
         val successors = GroupRelayPlanner.successors(
             group.localDeviceId,
-            members.filter { P2PMessageRelay.peerSessionStates[it.peerName] == true }
+            members.filter { com.example.twopchat.presence.PresenceRepository.isOnline(it.peerName) }
                 .map { it.deviceId },
         ).toSet()
         // Every receiver forwards once along the ring. Unlike truncating the
@@ -5899,7 +5899,7 @@ object GroupChatCoordinator {
                 val now = System.currentTimeMillis()
                 val peers = (db().listMembers(group.groupId).filter {
                     it.isParticipating() && it.deviceId != group.localDeviceId &&
-                        P2PMessageRelay.peerSessionStates[it.peerName] == true
+                        com.example.twopchat.presence.PresenceRepository.isOnline(it.peerName)
                 } + peer).distinctBy { it.deviceId }
                     .sortedWith(compareBy<StoredGroupMember> {
                         lastSyncRequestAtMs["${group.groupId}:${it.deviceId}"] ?: 0L
@@ -6268,7 +6268,7 @@ object GroupChatCoordinator {
             it.isParticipating() &&
                 (
                     it.deviceId == group.localDeviceId ||
-                        P2PMessageRelay.peerSessionStates[it.peerName] == true
+                        com.example.twopchat.presence.PresenceRepository.isOnline(it.peerName)
                     )
         }
         val existingReply = chatFlows[groupId]?.value?.currentReply
@@ -6305,7 +6305,7 @@ object GroupChatCoordinator {
                         pt = "Online (Este dispositivo)",
                         tr = "Çevrimiçi (Bu cihaz)"
                     )
-                } else if (P2PMessageRelay.peerSessionStates[member.peerName] == true) {
+                } else if (com.example.twopchat.presence.PresenceRepository.isOnline(member.peerName)) {
                     com.example.twopchat.data.Localizations.tr(
                         appLang,
                         ru = "В сети",
@@ -6572,7 +6572,7 @@ object GroupChatCoordinator {
                         pt = "Online (Este dispositivo)",
                         tr = "Çevrimiçi (Bu cihaz)"
                     )
-                } else if (P2PMessageRelay.peerSessionStates[member.peerName] == true) {
+                } else if (com.example.twopchat.presence.PresenceRepository.isOnline(member.peerName)) {
                     com.example.twopchat.data.Localizations.tr(
                         appLang,
                         ru = "В сети",
@@ -6804,7 +6804,7 @@ object GroupChatCoordinator {
                     contactId = peerName,
                     displayName = peerName,
                     secondaryText = if (fingerprint.isNotBlank()) fingerprint.take(16) else peerName,
-                    isOnline = P2PMessageRelay.peerSessionStates[peerName] == true,
+                    isOnline = com.example.twopchat.presence.PresenceRepository.isOnline(peerName),
                 )
             }
             .sortedBy { it.displayName.lowercase(Locale.ROOT) }
@@ -8808,7 +8808,7 @@ object GroupChatCoordinator {
         val members = storage.listMembers(groupId).filter { it.isParticipating() && it.deviceId != group.localDeviceId }
         members.forEach { member ->
             enqueueFrame(groupId, eventId, member.deviceId, json)
-            if (member.peerName.isNotBlank() && P2PMessageRelay.peerSessionStates[member.peerName] == true) {
+            if (member.peerName.isNotBlank() && com.example.twopchat.presence.PresenceRepository.isOnline(member.peerName)) {
                 applicationContext?.let { ctx ->
                     P2PMessageRelay.sendGroupFrame(ctx, member.peerName, json)
                 }

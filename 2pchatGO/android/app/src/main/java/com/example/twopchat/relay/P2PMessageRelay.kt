@@ -269,7 +269,7 @@ object P2PMessageRelay {
         }
         if (normalizedName !in _peerEndpoints && _peerEndpoints.size >= MAX_TRACKED_PEER_ENDPOINTS) {
             // This is only a UI projection. Persistent friend routes are never evicted here.
-            _peerEndpoints.keys.firstOrNull { peerSessionStates[it] != true }?.let { _peerEndpoints.remove(it) }
+            _peerEndpoints.keys.firstOrNull { !com.example.twopchat.presence.PresenceRepository.isOnline(it) }?.let { _peerEndpoints.remove(it) }
         }
         val existingParts = _peerEndpoints[normalizedName]?.split(',')?.map(String::trim)?.filter(String::isNotEmpty).orEmpty()
         val combined = (endpointParts + existingParts).distinct().take(EndpointRetention.MAX_PER_PEER)
@@ -318,13 +318,9 @@ object P2PMessageRelay {
 
     fun listenerPort(context: Context): Int = P2PPreferences.listenerPort(context)
 
-    fun getActivePeerNames(): List<String> {
-        val online = peerSessionStates.entries
-            .filter { it.value && !isPlaceholderPeerName(it.key) }
-            .map { it.key }
-        if (online.isNotEmpty()) return online
-        return _peerEndpoints.keys.filter { !isPlaceholderPeerName(it) }
-    }
+    fun getActivePeerNames(): List<String> =
+        com.example.twopchat.presence.PresenceRepository.onlineNames()
+            .filter { !isPlaceholderPeerName(it) }
 
     @Volatile
     private var cachedLocalIp: String? = null
@@ -520,11 +516,8 @@ object P2PMessageRelay {
     private val _peerEndpoints = mutableStateMapOf<String, String>()
     val peerEndpoints: Map<String, String> get() = _peerEndpoints
     val peerConnectionTransports = mutableStateMapOf<String, String>()
-    val peerSessionStates = mutableStateMapOf<String, Boolean>()
     val peerRttMs = mutableStateMapOf<String, Long>()
-    private const val OFFLINE_UI_GRACE_MS = 2_500L
     private const val YGG_SESSION_SETTLE_MS = 1_500L
-    private val peerPresenceVersions = PeerPresenceVersionTracker()
     private val fingerprintToPeerName = ConcurrentHashMap<String, String>()
     private val avatarSharesInFlight = ConcurrentHashMap.newKeySet<String>()
     private val lastAvatarShareAt = ConcurrentHashMap<String, Long>()
@@ -547,7 +540,7 @@ object P2PMessageRelay {
 
     fun getPeerTransportType(peerName: String): TransportType {
         val isOnline = storedAppContext?.let { isPeerOnline(it, peerName) }
-            ?: (peerSessionStates[peerName] == true)
+            ?: com.example.twopchat.presence.PresenceRepository.isOnline(peerName)
         if (!isOnline) return TransportType.DISCONNECTED
         val raw = peerConnectionTransports[peerName]
             ?: (fingerprintToPeerName.entries.firstOrNull { it.value == peerName }?.key?.let { peerConnectionTransports[it] })
@@ -556,17 +549,14 @@ object P2PMessageRelay {
         return resolveTransportType(raw, ep, true)
     }
 
+    /**
+     * Live query into the Go core. Read-only by contract: the pull result is
+     * never written back into presence state, so a stale pull cannot
+     * overwrite a newer session event.
+     */
     fun isPeerOnline(context: Context, peerName: String): Boolean {
         val fp = P2PPreferences.prefs(context).getString(P2PPreferences.peerFingerprint(peerName), null)
-        val online = getBridge(context).isPeerOnline(peerName, fp)
-        runOnMain {
-            peerSessionStates[peerName] = online
-            if (!online) {
-                peerConnectionTransports.remove(peerName)
-                peerRttMs.remove(peerName)
-            }
-        }
-        return online
+        return getBridge(context).isPeerOnline(peerName, fp)
     }
 
     // Maps peer name to their profile avatar bitmap in RAM
@@ -583,7 +573,7 @@ object P2PMessageRelay {
         scope = serviceScope,
         isRunning = { isRunning },
         peerEndpoints = _peerEndpoints,
-        presenceVersion = peerPresenceVersions::current,
+        presenceVersion = { com.example.twopchat.presence.PresenceRepository.currentVersion(it) },
         onPeerObservedOnline = { context, peerName, transport, observedVersion ->
             publishPeerOnlineIfCurrent(
                 context = context,
@@ -630,13 +620,19 @@ object P2PMessageRelay {
     private fun publishPeerOnline(
         peerName: String,
         transport: String?,
+        fingerprint: String = "",
+        endpoint: String = "",
     ) {
-        val version = peerPresenceVersions.advance(peerName)
-        serviceScope.launch(Dispatchers.Main) {
-            if (peerPresenceVersions.current(peerName) != version) return@launch
-            peerSessionStates[peerName] = true
-            if (transport != null) peerConnectionTransports[peerName] = transport
-            // Socket source addresses are display data, not reusable dial routes.
+        if (fingerprint.isNotBlank()) {
+            com.example.twopchat.presence.PresenceRepository.bindName(peerName, fingerprint)
+        }
+        com.example.twopchat.presence.PresenceRepository.observeOnline(
+            peerName,
+            transport,
+            endpoint.ifBlank { null },
+        )
+        if (transport != null) runOnMain {
+            peerConnectionTransports[peerName] = transport
         }
     }
 
@@ -646,12 +642,9 @@ object P2PMessageRelay {
         transport: String?,
         expectedVersion: Long,
     ) {
-        val version = peerPresenceVersions.advanceIfCurrent(peerName, expectedVersion) ?: return
-        serviceScope.launch(Dispatchers.Main) {
-            if (peerPresenceVersions.current(peerName) != version) return@launch
-            peerSessionStates[peerName] = true
-            if (transport != null) peerConnectionTransports[peerName] = transport
-        }
+        // The maintenance pull reflects the Go core's current state, so applying it is
+        // always self-healing, even if a session event arrived mid-cycle.
+        publishPeerOnline(peerName, transport)
         sendConnectedPeerHeartbeat(context, peerName)
         val endpoint = peerEndpoints[peerName].orEmpty()
         processOfflineQueue(context, peerName, endpoint)
@@ -669,35 +662,20 @@ object P2PMessageRelay {
     }
 
     private fun clearPeerPresenceImmediately(peerName: String) {
-        val version = peerPresenceVersions.advance(peerName)
-        serviceScope.launch(Dispatchers.Main) {
-            if (peerPresenceVersions.current(peerName) != version) return@launch
-            peerConnectionTransports.remove(peerName)
-            peerSessionStates.remove(peerName)
-            peerRttMs.remove(peerName)
-        }
+        com.example.twopchat.presence.PresenceRepository.observeOffline(peerName, immediate = true)
     }
 
     private fun schedulePeerOffline(peerName: String) {
-        val version = peerPresenceVersions.advance(peerName)
-        serviceScope.launch(Dispatchers.Main) {
-            delay(OFFLINE_UI_GRACE_MS)
-            if (peerPresenceVersions.current(peerName) != version) return@launch
-            peerConnectionTransports.remove(peerName)
-            peerSessionStates.remove(peerName)
-            peerRttMs.remove(peerName)
-        }
+        com.example.twopchat.presence.PresenceRepository.observeOffline(peerName)
+    }
+
+    private fun schedulePeerOfflineVerified(peerName: String, verifyOnline: () -> Boolean) {
+        com.example.twopchat.presence.PresenceRepository.observeOffline(peerName, verifyOnline = verifyOnline)
     }
 
     private fun schedulePeerOfflineIfCurrent(peerName: String, expectedVersion: Long) {
-        val version = peerPresenceVersions.advanceIfCurrent(peerName, expectedVersion) ?: return
-        serviceScope.launch(Dispatchers.Main) {
-            delay(OFFLINE_UI_GRACE_MS)
-            if (peerPresenceVersions.current(peerName) != version) return@launch
-            peerConnectionTransports.remove(peerName)
-            peerSessionStates.remove(peerName)
-            peerRttMs.remove(peerName)
-        }
+        // The pull is the Go core's current state; the same self-healing rule applies.
+        schedulePeerOffline(peerName)
     }
     internal val outboundMessenger by lazy {
         P2POutboundMessenger(_peerEndpoints, ::log) { peerName, messageId, status ->
@@ -1200,13 +1178,7 @@ object P2PMessageRelay {
                     _peerEndpoints.remove(oldName)
                     if (fp != null) _peerEndpoints.remove(fp)
                 }
-                peerPresenceVersions.remove(oldName)
-                if (fp != null) peerPresenceVersions.remove(fp)
-
-                val ss = peerSessionStates[oldName] ?: (if (fp != null) peerSessionStates[fp] else null) ?: true
-                peerSessionStates[cleanNewName] = ss
-                peerSessionStates.remove(oldName)
-                if (fp != null) peerSessionStates.remove(fp)
+                com.example.twopchat.presence.PresenceRepository.rename(oldName, cleanNewName, fp)
 
                 val ct = peerConnectionTransports[oldName] ?: (if (fp != null) peerConnectionTransports[fp] else null) ?: "DIRECT P2P"
                 peerConnectionTransports[cleanNewName] = ct
@@ -1437,8 +1409,7 @@ object P2PMessageRelay {
                         moveChatState(context, peerName, persistedName)
                         serviceScope.launch(Dispatchers.Main) {
                             _peerEndpoints.remove(peerName)
-                            peerPresenceVersions.remove(peerName)
-                            peerSessionStates.remove(peerName)
+                            com.example.twopchat.presence.PresenceRepository.forget(peerName)
                             peerConnectionTransports.remove(peerName)
                         }
                     }
@@ -1571,6 +1542,7 @@ object P2PMessageRelay {
                     if (!fp.isNullOrBlank()) {
                         fingerprintToPeerName[fp] = peerName
                         getBridge(appContext).updatePeerNameMapping(fp, peerName)
+                        com.example.twopchat.presence.PresenceRepository.bindName(peerName, fp)
                     }
                 }
             }
@@ -1595,9 +1567,6 @@ object P2PMessageRelay {
                 "Local P2P identity is not configured"
             }
             GroupChatCoordinator.initialize(appContext)
-            // Start the P2P listener
-            bridge.startP2pListener(port, P2PPreferences.isUpnpEnabled(appContext))
-            startLocalDiscovery(appContext, port)
             
             // Register incoming message callback
             bridge.registerMessageListener(guardedMessageListener(listenerVersion, object : BridgeMessageListener {
@@ -2723,10 +2692,13 @@ object P2PMessageRelay {
                         ChatDatabaseHelper.getInstance(appContext).savePeerAboutMe(fingerprint, aboutMe)
                     }
                     getBridge(appContext).updatePeerNameMapping(fingerprint, resolvedPeerName)
+                    com.example.twopchat.presence.PresenceRepository.bindName(resolvedPeerName, fingerprint)
                     log(appContext, "Secure Double Ratchet session established")
                     publishPeerOnline(
                         peerName = resolvedPeerName,
                         transport = canonicalTransport,
+                        fingerprint = fingerprint,
+                        endpoint = endpoint,
                     )
 
                     val sharedPrefs = P2PPreferences.prefs(appContext)
@@ -2769,14 +2741,14 @@ object P2PMessageRelay {
 
                 override fun onSessionClosed(peerName: String, fingerprint: String, reason: String) {
                     val resolvedPeerName = canonicalPeerName(appContext, peerName, fingerprint)
-                    if (getBridge(appContext).isPeerOnline(resolvedPeerName, fingerprint)) {
-                        log(appContext, "Secure session closed but active connection still online for $resolvedPeerName (reason: $reason)")
-                        return
-                    }
                     log(appContext, "Secure Double Ratchet session closed (peer: $resolvedPeerName, reason: $reason)")
-                    schedulePeerOffline(resolvedPeerName)
+                    // Re-check the Go core inside the offline grace window so a session
+                    // replacement (old close arriving after the new connect) does not
+                    // flip a live peer to offline.
+                    val verify = { getBridge(appContext).isPeerOnline(fingerprint, fingerprint) }
+                    schedulePeerOfflineVerified(resolvedPeerName, verify)
                     if (fingerprint.isNotBlank() && fingerprint != resolvedPeerName) {
-                        schedulePeerOffline(fingerprint)
+                        schedulePeerOfflineVerified(fingerprint, verify)
                     }
                 }
 
@@ -2921,6 +2893,11 @@ object P2PMessageRelay {
                     }
                 }
             }))
+
+            // Start the native listener only after the listeners are registered,
+            // so the first session/message events cannot hit null listeners.
+            bridge.startP2pListener(port, P2PPreferences.isUpnpEnabled(appContext))
+            startLocalDiscovery(appContext, port)
             
             log(appContext, "Native Go P2P Relays started successfully")
 
@@ -2981,6 +2958,12 @@ object P2PMessageRelay {
         maintenanceCoordinator.stop()
         localPeerDiscovery?.stop()
         localPeerCandidates.clear()
+        // Clear presence so a stopped relay never keeps peers displayed as online.
+        com.example.twopchat.presence.PresenceRepository.clearAll()
+        serviceScope.launch(Dispatchers.Main) {
+            peerConnectionTransports.clear()
+            peerRttMs.clear()
+        }
         // Trigger bridge shutdown/cleanup
         relayScope.launch {
             if (!getBridge().shutdownAllSessions()) {
@@ -3006,10 +2989,9 @@ object P2PMessageRelay {
         localPeerCandidates.clear()
         _peerEndpoints.clear()
         avatarCache.clear()
-        peerPresenceVersions.clear()
+        com.example.twopchat.presence.PresenceRepository.clearAll()
         serviceScope.launch(Dispatchers.Main) {
             peerConnectionTransports.clear()
-            peerSessionStates.clear()
             peerRttMs.clear()
         }
         val stopped = getBridge(appContext).shutdownAllSessions()

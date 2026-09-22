@@ -70,7 +70,7 @@ internal object GroupE2EControl {
                     }))
                 }
                 result.put("groups", JSONArray(Groups.summaries.value.map { it.groupId }))
-                result.put("peers", JSONObject(P2PMessageRelay.peerSessionStates.toMap()))
+                result.put("peers", JSONObject(com.example.twopchat.presence.PresenceRepository.currentSnapshot().mapValues { it.value.isOnline }))
                 result.put("ygg", P2PMessageRelay.getYggdrasilAddress())
                 result.put("tor_running", com.example.twopchat.tor.TorManager.isTorRunning.value)
             }
@@ -266,7 +266,7 @@ internal object GroupE2EControl {
             }
             "status" -> {
                 result.put("groups", JSONArray(Groups.summaries.value.map { it.groupId }))
-                result.put("peers", JSONObject(P2PMessageRelay.peerSessionStates.toMap()))
+                result.put("peers", JSONObject(com.example.twopchat.presence.PresenceRepository.currentSnapshot().mapValues { it.value.isOnline }))
                 result.put("cached_bytes", P2PPreferences.getCachedMediaBytes(context))
                 if (group.isNotBlank()) {
                     val chat = Groups.chatState(group).value

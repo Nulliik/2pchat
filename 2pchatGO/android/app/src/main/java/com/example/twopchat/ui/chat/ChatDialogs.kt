@@ -754,7 +754,7 @@ fun ChatForwardDialog(
 
     val peerItems = allPeers.filter { it != peerName }.map { name ->
         val avatar = P2PMessageRelay.peerAvatars[name]
-        val isOnline = P2PMessageRelay.peerSessionStates[name] == true || name == "Saved Messages"
+        val isOnline = com.example.twopchat.presence.PresenceRepository.isOnline(name) || name == "Saved Messages"
         val subtitle = when {
             name == "Saved Messages" -> if (appLanguage == "Русский") "Личное хранилище" else "Personal storage"
             isOnline -> if (appLanguage == "Русский") "В сети" else "Online"

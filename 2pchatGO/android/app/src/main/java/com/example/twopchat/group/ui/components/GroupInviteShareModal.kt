@@ -352,7 +352,7 @@ internal fun GroupInviteQrModal(
             } else {
                 com.example.twopchat.config.P2PPreferences.getAllKnownPeers(context).map { peerName ->
                     val avatar = P2PMessageRelay.peerAvatars[peerName]
-                    val isOnline = P2PMessageRelay.peerSessionStates[peerName] == true
+                    val isOnline = com.example.twopchat.presence.PresenceRepository.isOnline(peerName)
                     val fp = com.example.twopchat.config.P2PPreferences.getPeerFingerprint(context, peerName).orEmpty()
                     GroupContactSummary(
                         contactId = peerName,

@@ -94,7 +94,7 @@ fun ConnectionModeBottomSheet(
         mutableStateOf(P2PPreferences.getPeerTransportPreference(context, peerName))
     }
 
-    val isOnline = P2PMessageRelay.peerSessionStates[peerName] == true
+    val isOnline = com.example.twopchat.presence.PresenceRepository.isOnline(peerName)
     val activeTransportType = P2PMessageRelay.getPeerTransportType(peerName)
     val rttMs = P2PMessageRelay.peerRttMs[peerName]
     val activeEndpoint = P2PMessageRelay.peerEndpoints[peerName].orEmpty()
