@@ -59,15 +59,14 @@ object YggdrasilPeerPreferences {
     }
 
     val DEFAULT_PUBLIC_PEERS = listOf(
-        "tcp://10.0.2.2:18227",
         "tls://95.217.35.92:1337",
         "tls://78.27.153.163:3784",
         "tls://78.27.153.163:3785",
         "tcp://188.225.9.167:18226",
         "tcp://45.95.202.21:12403",
+        "tcp://51.15.204.214:12345",
         // Reserve bootstrap routes. They are not opened together: publicPeers()
         // applies MAX_PUBLIC_PEERS before the configuration is written.
-        "tcp://51.15.204.214:12345",
         "tls://62.210.85.80:39575",
         "tcp://89.44.86.85:65535",
         "tls://78.27.153.163:33166",

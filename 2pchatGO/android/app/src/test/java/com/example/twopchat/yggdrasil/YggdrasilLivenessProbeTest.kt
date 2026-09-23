@@ -1,5 +1,6 @@
 package com.example.twopchat.yggdrasil
 
+import com.example.twopchat.config.P2PPreferences
 import com.example.twopchat.yggdrasil.YggdrasilLivenessProbe.ClearnetResult
 import com.example.twopchat.yggdrasil.YggdrasilLivenessProbe.MeshResult
 import com.example.twopchat.yggdrasil.YggdrasilLivenessProbe.MeshState
@@ -9,6 +10,8 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.net.ConnectException
+import java.net.SocketException
 
 /**
  * Unit tests for the Yggdrasil mesh liveness probe: peersJSON parsing,
@@ -184,5 +187,20 @@ class YggdrasilLivenessProbeTest {
         assertNull(YggdrasilLivenessProbe.parseVerdict(null))
         assertNull(YggdrasilLivenessProbe.parseVerdict(""))
         assertNull(YggdrasilLivenessProbe.parseVerdict("unrelated log line"))
+    }
+
+    @Test
+    fun localSocksFailuresNeverCountAsMeshPortClosed() {
+        assertFalse(YggdrasilLivenessProbe.isRemotePortClosed(P2PPreferences.YggdrasilMode.PROXY, ConnectException("Connection refused")))
+        assertFalse(YggdrasilLivenessProbe.isRemotePortClosed(P2PPreferences.YggdrasilMode.VPN, SocketException("Network is unreachable")))
+        assertTrue(YggdrasilLivenessProbe.isRemotePortClosed(P2PPreferences.YggdrasilMode.VPN, ConnectException("Connection refused")))
+    }
+
+    @Test
+    fun webDirectoryRequiresHttp200ButPeerRelayNeedsOnlyTcp() {
+        val web = YggdrasilLivenessProbe.ProbeTarget("21e:a51c:885b:7db0:166e:927:98cd:d186", 80, "ygg-web-dir")
+        val peer = YggdrasilLivenessProbe.ProbeTarget("200:aaaa::1", 50001, "peer")
+        assertEquals(MeshState.DEAD, YggdrasilLivenessProbe.connectedTargetResult(web, "[web]:80", 5, YggdrasilLivenessProbe.HttpResult(null, "http=timeout")).state)
+        assertEquals(MeshState.LIVE, YggdrasilLivenessProbe.connectedTargetResult(peer, "[peer]:50001", 5, YggdrasilLivenessProbe.HttpResult(null, "http=timeout")).state)
     }
 }

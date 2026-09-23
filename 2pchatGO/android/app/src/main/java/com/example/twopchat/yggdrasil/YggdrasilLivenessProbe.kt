@@ -6,6 +6,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import java.net.HttpURLConnection
+import java.net.ConnectException
 import java.net.Inet6Address
 import java.net.InetAddress
 import java.net.InetSocketAddress
@@ -94,6 +95,8 @@ object YggdrasilLivenessProbe {
     )
 
     data class ProbeTarget(val host: String, val port: Int, val label: String)
+
+    data class HttpResult(val statusCode: Int?, val detail: String)
 
     data class Report(
         val verdict: Verdict,
@@ -313,9 +316,13 @@ object YggdrasilLivenessProbe {
             MeshResult(MeshState.DEAD, label, null, "timeout")
         } catch (e: java.net.SocketException) {
             // Fast RST / connection refused: the mesh delivered our SYN to the
-            // peer and the peer answered — the data plane is alive, only this
-            // peer's relay port is closed.
-            MeshResult(MeshState.LIVE_PORT_CLOSED, label, null, e.message ?: "refused")
+            // peer and the peer answered. A Proxy-mode SocketException can
+            // instead be the local SOCKS listener being unavailable.
+            if (isRemotePortClosed(mode, e)) {
+                MeshResult(MeshState.LIVE_PORT_CLOSED, label, null, e.message ?: "refused")
+            } else {
+                MeshResult(MeshState.DEAD, label, null, e.javaClass.simpleName)
+            }
         } catch (e: Exception) {
             MeshResult(MeshState.DEAD, label, null, e.javaClass.simpleName)
         }
@@ -332,7 +339,7 @@ object YggdrasilLivenessProbe {
             socket.soTimeout = HTTP_CHECK_TIMEOUT_MS
             val rttMs = (System.nanoTime() - start) / 1_000_000L
             val http = httpCheck(socket, target.host)
-            return MeshResult(MeshState.LIVE, label, rttMs, "connected$http")
+            return connectedTargetResult(target, label, rttMs, http)
         }
     }
 
@@ -383,17 +390,16 @@ object YggdrasilLivenessProbe {
             val rttMs = (System.nanoTime() - start) / 1_000_000L
             socket.soTimeout = HTTP_CHECK_TIMEOUT_MS
             val http = httpCheck(socket, target.host)
-            return MeshResult(MeshState.LIVE, label, rttMs, "connected via socks$http")
+            return connectedTargetResult(target, label, rttMs, http, " via socks")
         }
     }
 
     /**
      * Minimal HTTP GET over an already-connected socket: the plain TUN socket
      * in VPN mode, the SOCKS data pipe in PROXY mode. Proves the mesh carried
-     * real page bytes, not just a TCP handshake. Returns "" on no data or
-     * " http=200" / " http=<status>" on a status line. Never throws.
+     * real page bytes, not just a TCP handshake. Never throws.
      */
-    private fun httpCheck(socket: Socket, host: String): String {
+    private fun httpCheck(socket: Socket, host: String): HttpResult {
         return try {
             val out = socket.getOutputStream()
             out.write(
@@ -411,12 +417,21 @@ object YggdrasilLivenessProbe {
                 if (sb.length > 2048 || sb.contains("\r\n\r\n")) break
             }
             val statusLine = sb.lineSequence().firstOrNull()
-            if (statusLine.isNullOrEmpty()) ", http=timeout"
-            else if (statusLine.contains(" 200")) ", http=200"
-            else ", http=${statusLine.take(32)}"
+            val status = statusLine?.split(' ')?.getOrNull(1)?.toIntOrNull()
+            HttpResult(status, if (status == null) "http=timeout" else "http=$status")
         } catch (e: Exception) {
-            ", http=error"
+            HttpResult(null, "http=error")
         }
+    }
+
+    internal fun isRemotePortClosed(mode: P2PPreferences.YggdrasilMode, error: Exception): Boolean =
+        mode == P2PPreferences.YggdrasilMode.VPN && error is ConnectException
+
+    internal fun connectedTargetResult(target: ProbeTarget, label: String, rttMs: Long, http: HttpResult, transportDetail: String = ""): MeshResult {
+        if (target.label == "ygg-web-dir" && http.statusCode != 200) {
+            return MeshResult(MeshState.DEAD, label, rttMs, http.detail)
+        }
+        return MeshResult(MeshState.LIVE, label, rttMs, "connected$transportDetail, ${http.detail}")
     }
 
     /**
