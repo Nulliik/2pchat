@@ -6,6 +6,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.flow.merge
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -573,11 +575,15 @@ object NativeBridge {
     private val bridgeScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Default + kotlinx.coroutines.SupervisorJob())
 
     /**
-     * Every native event is enqueued in arrival order and processed by a
-     * single consumer coroutine. This guarantees FIFO dispatch to listeners
-     * (no cross-event reordering on the thread pool) and keeps the JNI
-     * threads that emit events from Go goroutines free immediately — a slow
-     * listener can no longer block the emitting goroutine.
+     * Native events flow through two lanes, processed by a single consumer
+     * coroutine (FIFO within each lane, no cross-event reordering on the
+     * thread pool), with JNI threads freed immediately:
+     * - the RELIABLE lane carries data that cannot be re-derived (message
+     *   payloads, session transitions, endpoint/discovery state, persisted
+     *   sequences) and is never dropped;
+     * - the LOSSY lane carries self-healing telemetry (tracker diagnostics,
+     *   file progress ticks) and is bounded with drop-oldest so a stalled
+     *   consumer cannot accumulate unbounded memory on JNI producer threads.
      */
     internal sealed class NativeEvent {
         data class EndpointResult(val peerFP: String, val endpoint: String, val success: Boolean, val observedAt: Long) : NativeEvent()
@@ -592,17 +598,22 @@ object NativeBridge {
         data class FileProgress(val peerFP: String, val messageID: String, val transferred: Long, val total: Long, val speedKbps: Double) : NativeEvent()
     }
 
-    // Bounded with drop-oldest: a stalled consumer must not let JNI producer
-    // threads accumulate unbounded memory. Newest events are kept, and
-    // presence self-heals from the Go snapshot reconcile on the next
-    // maintenance cycle if a presence event is dropped.
-    private val eventChannel = kotlinx.coroutines.channels.Channel<NativeEvent>(
+    // Reliable lane: guaranteed delivery, never dropped. Incoming messages,
+    // session transitions, endpoint/discovery state and persisted sequence
+    // numbers cannot be re-derived, so the queue is unbounded.
+    private val reliableEventChannel =
+        kotlinx.coroutines.channels.Channel<NativeEvent>(kotlinx.coroutines.channels.Channel.UNLIMITED)
+
+    // Lossy lane: tracker diagnostics and file progress ticks self-heal
+    // (the next tick/status replaces a dropped one), so the queue is bounded
+    // with drop-oldest to bound memory if the consumer stalls.
+    private val telemetryEventChannel = kotlinx.coroutines.channels.Channel<NativeEvent>(
         1024,
         kotlinx.coroutines.channels.BufferOverflow.DROP_OLDEST,
     )
 
     private val eventConsumer = bridgeScope.launch(kotlinx.coroutines.Dispatchers.Default) {
-        for (event in eventChannel) {
+        merge(reliableEventChannel.receiveAsFlow(), telemetryEventChannel.receiveAsFlow()).collect { event ->
             try {
                 when (event) {
                     is NativeEvent.EndpointResult ->
@@ -629,8 +640,8 @@ object NativeBridge {
             } catch (e: Throwable) {
                 // A handler CancellationException must not kill the pipeline: it is a
                 // handler-side signal, not a consumer cancellation. Genuine scope
-                // cancellation still terminates the loop, because it hits the
-                // channel receive outside this try block.
+                // cancellation still terminates the loop, because it interrupts
+                // the flow collection outside this try block.
                 SafeLog.e(TAG, "Error dispatching native event: ${event::class.simpleName}", e)
             }
         }
@@ -667,26 +678,26 @@ object NativeBridge {
 
     @JvmStatic
     fun onEndpointResult(peerFP: String, endpoint: String, success: Boolean) {
-        eventChannel.trySend(NativeEvent.EndpointResult(peerFP, endpoint, success, System.currentTimeMillis()))
+        reliableEventChannel.trySend(NativeEvent.EndpointResult(peerFP, endpoint, success, System.currentTimeMillis()))
     }
 
     @JvmStatic
     fun onPeerConnected(peerFP: String, endpoint: String, seq: Long) {
         SafeLog.i(TAG, "[P2P] Peer connected: ${SafeLog.fp(peerFP)} (seq=$seq)")
         SafeLog.d(TAG, "[P2P] Peer connected: ${SafeLog.fp(peerFP)} @ $endpoint")
-        eventChannel.trySend(NativeEvent.PeerConnected(peerFP, endpoint, seq))
+        reliableEventChannel.trySend(NativeEvent.PeerConnected(peerFP, endpoint, seq))
     }
 
     @JvmStatic
     fun onPeerDisconnected(peerFP: String, reason: String, seq: Long) {
         SafeLog.i(TAG, "[P2P] Peer disconnected: ${SafeLog.fp(peerFP)}, reason: $reason (seq=$seq)")
-        eventChannel.trySend(NativeEvent.PeerDisconnected(peerFP, reason, seq))
+        reliableEventChannel.trySend(NativeEvent.PeerDisconnected(peerFP, reason, seq))
     }
 
     @JvmStatic
     fun onMessageReceived(peerFP: String, payload: ByteArray, messageID: String) {
         SafeLog.d(TAG, "[P2P] Message received from ${SafeLog.fp(peerFP)}, ID: $messageID (${payload.size} bytes)")
-        eventChannel.trySend(NativeEvent.MessageReceived(peerFP, payload, messageID))
+        reliableEventChannel.trySend(NativeEvent.MessageReceived(peerFP, payload, messageID))
     }
 
     @JvmStatic
@@ -696,25 +707,25 @@ object NativeBridge {
         } else {
             SafeLog.e(TAG, "[P2P] Native error ($code): $message")
         }
-        eventChannel.trySend(NativeEvent.Error(code, message))
+        reliableEventChannel.trySend(NativeEvent.Error(code, message))
     }
 
     @JvmStatic
     fun onPeerDiscovered(infoHashHex: String, endpoint: String, source: String) {
         SafeLog.d(TAG, "[P2P-Discovery] Discovered peer for ${SafeLog.fp(infoHashHex)} @ $endpoint (source: $source)")
-        eventChannel.trySend(NativeEvent.PeerDiscovered(infoHashHex, endpoint, source))
+        reliableEventChannel.trySend(NativeEvent.PeerDiscovered(infoHashHex, endpoint, source))
     }
 
     @JvmStatic
     fun onDiscoverySeqPersist(seq: Long) {
         SafeLog.d(TAG, "[P2P-Discovery] Persisting discovery sequence counter: $seq")
-        eventChannel.trySend(NativeEvent.DiscoverySeqPersist(seq))
+        reliableEventChannel.trySend(NativeEvent.DiscoverySeqPersist(seq))
     }
 
     @JvmStatic
     fun onHeartbeatSeqPersist(groupId: String, seq: Long) {
         SafeLog.d(TAG, "[P2P-Succession] Persisting heartbeat sequence counter for $groupId: $seq")
-        eventChannel.trySend(NativeEvent.HeartbeatSeqPersist(groupId, seq))
+        reliableEventChannel.trySend(NativeEvent.HeartbeatSeqPersist(groupId, seq))
     }
 
     private data class TrackerLogRecord(
@@ -766,13 +777,13 @@ object NativeBridge {
     @JvmStatic
     fun onTrackerStatus(trackerUrl: String, success: Boolean, peerCount: Int, elapsedMs: Long, detail: String) {
         val cleanDetail = detail.replace(TRACKER_WHITESPACE_REGEX, " ").take(160)
-        eventChannel.trySend(NativeEvent.TrackerStatus(trackerUrl, success, peerCount, elapsedMs, cleanDetail))
+        telemetryEventChannel.trySend(NativeEvent.TrackerStatus(trackerUrl, success, peerCount, elapsedMs, cleanDetail))
     }
 
     @JvmStatic
     fun onFileProgress(peerFP: String, messageID: String, transferred: Long, total: Long, speedKbps: Double) {
         SafeLog.d(TAG, "[P2P-File] Progress for $messageID: $transferred / $total bytes ($speedKbps kbps)")
-        eventChannel.trySend(NativeEvent.FileProgress(peerFP, messageID, transferred, total, speedKbps))
+        telemetryEventChannel.trySend(NativeEvent.FileProgress(peerFP, messageID, transferred, total, speedKbps))
     }
 
     fun triggerNatTraversal(): Boolean {

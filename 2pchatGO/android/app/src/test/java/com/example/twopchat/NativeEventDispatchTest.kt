@@ -7,7 +7,7 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 /**
- * The single NativeEvent channel is the only path between Go JNI callbacks
+ * The NativeEvent channel(s) are the only path between Go JNI callbacks
  * and the Kotlin domain layer. A misbehaving listener must not take the
  * pipeline down: both ordinary exceptions and CancellationExceptions thrown
  * by handlers are isolated, and the next event is still dispatched.

@@ -127,9 +127,9 @@ func NewPeerActor(
 }
 
 // nextEventSeq issues a strictly increasing, non-zero event sequence for
-// this peer's connect/disconnect notifications, so they are orderable in
-// the same total order as manager-emitted events (zero means "unordered"
-// and is never a valid stamp for a live source).
+// this peer's connect/disconnect notifications. The counter is private to
+// this actor (it does not share the manager's global counter); zero is
+// reserved for unordered sources and is never a valid stamp for a live peer.
 func (a *PeerActor) nextEventSeq() uint64 {
 	return atomic.AddUint64(&a.eventSeq, 1)
 }
