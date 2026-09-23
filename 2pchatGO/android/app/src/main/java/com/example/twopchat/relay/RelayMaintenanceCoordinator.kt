@@ -160,6 +160,22 @@ internal class RelayMaintenanceCoordinator(
                         }
                     }
 
+                    // Repair presence from the Go core's live session set. Covers
+                    // events lost to ordering races or missed callbacks (e.g. after
+                    // a process restart while sessions were established).
+                    try {
+                        val snapshot = com.example.twopchat.NativeBridge.getPeerStatesJSON()
+                        val drift = com.example.twopchat.presence.PresenceRepository.reconcileWithSnapshot(
+                            snapshot,
+                            log = { msg -> log(appContext, msg, "DEBUG", null) },
+                        )
+                        if (drift > 0) {
+                            log(appContext, "Presence reconcile applied $drift fix(es)", "DEBUG", null)
+                        }
+                    } catch (error: Exception) {
+                        if (error is CancellationException) throw error
+                    }
+
                     val isTorConnecting = com.example.twopchat.tor.TorManager.isTorConnecting.value
                     for (peerName in chats) {
                         if (P2PPreferences.isPeerIdentityChangePending(appContext, peerName)) continue

@@ -7,6 +7,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import org.json.JSONArray
+import org.json.JSONObject
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 
@@ -113,6 +115,62 @@ internal object PresenceRepository {
 
     /** Authoritative state for reconciliation (keyed by canonical key). */
     fun currentSnapshot(): Map<String, PeerPresence> = states.toMap()
+
+    /**
+     * Repairs state from a Go core session snapshot (JSON array of
+     * `{"fp","endpoint","transport","online"}`). Adds peers Go reports online
+     * that are missing locally, and flips locally-online fingerprint keys that
+     * vanished from the live set. Uses seq=0 (trusted reconcile pass, not an
+     * event), so the offline grace and live recheck still apply.
+     *
+     * @return number of state changes applied.
+     */
+    fun reconcileWithSnapshot(snapshotJson: String, log: ((String) -> Unit)? = null): Int {
+        if (snapshotJson.isBlank()) return 0
+        val liveOnline = HashSet<String>()
+        val liveRoutes = HashMap<String, Pair<String?, String?>>()
+        try {
+            val arr = JSONArray(snapshotJson)
+            for (i in 0 until arr.length()) {
+                val obj = arr.getJSONObject(i)
+                val fp = obj.optString("fp").ifBlank { continue }
+                if (obj.optBoolean("online", false)) {
+                    liveOnline.add(fp)
+                    val transport = obj.optString("transport").ifBlank { null }
+                    val endpoint = obj.optString("endpoint").ifBlank { null }
+                    liveRoutes[fp] = transport to endpoint
+                }
+            }
+        } catch (e: Exception) {
+            log?.invoke("Presence reconcile skipped, malformed snapshot: ${e.javaClass.simpleName}")
+            return 0
+        }
+
+        var changes = 0
+        onMain {
+            for (fp in liveOnline) {
+                if (states[fp]?.isOnline != true) {
+                    val (transport, endpoint) = liveRoutes[fp] ?: (null to null)
+                    observeOnline(fp, transport, endpoint)
+                    log?.invoke("Presence reconcile: added online $fp")
+                    changes++
+                }
+            }
+            for ((key, state) in states) {
+                if (state.isOnline && isFingerprintKey(key) && key !in liveOnline) {
+                    observeOffline(key)
+                    log?.invoke("Presence reconcile: cleared stale online $key")
+                    changes++
+                }
+            }
+        }
+        return changes
+    }
+
+    // Fingerprint-like keys (long identifier strings) can be correlated with the
+    // Go snapshot; nickname keys are left to the per-peer maintenance pull.
+    private fun isFingerprintKey(key: String): Boolean =
+        key.length >= 40 && key.all { it.isLetterOrDigit() }
 
     /**
      * Ingests a live-session observation. Returns the ingest version.
