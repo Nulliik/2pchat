@@ -6,8 +6,8 @@ interface BridgeMessageListener {
 }
 
 interface BridgeSessionListener {
-    fun onSessionEstablished(peerName: String, fingerprint: String, endpoint: String, transport: String, aboutMe: String): Boolean
-    fun onSessionClosed(peerName: String, fingerprint: String, reason: String = "")
+    fun onSessionEstablished(peerName: String, fingerprint: String, endpoint: String, transport: String, aboutMe: String, seq: Long = 0): Boolean
+    fun onSessionClosed(peerName: String, fingerprint: String, reason: String = "", seq: Long = 0)
     fun onPeerDiscovered(infoHash: String, endpoint: String, source: String) {}
     /** Routes received inside an authenticated encrypted session, never from a tracker. */
     fun onPeerRoutesUpdated(peerName: String, fingerprint: String, endpoints: String) {}

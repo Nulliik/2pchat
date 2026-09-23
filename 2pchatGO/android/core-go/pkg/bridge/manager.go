@@ -1010,6 +1010,20 @@ func (m *SessionManager) IsPeerOnline(peerFP string) bool {
 	return nm.IsPeerOnline(peerFP)
 }
 
+// PeerStatesJSON returns a JSON array snapshot of all active sessions.
+func (m *SessionManager) PeerStatesJSON() string {
+	if m == nil {
+		return "[]"
+	}
+	m.mu.RLock()
+	nm := m.netManager
+	m.mu.RUnlock()
+	if nm == nil {
+		return "[]"
+	}
+	return nm.PeerStatesJSON()
+}
+
 // SendFile streams a local file to a connected peer in 256 KiB chunks.
 func (m *SessionManager) SendFile(peerFP, filePath, messageID, fileName, caption, emoji, albumID string, albumIndex, albumCount int) (string, error) {
 	m.mu.RLock()

@@ -29,9 +29,9 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *reserved) {
     jclass localClass = (*env)->FindClass(env, "com/example/twopchat/NativeBridge");
     if (localClass != NULL) {
         g_nativeBridgeClass = (jclass)(*env)->NewGlobalRef(env, localClass);
-        g_midOnPeerConnected = (*env)->GetStaticMethodID(env, g_nativeBridgeClass, "onPeerConnected", "(Ljava/lang/String;Ljava/lang/String;)V");
+        g_midOnPeerConnected = (*env)->GetStaticMethodID(env, g_nativeBridgeClass, "onPeerConnected", "(Ljava/lang/String;Ljava/lang/String;J)V");
         g_midOnEndpointResult = (*env)->GetStaticMethodID(env, g_nativeBridgeClass, "onEndpointResult", "(Ljava/lang/String;Ljava/lang/String;Z)V");
-        g_midOnPeerDisconnected = (*env)->GetStaticMethodID(env, g_nativeBridgeClass, "onPeerDisconnected", "(Ljava/lang/String;Ljava/lang/String;)V");
+        g_midOnPeerDisconnected = (*env)->GetStaticMethodID(env, g_nativeBridgeClass, "onPeerDisconnected", "(Ljava/lang/String;Ljava/lang/String;J)V");
         g_midOnMessageReceived = (*env)->GetStaticMethodID(env, g_nativeBridgeClass, "onMessageReceived", "(Ljava/lang/String;[BLjava/lang/String;)V");
         g_midOnError = (*env)->GetStaticMethodID(env, g_nativeBridgeClass, "onError", "(ILjava/lang/String;)V");
         g_midOnPeerDiscovered = (*env)->GetStaticMethodID(env, g_nativeBridgeClass, "onPeerDiscovered", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V");
@@ -134,14 +134,14 @@ void callbackOnEndpointResult(const char *peerFP, const char *endpoint, jboolean
     }
 }
 
-void callbackOnPeerConnected(const char *peerFP, const char *endpoint) {
+void callbackOnPeerConnected(const char *peerFP, const char *endpoint, uint64_t seq) {
     if (g_nativeBridgeClass == NULL || g_midOnPeerConnected == NULL) return;
     int attached = 0;
     JNIEnv *env = getJNIEnv(&attached);
     if (env != NULL) {
         jstring jFP = (*env)->NewStringUTF(env, peerFP ? peerFP : "");
         jstring jEndp = (*env)->NewStringUTF(env, endpoint ? endpoint : "");
-        (*env)->CallStaticVoidMethod(env, g_nativeBridgeClass, g_midOnPeerConnected, jFP, jEndp);
+        (*env)->CallStaticVoidMethod(env, g_nativeBridgeClass, g_midOnPeerConnected, jFP, jEndp, (jlong)seq);
         checkAndClearException(env);
         (*env)->DeleteLocalRef(env, jFP);
         (*env)->DeleteLocalRef(env, jEndp);
@@ -149,14 +149,14 @@ void callbackOnPeerConnected(const char *peerFP, const char *endpoint) {
     }
 }
 
-void callbackOnPeerDisconnected(const char *peerFP, const char *reason) {
+void callbackOnPeerDisconnected(const char *peerFP, const char *reason, uint64_t seq) {
     if (g_nativeBridgeClass == NULL || g_midOnPeerDisconnected == NULL) return;
     int attached = 0;
     JNIEnv *env = getJNIEnv(&attached);
     if (env != NULL) {
         jstring jFP = (*env)->NewStringUTF(env, peerFP ? peerFP : "");
         jstring jReason = (*env)->NewStringUTF(env, reason ? reason : "");
-        (*env)->CallStaticVoidMethod(env, g_nativeBridgeClass, g_midOnPeerDisconnected, jFP, jReason);
+        (*env)->CallStaticVoidMethod(env, g_nativeBridgeClass, g_midOnPeerDisconnected, jFP, jReason, (jlong)seq);
         checkAndClearException(env);
         (*env)->DeleteLocalRef(env, jFP);
         (*env)->DeleteLocalRef(env, jReason);

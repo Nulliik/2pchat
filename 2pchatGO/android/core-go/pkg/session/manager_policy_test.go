@@ -24,7 +24,7 @@ func TestManager_PolicySwitchToStrict_ClosesActiveClearnetSessions(t *testing.T)
 	disconnectedChan := make(chan struct{}, 1)
 
 	aliceCallbacks := EventCallbacks{
-		OnPeerDisconnected: func(peerFP, reason string) {
+		OnPeerDisconnected: func(peerFP, reason string, seq uint64) {
 			disconnectMu.Lock()
 			disconnectedPeer = peerFP
 			disconnectMu.Unlock()

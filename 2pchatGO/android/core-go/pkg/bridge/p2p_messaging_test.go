@@ -36,11 +36,11 @@ func TestP2PConnectionAndMessaging(t *testing.T) {
 	alice := &bridge.SessionManager{}
 	alice.SetStorageDir(t.TempDir())
 	alice.SetCallbacks(session.EventCallbacks{
-		OnPeerConnected: func(peerFP, endpoint string) {
+		OnPeerConnected: func(peerFP, endpoint string, seq uint64) {
 			t.Logf("[Alice] Connected to peer %s at %s", peerFP, endpoint)
 			aliceConnected <- peerFP
 		},
-		OnPeerDisconnected: func(peerFP, reason string) {
+		OnPeerDisconnected: func(peerFP, reason string, seq uint64) {
 			t.Logf("[Alice] Disconnected from %s: %s", peerFP, reason)
 		},
 		OnMessageReceived: func(peerFP string, payload []byte, msgID string) {
@@ -71,11 +71,11 @@ func TestP2PConnectionAndMessaging(t *testing.T) {
 	bob := &bridge.SessionManager{}
 	bob.SetStorageDir(t.TempDir())
 	bob.SetCallbacks(session.EventCallbacks{
-		OnPeerConnected: func(peerFP, endpoint string) {
+		OnPeerConnected: func(peerFP, endpoint string, seq uint64) {
 			t.Logf("[Bob] Connected to peer %s at %s", peerFP, endpoint)
 			bobConnected <- peerFP
 		},
-		OnPeerDisconnected: func(peerFP, reason string) {
+		OnPeerDisconnected: func(peerFP, reason string, seq uint64) {
 			t.Logf("[Bob] Disconnected from %s: %s", peerFP, reason)
 		},
 		OnMessageReceived: func(peerFP string, payload []byte, msgID string) {
@@ -209,7 +209,7 @@ func TestP2PBidirectionalMessagingByNickname(t *testing.T) {
 	alice := &bridge.SessionManager{}
 	alice.SetStorageDir(t.TempDir())
 	alice.SetCallbacks(session.EventCallbacks{
-		OnPeerConnected: func(peerFP, endpoint string) {
+		OnPeerConnected: func(peerFP, endpoint string, seq uint64) {
 			select {
 			case aliceConnected <- peerFP:
 			default:
@@ -237,7 +237,7 @@ func TestP2PBidirectionalMessagingByNickname(t *testing.T) {
 	bob := &bridge.SessionManager{}
 	bob.SetStorageDir(t.TempDir())
 	bob.SetCallbacks(session.EventCallbacks{
-		OnPeerConnected: func(peerFP, endpoint string) {
+		OnPeerConnected: func(peerFP, endpoint string, seq uint64) {
 			select {
 			case bobConnected <- peerFP:
 			default:

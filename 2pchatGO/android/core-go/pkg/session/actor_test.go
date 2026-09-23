@@ -167,7 +167,7 @@ func TestPeerActorAuxiliaryStreamClosureDoesNotTerminateActor(t *testing.T) {
 	var bobMu sync.Mutex
 
 	bobCallbacks := EventCallbacks{
-		OnPeerDisconnected: func(peerFP, reason string) {
+		OnPeerDisconnected: func(peerFP, reason string, seq uint64) {
 			bobMu.Lock()
 			bobDisconnected = true
 			bobMu.Unlock()

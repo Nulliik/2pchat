@@ -36,10 +36,10 @@ func TestSimultaneousConnectionTieBreaking(t *testing.T) {
 
 	alice := &bridge.SessionManager{}
 	alice.SetCallbacks(session.EventCallbacks{
-		OnPeerConnected: func(peerFP, endpoint string) {
+		OnPeerConnected: func(peerFP, endpoint string, seq uint64) {
 			noteConnection()
 		},
-		OnPeerDisconnected: func(peerFP string, reason string) {
+		OnPeerDisconnected: func(peerFP string, reason string, seq uint64) {
 			noteConnection()
 		},
 		OnMessageReceived: func(peerFP string, payload []byte, msgID string) {
@@ -56,10 +56,10 @@ func TestSimultaneousConnectionTieBreaking(t *testing.T) {
 
 	bob := &bridge.SessionManager{}
 	bob.SetCallbacks(session.EventCallbacks{
-		OnPeerConnected: func(peerFP, endpoint string) {
+		OnPeerConnected: func(peerFP, endpoint string, seq uint64) {
 			noteConnection()
 		},
-		OnPeerDisconnected: func(peerFP string, reason string) {
+		OnPeerDisconnected: func(peerFP string, reason string, seq uint64) {
 			noteConnection()
 		},
 		OnMessageReceived: func(peerFP string, payload []byte, msgID string) {

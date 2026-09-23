@@ -36,6 +36,7 @@ internal class BridgeEventDispatcher(
         endpoint: String,
         transport: String,
         aboutMe: String,
+        seq: Long,
     ): Boolean {
         scope.launch(Dispatchers.Default) {
             try {
@@ -64,7 +65,7 @@ internal class BridgeEventDispatcher(
         return true
     }
 
-    override fun onSessionClosed(peerName: String, fingerprint: String, reason: String) {
+    override fun onSessionClosed(peerName: String, fingerprint: String, reason: String, seq: Long) {
         scope.launch(Dispatchers.Default) {
             try {
                 val context = com.example.twopchat.yggdrasil.GlobalApplication.appContext

@@ -20,9 +20,9 @@ object NativeBridge {
         private set
 
     // Callbacks invoked by background Go goroutines via JNI
-    var onPeerConnectedListener: ((peerFP: String, endpoint: String) -> Unit)? = null
+    var onPeerConnectedListener: ((peerFP: String, endpoint: String, seq: Long) -> Unit)? = null
     var onEndpointResultListener: ((peerFP: String, endpoint: String, success: Boolean, observedAt: Long) -> Unit)? = null
-    var onPeerDisconnectedListener: ((peerFP: String, reason: String) -> Unit)? = null
+    var onPeerDisconnectedListener: ((peerFP: String, reason: String, seq: Long) -> Unit)? = null
     var onMessageReceivedListener: ((peerFP: String, payload: ByteArray, messageID: String) -> Unit)? = null
     var onErrorListener: ((code: Int, message: String) -> Unit)? = null
     var onPeerDiscoveredListener: ((infoHashHex: String, endpoint: String, source: String) -> Unit)? = null
@@ -333,6 +333,21 @@ object NativeBridge {
         }
     }
 
+    /**
+     * Returns a JSON array snapshot of active sessions from the Go core
+     * (`[{"fp":...,"endpoint":...,"transport":...,"online":true}]`).
+     * Used by the maintenance coordinator to reconcile presence state.
+     */
+    fun getPeerStatesJSON(): String {
+        if (!isLoaded) return "[]"
+        return try {
+            nativeGetPeerStatesJSON() ?: "[]"
+        } catch (e: Throwable) {
+            SafeLog.e(TAG, "nativeGetPeerStatesJSON failed", e)
+            "[]"
+        }
+    }
+
     fun sendFile(
         peerFingerprint: String,
         filePath: String,
@@ -566,8 +581,8 @@ object NativeBridge {
      */
     internal sealed class NativeEvent {
         data class EndpointResult(val peerFP: String, val endpoint: String, val success: Boolean, val observedAt: Long) : NativeEvent()
-        data class PeerConnected(val peerFP: String, val endpoint: String) : NativeEvent()
-        data class PeerDisconnected(val peerFP: String, val reason: String) : NativeEvent()
+        data class PeerConnected(val peerFP: String, val endpoint: String, val seq: Long) : NativeEvent()
+        data class PeerDisconnected(val peerFP: String, val reason: String, val seq: Long) : NativeEvent()
         data class MessageReceived(val peerFP: String, val payload: ByteArray, val messageID: String) : NativeEvent()
         data class Error(val code: Int, val message: String) : NativeEvent()
         data class PeerDiscovered(val infoHashHex: String, val endpoint: String, val source: String) : NativeEvent()
@@ -586,9 +601,9 @@ object NativeBridge {
                     is NativeEvent.EndpointResult ->
                         onEndpointResultListener?.invoke(event.peerFP, event.endpoint, event.success, event.observedAt)
                     is NativeEvent.PeerConnected ->
-                        onPeerConnectedListener?.invoke(event.peerFP, event.endpoint)
+                        onPeerConnectedListener?.invoke(event.peerFP, event.endpoint, event.seq)
                     is NativeEvent.PeerDisconnected ->
-                        onPeerDisconnectedListener?.invoke(event.peerFP, event.reason)
+                        onPeerDisconnectedListener?.invoke(event.peerFP, event.reason, event.seq)
                     is NativeEvent.MessageReceived ->
                         onMessageReceivedListener?.invoke(event.peerFP, event.payload, event.messageID)
                     is NativeEvent.Error ->
@@ -645,16 +660,16 @@ object NativeBridge {
     }
 
     @JvmStatic
-    fun onPeerConnected(peerFP: String, endpoint: String) {
-        SafeLog.i(TAG, "[P2P] Peer connected: ${SafeLog.fp(peerFP)}")
+    fun onPeerConnected(peerFP: String, endpoint: String, seq: Long) {
+        SafeLog.i(TAG, "[P2P] Peer connected: ${SafeLog.fp(peerFP)} (seq=$seq)")
         SafeLog.d(TAG, "[P2P] Peer connected: ${SafeLog.fp(peerFP)} @ $endpoint")
-        eventChannel.trySend(NativeEvent.PeerConnected(peerFP, endpoint))
+        eventChannel.trySend(NativeEvent.PeerConnected(peerFP, endpoint, seq))
     }
 
     @JvmStatic
-    fun onPeerDisconnected(peerFP: String, reason: String) {
-        SafeLog.i(TAG, "[P2P] Peer disconnected: ${SafeLog.fp(peerFP)}, reason: $reason")
-        eventChannel.trySend(NativeEvent.PeerDisconnected(peerFP, reason))
+    fun onPeerDisconnected(peerFP: String, reason: String, seq: Long) {
+        SafeLog.i(TAG, "[P2P] Peer disconnected: ${SafeLog.fp(peerFP)}, reason: $reason (seq=$seq)")
+        eventChannel.trySend(NativeEvent.PeerDisconnected(peerFP, reason, seq))
     }
 
     @JvmStatic
@@ -1177,6 +1192,7 @@ object NativeBridge {
     private external fun nativeSendMessageBinary(peerFingerprint: String, directBuffer: java.nio.ByteBuffer, offset: Int, length: Int): String?
     private external fun nativeSendRawBytes(peerFingerprint: String, payload: ByteArray): String?
     private external fun nativeIsPeerOnline(peerFingerprint: String): Boolean
+    private external fun nativeGetPeerStatesJSON(): String?
     private external fun nativeSendFile(
         peerFingerprint: String,
         filePath: String,

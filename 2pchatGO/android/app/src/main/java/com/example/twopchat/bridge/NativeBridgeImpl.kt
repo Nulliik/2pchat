@@ -240,7 +240,7 @@ class NativeBridgeImpl(
             val peerName = resolvePeerName(peerFP) ?: peerFP
             PeerEndpointStore.result(context, peerName, peerFP, endpoint, success, observedAt)
         }
-        NativeBridge.onPeerConnectedListener = connected@{ peerFP, endpoint ->
+        NativeBridge.onPeerConnectedListener = connected@{ peerFP, endpoint, seq ->
             SafeLog.i(TAG, "[GoCore] Peer connected: ${SafeLog.fp(peerFP)}")
             SafeLog.d(TAG, "[GoCore] Peer connected: ${SafeLog.fp(peerFP)} @ $endpoint")
             // CRITICAL: populate bidirectional name↔fp maps BEFORE setting onlinePeers.
@@ -284,7 +284,7 @@ class NativeBridgeImpl(
             activeTransports[peerFP] = transportHint
             SafeLog.i(TAG, "[GoCore] Active route for ${SafeLog.fp(peerFP)}: $transportHint")
             SafeLog.d(TAG, "[GoCore] Active route for ${SafeLog.fp(peerFP)}: $transportHint @ $endpoint")
-            sessionListener?.onSessionEstablished(resolvedName, peerFP, endpoint, transportHint, "")
+            sessionListener?.onSessionEstablished(resolvedName, peerFP, endpoint, transportHint, "", seq)
             com.example.twopchat.protocol.ProtocolVersionManager.refresh(peerFP)
             sendAuthenticatedRouteUpdate(peerFP)
             flushPendingMessages(peerFP)
@@ -297,7 +297,7 @@ class NativeBridgeImpl(
             }
         }
 
-        NativeBridge.onPeerDisconnectedListener = { peerFP, reason ->
+        NativeBridge.onPeerDisconnectedListener = { peerFP, reason, seq ->
             com.example.twopchat.protocol.ProtocolVersionManager.refresh(peerFP)
             SafeLog.i(TAG, "[GoCore] Peer disconnected: ${SafeLog.fp(peerFP)}, reason: $reason")
             val resolvedName = resolvePeerName(peerFP) ?: peerNameMap[peerFP] ?: peerFP
@@ -307,7 +307,7 @@ class NativeBridgeImpl(
             if (!NativeBridge.isPeerOnline(peerFP)) PeerEndpointStore.disconnected(peerFP)
             activeEndpoints.remove(peerFP)
             activeTransports.remove(peerFP)
-            sessionListener?.onSessionClosed(resolvedName, peerFP, reason)
+            sessionListener?.onSessionClosed(resolvedName, peerFP, reason, seq)
         }
 
         NativeBridge.onMessageReceivedListener = message@{ peerFP, payload, messageID ->

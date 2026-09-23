@@ -32,19 +32,19 @@ func init() {
 				}
 				C.callbackOnEndpointResult(cFP, cEndpoint, ok)
 			},
-			OnPeerConnected: func(peerFP, endpoint string) {
+			OnPeerConnected: func(peerFP, endpoint string, seq uint64) {
 				cFP := C.CString(peerFP)
 				cEndp := C.CString(endpoint)
 				defer C.free(unsafe.Pointer(cFP))
 				defer C.free(unsafe.Pointer(cEndp))
-				C.callbackOnPeerConnected(cFP, cEndp)
+				C.callbackOnPeerConnected(cFP, cEndp, C.uint64_t(seq))
 			},
-			OnPeerDisconnected: func(peerFP, reason string) {
+			OnPeerDisconnected: func(peerFP, reason string, seq uint64) {
 				cFP := C.CString(peerFP)
 				cReason := C.CString(reason)
 				defer C.free(unsafe.Pointer(cFP))
 				defer C.free(unsafe.Pointer(cReason))
-				C.callbackOnPeerDisconnected(cFP, cReason)
+				C.callbackOnPeerDisconnected(cFP, cReason, C.uint64_t(seq))
 			},
 			OnMessageReceived: func(peerFP string, payload []byte, messageID string) {
 				cFP := C.CString(peerFP)
@@ -575,6 +575,28 @@ func Java_com_example_twopchat_NativeBridge_nativeIsPeerOnline(
 		return C.JNI_TRUE
 	}
 	return C.JNI_FALSE
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeGetPeerStatesJSON
+func Java_com_example_twopchat_NativeBridge_nativeGetPeerStatesJSON(env *C.JNIEnv, clazz C.jclass) C.jstring {
+	defer func() {
+		if r := recover(); r != nil {
+			// Catch any unexpected panic safely
+		}
+	}()
+
+	if env == nil {
+		return C.nullJString()
+	}
+
+	mgr := bridge.GetManager()
+	if mgr == nil {
+		return C.nullJString()
+	}
+
+	cResp := C.CString(mgr.PeerStatesJSON())
+	defer C.free(unsafe.Pointer(cResp))
+	return C.createJString(env, cResp)
 }
 
 //export Java_com_example_twopchat_NativeBridge_nativeSendFile

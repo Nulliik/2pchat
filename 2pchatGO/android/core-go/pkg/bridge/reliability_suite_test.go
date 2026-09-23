@@ -113,10 +113,10 @@ func TestAbruptDisconnectAndReconnection(t *testing.T) {
 
 	alice := &bridge.SessionManager{}
 	alice.SetCallbacks(session.EventCallbacks{
-		OnPeerConnected: func(peerFP, endpoint string) {
+		OnPeerConnected: func(peerFP, endpoint string, seq uint64) {
 			aliceConnected <- peerFP
 		},
-		OnPeerDisconnected: func(peerFP, reason string) {
+		OnPeerDisconnected: func(peerFP, reason string, seq uint64) {
 			t.Logf("[DISCONNECT] Alice observed disconnect from %s (reason: %s)", peerFP, reason)
 			aliceDisconnected <- peerFP
 		},
@@ -409,7 +409,7 @@ func TestHighVolumeBurstMessagingAndDeduplication(t *testing.T) {
 
 	alice := &bridge.SessionManager{}
 	alice.SetCallbacks(session.EventCallbacks{
-		OnPeerConnected: func(peerFP, endpoint string) {
+		OnPeerConnected: func(peerFP, endpoint string, seq uint64) {
 			aliceConnected <- peerFP
 		},
 		OnMessageReceived: func(peerFP string, payload []byte, msgID string) {

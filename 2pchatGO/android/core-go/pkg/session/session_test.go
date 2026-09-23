@@ -140,7 +140,7 @@ func TestManagerConnectionAndMessaging(t *testing.T) {
 		"127.0.0.1:9050",
 		false,
 		EventCallbacks{
-			OnPeerConnected: func(peerFP, endpoint string) {
+			OnPeerConnected: func(peerFP, endpoint string, seq uint64) {
 				select {
 				case aliceConnected <- true:
 				default:
@@ -170,7 +170,7 @@ func TestManagerConnectionAndMessaging(t *testing.T) {
 		"127.0.0.1:9050",
 		false,
 		EventCallbacks{
-			OnPeerConnected: func(peerFP, endpoint string) {
+			OnPeerConnected: func(peerFP, endpoint string, seq uint64) {
 				mu.Lock()
 				bobConnectedEndpoint = endpoint
 				mu.Unlock()
@@ -425,7 +425,7 @@ func TestManagerNicknameMappingAndCallbackDeadlockFreedom(t *testing.T) {
 		"",
 		false,
 		EventCallbacks{
-			OnPeerConnected: func(peerFP, endpoint string) {
+			OnPeerConnected: func(peerFP, endpoint string, seq uint64) {
 				// Verify deadlock safety: calling SendMessage or IsPeerOnline inside OnPeerConnected
 				// MUST NOT DEADLOCK because Manager mutex is released before calling OnPeerConnected.
 				if !aliceMgr.IsPeerOnline(peerFP) {
@@ -452,7 +452,7 @@ func TestManagerNicknameMappingAndCallbackDeadlockFreedom(t *testing.T) {
 		"",
 		false,
 		EventCallbacks{
-			OnPeerConnected: func(peerFP, endpoint string) {
+			OnPeerConnected: func(peerFP, endpoint string, seq uint64) {
 				if !bobMgr.IsPeerOnline(peerFP) {
 					t.Errorf("Bob expected peer %s to be online during callback", peerFP)
 				}

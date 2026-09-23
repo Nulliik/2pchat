@@ -42,7 +42,7 @@ func TestGoCoreE2EConnectivityAndDiscovery(t *testing.T) {
 		dialer:   transport.NewAdaptiveDialer("127.0.0.1:9050", false, 5*time.Second),
 	}
 	alice.SetCallbacks(session.EventCallbacks{
-		OnPeerConnected: func(peerFP, endpoint string) {
+		OnPeerConnected: func(peerFP, endpoint string, seq uint64) {
 			logf("[ALICE] OnPeerConnected: peer=%s endpoint=%s", peerFP, endpoint)
 			aliceConnected <- peerFP
 		},
@@ -70,7 +70,7 @@ func TestGoCoreE2EConnectivityAndDiscovery(t *testing.T) {
 		dialer:   transport.NewAdaptiveDialer("127.0.0.1:9050", false, 5*time.Second),
 	}
 	bob.SetCallbacks(session.EventCallbacks{
-		OnPeerConnected: func(peerFP, endpoint string) {
+		OnPeerConnected: func(peerFP, endpoint string, seq uint64) {
 			logf("[BOB] OnPeerConnected: peer=%s endpoint=%s", peerFP, endpoint)
 			bobConnected <- peerFP
 		},

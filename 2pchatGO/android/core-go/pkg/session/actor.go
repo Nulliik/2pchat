@@ -119,7 +119,7 @@ func NewPeerActor(
 	go actor.eventLoop()
 
 	if callbacks.OnPeerConnected != nil {
-		callbacks.OnPeerConnected(peerFP, endpoint)
+		callbacks.OnPeerConnected(peerFP, endpoint, 0)
 	}
 
 	return actor, nil
@@ -163,7 +163,7 @@ func (a *PeerActor) eventLoop() {
 	defer func() {
 		atomic.StoreInt32(&a.online, 0)
 		if a.callbacks.OnPeerDisconnected != nil {
-			a.callbacks.OnPeerDisconnected(a.peerFP, "actor terminated")
+			a.callbacks.OnPeerDisconnected(a.peerFP, "actor terminated", 0)
 		}
 		if a.muxSession != nil {
 			_ = a.muxSession.Close()

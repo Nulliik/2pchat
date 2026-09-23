@@ -182,7 +182,7 @@ func TestReentrantCallbackDeadlockSafety(t *testing.T) {
 
 	// Callback that performs re-entrant synchronous calls into session.Manager
 	aliceMgr = session.NewManager(aliceID, alicePrePriv, alicePrePub, "", false, session.EventCallbacks{
-		OnPeerConnected: func(peerFP, endpoint string) {
+		OnPeerConnected: func(peerFP, endpoint string, seq uint64) {
 			// Synchronous re-entrant calls:
 			isOnline := aliceMgr.IsPeerOnline(peerFP)
 			myFP := aliceMgr.Fingerprint()

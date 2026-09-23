@@ -29,8 +29,11 @@ type EventCallbacks struct {
 	// Only an authenticated outbound route can report success. Incoming socket
 	// source ports and relay endpoints are never advertised as reusable routes.
 	OnEndpointResult   func(peerFP, endpoint string, success bool)
-	OnPeerConnected    func(peerFP, endpoint string)
-	OnPeerDisconnected func(peerFP, reason string)
+	// seq is a monotonic event sequence issued under a single mutex at
+	// emission time. Receivers MUST treat seq==0 as unordered and reject
+	// any event whose seq is not greater than the last accepted seq.
+	OnPeerConnected    func(peerFP, endpoint string, seq uint64)
+	OnPeerDisconnected func(peerFP, reason string, seq uint64)
 	OnMessageReceived  func(peerFP string, payload []byte, messageID string)
 	OnError            func(code int, message string)
 	OnFileProgress     func(peerFP string, messageID string, transferred int64, total int64, speedKbps float64)
@@ -91,6 +94,8 @@ func (l *ipRateLimiter) allow(ip string) bool {
 type Manager struct {
 	diagnostics      diagnostics.Collector
 	mu               sync.RWMutex
+	eventSeqMu       sync.Mutex
+	eventSeq         uint64
 	policy           transport.NetworkPolicy
 	identity         *crypto.IdentityKeyPair
 	prekeyPriv       *crypto.X25519PrivateKey
@@ -112,6 +117,16 @@ type Manager struct {
 	rateLimiter      *ipRateLimiter
 	capabilities     protocol.Declaration
 	announceProtocol bool
+}
+
+// nextEventSeq returns the next monotonic sequence number for connection
+// events. The dedicated mutex gives a total order to events emitted from
+// concurrent goroutines even when their JNI delivery order is scrambled.
+func (m *Manager) nextEventSeq() uint64 {
+	m.eventSeqMu.Lock()
+	defer m.eventSeqMu.Unlock()
+	m.eventSeq++
+	return m.eventSeq
 }
 
 // NewManager creates a new network session Manager.
@@ -747,7 +762,7 @@ func (m *Manager) RegisterSession(newSess *Session, peerFP, endpoint string, ini
 	m.mu.Unlock()
 
 	if onConnCb != nil {
-		onConnCb(peerFP, endpoint)
+		onConnCb(peerFP, endpoint, m.nextEventSeq())
 	}
 	if newSess.verifiedDialEndpoint != "" {
 		if callback := m.callbacksSnapshot().OnEndpointResult; callback != nil {
@@ -784,7 +799,7 @@ func (m *Manager) dispatchSessionMessages(s *Session, peerFP string) {
 
 		callbacks := m.callbacksSnapshot()
 		if wasActive && !disconnectedNotified && callbacks.OnPeerDisconnected != nil {
-			callbacks.OnPeerDisconnected(peerFP, "connection terminated")
+			callbacks.OnPeerDisconnected(peerFP, "connection terminated", m.nextEventSeq())
 		}
 	}()
 
@@ -835,7 +850,7 @@ func (m *Manager) dispatchSessionMessages(s *Session, peerFP string) {
 					disconnectedNotified = true
 					callbacks := m.callbacksSnapshot()
 					if callbacks.OnPeerDisconnected != nil {
-						callbacks.OnPeerDisconnected(peerFP, reason)
+						callbacks.OnPeerDisconnected(peerFP, reason, m.nextEventSeq())
 					}
 				}
 				return
@@ -1134,6 +1149,50 @@ func (m *Manager) IsPeerOnline(peerFP string) bool {
 
 	s, exists := m.resolveSessionLocked(peerFP)
 	return exists && s != nil && s.IsOnline()
+}
+
+// PeerStatesJSON returns a JSON array snapshot of every active session:
+// fingerprint, endpoint, transport class, and online flag. Used by the
+// Android reconciliation loop to repair presence state that was lost to
+// event ordering races or missed callbacks.
+func (m *Manager) PeerStatesJSON() string {
+	type peerState struct {
+		Fingerprint string `json:"fp"`
+		Endpoint    string `json:"endpoint"`
+		Transport   string `json:"transport"`
+		Online      bool   `json:"online"`
+	}
+	if m == nil {
+		return "[]"
+	}
+	m.mu.RLock()
+	states := make([]peerState, 0, len(m.sessions))
+	for fp, s := range m.sessions {
+		if s == nil {
+			continue
+		}
+		states = append(states, peerState{
+			Fingerprint: fp,
+			Endpoint:    m.peerEndp[fp],
+			Transport:   transportClassForSession(s),
+			Online:      s.IsOnline(),
+		})
+	}
+	m.mu.RUnlock()
+
+	raw, err := json.Marshal(states)
+	if err != nil {
+		return "[]"
+	}
+	return string(raw)
+}
+
+// transportClassForSession classifies the transport of an active session.
+func transportClassForSession(s *Session) string {
+	if s.IsTorTransport() {
+		return "tor"
+	}
+	return "direct"
 }
 
 // SendFile streams a local file to a connected peer in 256 KiB chunks.

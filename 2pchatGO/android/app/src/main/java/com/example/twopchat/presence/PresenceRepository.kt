@@ -46,6 +46,7 @@ internal object PresenceRepository {
     private val states = mutableStateMapOf<String, PeerPresence>()
     private val nameToKey = mutableStateMapOf<String, String>()
     private val versions = ConcurrentHashMap<String, AtomicLong>()
+    private val eventSeq = ConcurrentHashMap<String, AtomicLong>()
     private val offlineJobs = ConcurrentHashMap<String, Job>()
 
     private val mainScope = CoroutineScope(Dispatchers.Main.immediate)
@@ -61,6 +62,27 @@ internal object PresenceRepository {
 
     private fun resolveKey(peerNameOrFp: String): String =
         nameToKey[peerNameOrFp] ?: peerNameOrFp
+
+    // Go event sequences start from a small number while [versions] is
+    // epoch-milliseconds based. The two MUST NOT share one counter, so each
+    // key keeps an independent monotonic [eventSeq] lane.
+    private fun eventSeqOf(key: String): AtomicLong =
+        eventSeq.computeIfAbsent(key) { AtomicLong() }
+
+    /**
+     * Accepts [seq] for [key] iff it is strictly greater than the last
+     * accepted sequence. `seq <= 0` means "unordered" (local reconcile /
+     * pull path) and is always accepted. The CAS loop guarantees that a
+     * concurrently arriving newer event wins, and the stale one is dropped.
+     */
+    private fun acceptSeq(key: String, seq: Long): Boolean {
+        if (seq <= 0) return true
+        var current = eventSeqOf(key).get()
+        while (seq > current && !eventSeqOf(key).compareAndSet(current, seq)) {
+            current = eventSeqOf(key).get()
+        }
+        return seq > current
+    }
 
     /** Binds a nickname to the canonical fingerprint key. */
     fun bindName(name: String, fingerprint: String) {
@@ -95,9 +117,17 @@ internal object PresenceRepository {
     /**
      * Ingests a live-session observation. Returns the ingest version.
      * Cancels any pending offline grace for the peer.
+     *
+     * @param seq Go event sequence; stale (already-seen) sequences are dropped.
      */
-    fun observeOnline(peerNameOrFp: String, transport: String? = null, endpoint: String? = null): Long {
+    fun observeOnline(
+        peerNameOrFp: String,
+        transport: String? = null,
+        endpoint: String? = null,
+        seq: Long = 0,
+    ): Long {
         val key = resolveKey(peerNameOrFp)
+        if (!acceptSeq(key, seq)) return version(key).get()
         val v = version(key).incrementAndGet()
         onMain {
             offlineJobs.remove(key)?.cancel()
@@ -119,8 +149,10 @@ internal object PresenceRepository {
         peerNameOrFp: String,
         verifyOnline: (() -> Boolean)? = null,
         immediate: Boolean = false,
+        seq: Long = 0,
     ): Long {
         val key = resolveKey(peerNameOrFp)
+        if (!acceptSeq(key, seq)) return version(key).get()
         val v = version(key).incrementAndGet()
         onMain {
             offlineJobs.remove(key)?.cancel()
@@ -162,6 +194,7 @@ internal object PresenceRepository {
             offlineJobs.remove(key)?.cancel()
             states.remove(key)
             versions.remove(key)
+            eventSeq.remove(key)
             nameToKey.entries.retainAll { it.value != key }
         }
     }
@@ -174,6 +207,7 @@ internal object PresenceRepository {
             states.clear()
             nameToKey.clear()
             versions.clear()
+            eventSeq.clear()
         }
     }
 }

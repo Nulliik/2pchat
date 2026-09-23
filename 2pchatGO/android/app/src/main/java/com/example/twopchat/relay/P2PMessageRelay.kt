@@ -106,11 +106,11 @@ object P2PMessageRelay {
 
     private fun guardedSessionListener(version: Long, listener: BridgeSessionListener) =
         object : BridgeSessionListener {
-            override fun onSessionEstablished(peerName: String, fingerprint: String, endpoint: String, transport: String, aboutMe: String): Boolean =
-                withAccountCallback(version, false) { listener.onSessionEstablished(peerName, fingerprint, endpoint, transport, aboutMe) }
+            override fun onSessionEstablished(peerName: String, fingerprint: String, endpoint: String, transport: String, aboutMe: String, seq: Long): Boolean =
+                withAccountCallback(version, false) { listener.onSessionEstablished(peerName, fingerprint, endpoint, transport, aboutMe, seq) }
 
-            override fun onSessionClosed(peerName: String, fingerprint: String, reason: String) =
-                withAccountCallback(version, Unit) { listener.onSessionClosed(peerName, fingerprint, reason) }
+            override fun onSessionClosed(peerName: String, fingerprint: String, reason: String, seq: Long) =
+                withAccountCallback(version, Unit) { listener.onSessionClosed(peerName, fingerprint, reason, seq) }
 
             override fun onPeerRoutesUpdated(peerName: String, fingerprint: String, endpoints: String) =
                 withAccountCallback(version, Unit) { listener.onPeerRoutesUpdated(peerName, fingerprint, endpoints) }
@@ -622,6 +622,7 @@ object P2PMessageRelay {
         transport: String?,
         fingerprint: String = "",
         endpoint: String = "",
+        seq: Long = 0,
     ) {
         if (fingerprint.isNotBlank()) {
             com.example.twopchat.presence.PresenceRepository.bindName(peerName, fingerprint)
@@ -630,6 +631,7 @@ object P2PMessageRelay {
             peerName,
             transport,
             endpoint.ifBlank { null },
+            seq,
         )
         if (transport != null) runOnMain {
             peerConnectionTransports[peerName] = transport
@@ -669,8 +671,8 @@ object P2PMessageRelay {
         com.example.twopchat.presence.PresenceRepository.observeOffline(peerName)
     }
 
-    private fun schedulePeerOfflineVerified(peerName: String, verifyOnline: () -> Boolean) {
-        com.example.twopchat.presence.PresenceRepository.observeOffline(peerName, verifyOnline = verifyOnline)
+    private fun schedulePeerOfflineVerified(peerName: String, verifyOnline: () -> Boolean, seq: Long = 0) {
+        com.example.twopchat.presence.PresenceRepository.observeOffline(peerName, verifyOnline = verifyOnline, seq = seq)
     }
 
     private fun schedulePeerOfflineIfCurrent(peerName: String, expectedVersion: Long) {
@@ -2661,7 +2663,7 @@ object P2PMessageRelay {
             }))
 
             bridge.registerSessionListener(guardedSessionListener(listenerVersion, object : BridgeSessionListener {
-                override fun onSessionEstablished(peerName: String, fingerprint: String, endpoint: String, transport: String, aboutMe: String): Boolean {
+                override fun onSessionEstablished(peerName: String, fingerprint: String, endpoint: String, transport: String, aboutMe: String, seq: Long): Boolean {
                     val resolvedPeerName = canonicalPeerName(appContext, peerName, fingerprint, endpoint)
                     val canonicalTransport = canonicalConnectionTransport(transport, endpoint)
                     if (isPlaceholderPeerName(resolvedPeerName)) {
@@ -2699,6 +2701,7 @@ object P2PMessageRelay {
                         transport = canonicalTransport,
                         fingerprint = fingerprint,
                         endpoint = endpoint,
+                        seq = seq,
                     )
 
                     val sharedPrefs = P2PPreferences.prefs(appContext)
@@ -2739,16 +2742,16 @@ object P2PMessageRelay {
                     return true
                 }
 
-                override fun onSessionClosed(peerName: String, fingerprint: String, reason: String) {
+                override fun onSessionClosed(peerName: String, fingerprint: String, reason: String, seq: Long) {
                     val resolvedPeerName = canonicalPeerName(appContext, peerName, fingerprint)
                     log(appContext, "Secure Double Ratchet session closed (peer: $resolvedPeerName, reason: $reason)")
                     // Re-check the Go core inside the offline grace window so a session
                     // replacement (old close arriving after the new connect) does not
                     // flip a live peer to offline.
                     val verify = { getBridge(appContext).isPeerOnline(fingerprint, fingerprint) }
-                    schedulePeerOfflineVerified(resolvedPeerName, verify)
+                    schedulePeerOfflineVerified(resolvedPeerName, verify, seq)
                     if (fingerprint.isNotBlank() && fingerprint != resolvedPeerName) {
-                        schedulePeerOfflineVerified(fingerprint, verify)
+                        schedulePeerOfflineVerified(fingerprint, verify, seq)
                     }
                 }
 

@@ -76,7 +76,7 @@ func TestInboundTorHiddenServiceHandshake(t *testing.T) {
 	}
 	bobMgr.SetOnionAddress("bobnodev3hiddenaddress1234567890abcdefghijklmnopqrstu.onion")
 	bobMgr.SetCallbacks(session.EventCallbacks{
-		OnPeerConnected: func(peerFP, endpoint string) {
+		OnPeerConnected: func(peerFP, endpoint string, seq uint64) {
 			bobConnected <- peerFP
 		},
 		OnMessageReceived: func(peerFP string, payload []byte, msgID string) {
@@ -101,7 +101,7 @@ func TestInboundTorHiddenServiceHandshake(t *testing.T) {
 	}
 	aliceConnected := make(chan string, 1)
 	aliceMgr.SetCallbacks(session.EventCallbacks{
-		OnPeerConnected: func(peerFP, endpoint string) {
+		OnPeerConnected: func(peerFP, endpoint string, seq uint64) {
 			aliceConnected <- peerFP
 		},
 	}, nil)

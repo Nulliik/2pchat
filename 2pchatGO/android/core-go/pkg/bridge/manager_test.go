@@ -285,7 +285,7 @@ func TestConcurrentCallbacksNoDeadlock(t *testing.T) {
 	var cbMu sync.Mutex
 
 	callbacks := session.EventCallbacks{
-		OnPeerConnected: func(peerFP, endpoint string) {
+		OnPeerConnected: func(peerFP, endpoint string, seq uint64) {
 			cbMu.Lock()
 			cbCount++
 			cbMu.Unlock()
@@ -296,7 +296,7 @@ func TestConcurrentCallbacksNoDeadlock(t *testing.T) {
 			_ = mgr.GetLocalFingerprint()
 			_ = mgr.GetOnionAddress()
 		},
-		OnPeerDisconnected: func(peerFP, reason string) {
+		OnPeerDisconnected: func(peerFP, reason string, seq uint64) {
 			cbMu.Lock()
 			cbCount++
 			cbMu.Unlock()
@@ -360,7 +360,7 @@ func TestConcurrentCallbacksNoDeadlock(t *testing.T) {
 			mgr.SetCallbacks(callbacks, nil)
 			activeCallbacks, _ := mgr.callbackSnapshot()
 			if activeCallbacks.OnPeerConnected != nil {
-				activeCallbacks.OnPeerConnected(fp, ep)
+				activeCallbacks.OnPeerConnected(fp, ep, 0)
 			}
 			if activeCallbacks.OnMessageReceived != nil {
 				activeCallbacks.OnMessageReceived(fp, []byte(fmt.Sprintf("hello from worker %d", workerID)), fmt.Sprintf("msg-%d", workerID))
@@ -372,7 +372,7 @@ func TestConcurrentCallbacksNoDeadlock(t *testing.T) {
 				activeCallbacks.OnError(1, "simulated transient error")
 			}
 			if activeCallbacks.OnPeerDisconnected != nil {
-				activeCallbacks.OnPeerDisconnected(fp, "clean shutdown")
+				activeCallbacks.OnPeerDisconnected(fp, "clean shutdown", 0)
 			}
 		}()
 	}

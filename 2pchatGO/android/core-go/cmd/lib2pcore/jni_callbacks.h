@@ -114,9 +114,9 @@ extern "C" {
 #endif
 
 // Reverse Callbacks (Go -> Java)
-void callbackOnPeerConnected(const char *peerFP, const char *endpoint);
+void callbackOnPeerConnected(const char *peerFP, const char *endpoint, uint64_t seq);
 void callbackOnEndpointResult(const char *peerFP, const char *endpoint, jboolean success);
-void callbackOnPeerDisconnected(const char *peerFP, const char *reason);
+void callbackOnPeerDisconnected(const char *peerFP, const char *reason, uint64_t seq);
 void callbackOnMessageReceived(const char *peerFP, const jbyte *payload, jsize len, const char *messageID);
 void callbackOnError(int code, const char *msg);
 void callbackOnPeerDiscovered(const char *infoHashHex, const char *endpoint, const char *source);
