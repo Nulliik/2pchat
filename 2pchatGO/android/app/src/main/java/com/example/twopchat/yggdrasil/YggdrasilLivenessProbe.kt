@@ -214,6 +214,22 @@ object YggdrasilLivenessProbe {
             .take(max)
     }
 
+    /**
+     * Parses the verdict back out of a persisted `[LIVENESS] ...` summary
+     * line (the main screen reads the latest line, not the probe object).
+     * Returns null for blank or unrecognized input.
+     */
+    fun parseVerdict(summaryLine: String?): Verdict? {
+        val line = summaryLine?.trim().orEmpty()
+        if (line.isEmpty()) return null
+        return when {
+            line.contains("] LIVE ") -> Verdict.LIVE
+            line.contains("] PARTIAL ") -> Verdict.PARTIAL
+            line.contains("] DEAD ") -> Verdict.DEAD
+            else -> null
+        }
+    }
+
     /** Combines plane results into the final verdict. */
     fun evaluate(
         mesh: MeshResult,

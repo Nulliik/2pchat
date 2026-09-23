@@ -11,6 +11,7 @@ import com.example.twopchat.config.P2PPreferences
 import com.example.twopchat.config.TrackerPreferences
 import com.example.twopchat.NativeBridge
 import com.example.twopchat.relay.P2PMessageRelay
+import com.example.twopchat.yggdrasil.YggdrasilLivenessProbe
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -38,6 +39,7 @@ internal class ChatsViewModel(
     val heroTrackersOk = mutableStateOf<Boolean?>(null)
     val heroTrackerSuccesses = mutableIntStateOf(0)
     val heroYggOk = mutableStateOf<Boolean?>(null)
+    val heroYggLiveness = mutableStateOf<YggdrasilLivenessProbe.Verdict?>(null)
     val isRefreshingAll = mutableStateOf(false)
 
     private fun prefetchTopActiveChats(peers: Set<String>) {
@@ -136,12 +138,18 @@ internal class ChatsViewModel(
                             val yggAddress = P2PMessageRelay.getYggdrasilAddress()
                             val isYggStateOk = yggState.equals("ENABLED", ignoreCase = true) ||
                                 yggState.equals("CONNECTED", ignoreCase = true)
+                            val yggLivenessLine = runCatching {
+                                appContext.getSharedPreferences(
+                                    YggdrasilLivenessProbe.RUNTIME_PREFS_FILE, Context.MODE_PRIVATE
+                                ).getString(YggdrasilLivenessProbe.PREF_LIVENESS, null)
+                            }.getOrNull()
                             HeroSnapshot(
                                 activePeers = P2PMessageRelay.getActivePeerNames().size,
                                 upnpOk = true,
                                 trackersOk = trackerSuccesses > 0,
                                 trackerSuccesses = trackerSuccesses,
                                 yggOk = isYggStateOk && yggAddress.isNotBlank(),
+                                yggLiveness = YggdrasilLivenessProbe.parseVerdict(yggLivenessLine),
                             )
                         }
                     }.onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }.getOrNull()
@@ -151,6 +159,7 @@ internal class ChatsViewModel(
                         heroTrackersOk.value = it.trackersOk
                         heroTrackerSuccesses.intValue = it.trackerSuccesses
                         heroYggOk.value = it.yggOk
+                        heroYggLiveness.value = it.yggLiveness
                     }
                 }
                 delay(15_000)
@@ -168,6 +177,7 @@ internal class ChatsViewModel(
         val trackersOk: Boolean,
         val trackerSuccesses: Int,
         val yggOk: Boolean,
+        val yggLiveness: YggdrasilLivenessProbe.Verdict?,
     )
 
     companion object {

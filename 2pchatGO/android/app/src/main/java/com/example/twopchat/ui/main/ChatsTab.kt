@@ -10,6 +10,7 @@ import androidx.core.content.edit
 import android.net.VpnService
 import com.example.twopchat.tor.*
 import com.example.twopchat.yggdrasil.PacketTunnelProvider
+import com.example.twopchat.yggdrasil.YggdrasilLivenessProbe
 import org.json.JSONArray
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.background
@@ -183,6 +184,7 @@ fun ChatsTab(
     var heroTrackersOk by chatsViewModel.heroTrackersOk
     var heroTrackerSuccesses by chatsViewModel.heroTrackerSuccesses
     var heroYggOk by chatsViewModel.heroYggOk
+    var heroYggLiveness by chatsViewModel.heroYggLiveness
     var isRefreshingAll by chatsViewModel.isRefreshingAll
     val heroScope = rememberCoroutineScope()
 
@@ -269,10 +271,11 @@ fun ChatsTab(
                             isTorConnecting -> Color(0xFFFFD54F)
                             isTorRunning && heroYggOk == true -> Color(0xFF10B981)
                             isTorRunning -> Color(0xFF10B981)
+                            heroYggOk == true && heroYggLiveness == YggdrasilLivenessProbe.Verdict.DEAD -> Color(0xFFEF4444)
                             else -> primaryColor
                         }
 
-                        val healthStatusText = remember(isTorRunning, isTorConnecting, torBootstrapProgress, heroYggOk, heroActivePeers, appLanguage) {
+                        val healthStatusText = remember(isTorRunning, isTorConnecting, torBootstrapProgress, heroYggOk, heroYggLiveness, heroActivePeers, appLanguage) {
                             val peersText = if (heroActivePeers > 0) "$heroActivePeers" else "0"
                             when {
                                 isTorConnecting -> com.example.twopchat.data.Localizations.tr(
@@ -304,6 +307,16 @@ fun ChatsTab(
                                     fr = "🛡️ Tor 100% • $peersText pairs",
                                     pt = "🛡️ Tor 100% • $peersText pares",
                                     tr = "🛡️ Tor %100 • $peersText eş"
+                                )
+                                heroYggOk == true && heroYggLiveness == YggdrasilLivenessProbe.Verdict.DEAD -> com.example.twopchat.data.Localizations.tr(
+                                    appLanguage,
+                                    ru = "⚠️ P2P Прямое • Yggdrasil (mesh мёртв) • $peersText пир.",
+                                    en = "⚠️ P2P Direct • Yggdrasil (mesh dead) • $peersText peers",
+                                    de = "⚠️ P2P Direkt • Yggdrasil (Mesh tot) • $peersText Peers",
+                                    es = "⚠️ P2P Directo • Yggdrasil (mesh caído) • $peersText pares",
+                                    fr = "⚠️ P2P Direct • Yggdrasil (mesh en panne) • $peersText pairs",
+                                    pt = "⚠️ P2P Direto • Yggdrasil (mesh morto) • $peersText pares",
+                                    tr = "⚠️ Doğrudan P2P • Yggdrasil (mesh ölü) • $peersText eş"
                                 )
                                 heroYggOk == true -> com.example.twopchat.data.Localizations.tr(
                                     appLanguage,
@@ -883,10 +896,18 @@ fun ChatsTab(
                                         )
                                         Spacer(modifier = Modifier.width(6.dp))
                                         Text(
-                                            text = if (heroYggOk == true) "✓ OK" else "✕ Off",
+                                            text = when {
+                                                heroYggOk == true && heroYggLiveness == YggdrasilLivenessProbe.Verdict.DEAD -> "⚠ Mesh dead"
+                                                heroYggOk == true -> "✓ OK"
+                                                else -> "✕ Off"
+                                            },
                                             fontSize = 11.sp,
                                             fontWeight = FontWeight.Bold,
-                                            color = if (heroYggOk == true) Color(0xFF10B981) else Color(0xFFEF4444)
+                                            color = when {
+                                                heroYggOk == true && heroYggLiveness == YggdrasilLivenessProbe.Verdict.DEAD -> Color(0xFFEF4444)
+                                                heroYggOk == true -> Color(0xFF10B981)
+                                                else -> Color(0xFFEF4444)
+                                            }
                                         )
                                     }
                                 }

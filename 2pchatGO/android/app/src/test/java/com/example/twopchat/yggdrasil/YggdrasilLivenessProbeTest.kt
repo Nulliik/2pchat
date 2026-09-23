@@ -163,4 +163,26 @@ class YggdrasilLivenessProbeTest {
         assertFalse(noNet.summaryLine().contains("phone network is fine"))
         assertTrue(noNet.summaryLine().contains("clearnet=DEAD"))
     }
+
+    @Test
+    fun parseVerdictRoundTripsSummaryLines() {
+        val okClearnet = ClearnetResult(true, 10L, 100L, "ok")
+        val lines = listOf(
+            YggdrasilLivenessProbe.evaluate(
+                MeshResult(MeshState.LIVE, "[200:aaaa::1]:80", 50L, "connected, http=200"), 3, 6, okClearnet
+            ).summaryLine() to YggdrasilLivenessProbe.Verdict.LIVE,
+            YggdrasilLivenessProbe.evaluate(
+                MeshResult(MeshState.UNVERIFIED, null, null, "no endpoint"), 3, 6, okClearnet
+            ).summaryLine() to YggdrasilLivenessProbe.Verdict.PARTIAL,
+            YggdrasilLivenessProbe.evaluate(
+                MeshResult(MeshState.DEAD, "[200:aaaa::1]:80", null, "timeout"), 0, 6, okClearnet
+            ).summaryLine() to YggdrasilLivenessProbe.Verdict.DEAD,
+        )
+        for ((line, expected) in lines) {
+            assertEquals(expected, YggdrasilLivenessProbe.parseVerdict(line))
+        }
+        assertNull(YggdrasilLivenessProbe.parseVerdict(null))
+        assertNull(YggdrasilLivenessProbe.parseVerdict(""))
+        assertNull(YggdrasilLivenessProbe.parseVerdict("unrelated log line"))
+    }
 }
