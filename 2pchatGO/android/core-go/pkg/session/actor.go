@@ -67,6 +67,7 @@ type PeerActor struct {
 	receivedIDs   map[string]bool
 	receivedOrder []string
 	counter       uint64
+	eventSeq      uint64
 	online        int32
 	ctx           context.Context
 	cancel        context.CancelFunc
@@ -119,10 +120,18 @@ func NewPeerActor(
 	go actor.eventLoop()
 
 	if callbacks.OnPeerConnected != nil {
-		callbacks.OnPeerConnected(peerFP, endpoint, 0)
+		callbacks.OnPeerConnected(peerFP, endpoint, actor.nextEventSeq())
 	}
 
 	return actor, nil
+}
+
+// nextEventSeq issues a strictly increasing, non-zero event sequence for
+// this peer's connect/disconnect notifications, so they are orderable in
+// the same total order as manager-emitted events (zero means "unordered"
+// and is never a valid stamp for a live source).
+func (a *PeerActor) nextEventSeq() uint64 {
+	return atomic.AddUint64(&a.eventSeq, 1)
 }
 
 func (a *PeerActor) getChatStream() net.Conn {
@@ -163,7 +172,7 @@ func (a *PeerActor) eventLoop() {
 	defer func() {
 		atomic.StoreInt32(&a.online, 0)
 		if a.callbacks.OnPeerDisconnected != nil {
-			a.callbacks.OnPeerDisconnected(a.peerFP, "actor terminated", 0)
+			a.callbacks.OnPeerDisconnected(a.peerFP, "actor terminated", a.nextEventSeq())
 		}
 		if a.muxSession != nil {
 			_ = a.muxSession.Close()

@@ -21,8 +21,8 @@ internal class RelayMaintenanceCoordinator(
     private val isRunning: () -> Boolean,
     private val peerEndpoints: Map<String, String>,
     private val presenceVersion: (String) -> Long,
-    private val onPeerObservedOnline: (Context, String, String?, Long) -> Unit,
-    private val onPeerObservedOffline: (String, Long) -> Unit,
+    private val onPeerObservedOnline: (Context, String, String?, String, Long) -> Unit,
+    private val onPeerObservedOffline: (String, String, Long) -> Unit,
     private val log: (Context, String, String, Throwable?) -> Unit,
 ) {
     private val lastReconnectAttemptAt = ConcurrentHashMap<String, Long>()
@@ -149,11 +149,13 @@ internal class RelayMaintenanceCoordinator(
                                     appContext,
                                     peerName,
                                     transport,
+                                    fingerprint ?: "",
                                     presenceVersions.getValue(peerName),
                                     )
                             } else {
                                 onPeerObservedOffline(
                                     peerName,
+                                    fingerprint ?: "",
                                     presenceVersions.getValue(peerName),
                                 )
                             }

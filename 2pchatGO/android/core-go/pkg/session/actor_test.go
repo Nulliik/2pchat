@@ -202,3 +202,51 @@ func TestPeerActorAuxiliaryStreamClosureDoesNotTerminateActor(t *testing.T) {
 		t.Fatalf("Bob actor online status is false after auxiliary stream close")
 	}
 }
+
+// TestPeerActorEventSequences verifies that the actor stamps its
+// connect/disconnect events with strictly increasing, non-zero sequences.
+// Zero is reserved for unordered sources and must never come from a live
+// peer actor.
+func TestPeerActorEventSequences(t *testing.T) {
+	connected := make(chan uint64, 1)
+	disconnected := make(chan uint64, 1)
+
+	callbacks := EventCallbacks{
+		OnPeerConnected: func(peerFP, endpoint string, seq uint64) {
+			connected <- seq
+		},
+		OnPeerDisconnected: func(peerFP, reason string, seq uint64) {
+			disconnected <- seq
+		},
+	}
+
+	actor, err := NewPeerActor("seq-test-fp", "seq-test", false, false, nil, nil, callbacks)
+	if err != nil {
+		t.Fatalf("NewPeerActor: %v", err)
+	}
+
+	var connectSeq, disconnectSeq uint64
+	select {
+	case connectSeq = <-connected:
+	case <-time.After(2 * time.Second):
+		t.Fatal("connect event was not emitted")
+	}
+	if connectSeq == 0 {
+		t.Fatalf("connect event must carry a non-zero sequence, got 0")
+	}
+
+	if err := actor.Close("test done"); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	select {
+	case disconnectSeq = <-disconnected:
+	case <-time.After(2 * time.Second):
+		t.Fatal("disconnect event was not emitted")
+	}
+	if disconnectSeq == 0 {
+		t.Fatalf("disconnect event must carry a non-zero sequence, got 0")
+	}
+	if disconnectSeq <= connectSeq {
+		t.Fatalf("expected disconnect seq %d to be greater than connect seq %d", disconnectSeq, connectSeq)
+	}
+}

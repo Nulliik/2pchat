@@ -16,8 +16,9 @@ import java.util.concurrent.atomic.AtomicLong
  * Single source of truth for peer connection presence.
  *
  * All state changes go through the versioned [observeOnline] / [observeOffline]
- * ingests. Pulls (JNI `isPeerOnline`) are read-only and can never overwrite a
- * newer event, which fixes the stale-pull-overwrites-fresh-push desync.
+ * ingests. Pull observations only apply through the *IfVersion methods,
+ * which fail (drop) if a newer event landed since the pull captured its
+ * version — a stale pull can never overwrite a fresh push.
  *
  * State is keyed by the authenticated fingerprint; nicknames are aliases.
  * An offline flip is debounced by [OFFLINE_UI_GRACE_MS] so a session-replacement
@@ -178,6 +179,10 @@ internal object PresenceRepository {
      * Ingests a live-session observation. Returns the ingest version.
      * Cancels any pending offline grace for the peer.
      *
+     * Pass [fingerprint] when it is known: the alias binding and the state
+     * write then land in one serialized Main block, so state can never end
+     * up under a nickname key that later dangles behind the alias.
+     *
      * @param seq Go event sequence; stale (already-seen) sequences are dropped.
      */
     fun observeOnline(
@@ -185,12 +190,16 @@ internal object PresenceRepository {
         transport: String? = null,
         endpoint: String? = null,
         seq: Long = 0,
+        fingerprint: String? = null,
     ): Long {
-        val key = resolveKey(peerNameOrFp)
+        val key = fingerprint?.takeIf { it.isNotBlank() } ?: resolveKey(peerNameOrFp)
         if (!acceptSeq(key, seq)) return version(key).get()
         val v = version(key).incrementAndGet()
         onMain {
             offlineJobs.remove(key)?.cancel()
+            if (fingerprint != null && fingerprint != peerNameOrFp) {
+                nameToKey[peerNameOrFp] = fingerprint
+            }
             states[key] = PeerPresence.Online(transport, endpoint, System.currentTimeMillis())
         }
         return v
@@ -204,18 +213,23 @@ internal object PresenceRepository {
      *        offline flip is cancelled.
      * @param immediate apply the offline state now (e.g. explicit wire-level
      *        status=offline) instead of after the grace delay.
+     * @param fingerprint canonical key; see [observeOnline].
      */
     fun observeOffline(
         peerNameOrFp: String,
         verifyOnline: (() -> Boolean)? = null,
         immediate: Boolean = false,
         seq: Long = 0,
+        fingerprint: String? = null,
     ): Long {
-        val key = resolveKey(peerNameOrFp)
+        val key = fingerprint?.takeIf { it.isNotBlank() } ?: resolveKey(peerNameOrFp)
         if (!acceptSeq(key, seq)) return version(key).get()
         val v = version(key).incrementAndGet()
         onMain {
             offlineJobs.remove(key)?.cancel()
+            if (fingerprint != null && fingerprint != peerNameOrFp) {
+                nameToKey[peerNameOrFp] = fingerprint
+            }
             if (immediate) {
                 states[key] = PeerPresence.Offline(System.currentTimeMillis())
             } else {
@@ -229,6 +243,62 @@ internal object PresenceRepository {
             }
         }
         return v
+    }
+
+    /**
+     * Pull-side ingest, version-gated: applies only if no newer event landed
+     * after [expectedVersion] was captured. The CAS is on the same counter
+     * events increment, so a push that raced the pull wins and the stale pull
+     * result is dropped.
+     */
+    fun observeOnlineIfVersion(
+        peerNameOrFp: String,
+        transport: String? = null,
+        endpoint: String? = null,
+        expectedVersion: Long,
+        fingerprint: String? = null,
+    ): Boolean {
+        val key = fingerprint?.takeIf { it.isNotBlank() } ?: resolveKey(peerNameOrFp)
+        val v = version(key)
+        if (!v.compareAndSet(expectedVersion, expectedVersion + 1)) return false
+        onMain {
+            offlineJobs.remove(key)?.cancel()
+            if (fingerprint != null && fingerprint != peerNameOrFp) {
+                nameToKey[peerNameOrFp] = fingerprint
+            }
+            states[key] = PeerPresence.Online(transport, endpoint, System.currentTimeMillis())
+        }
+        return true
+    }
+
+    /** Pull-side offline flip, version-gated like [observeOnlineIfVersion]. */
+    fun observeOfflineIfVersion(
+        peerNameOrFp: String,
+        immediate: Boolean = false,
+        expectedVersion: Long,
+        fingerprint: String? = null,
+    ): Boolean {
+        val key = fingerprint?.takeIf { it.isNotBlank() } ?: resolveKey(peerNameOrFp)
+        val v = version(key)
+        if (!v.compareAndSet(expectedVersion, expectedVersion + 1)) return false
+        val version = v.get()
+        onMain {
+            offlineJobs.remove(key)?.cancel()
+            if (fingerprint != null && fingerprint != peerNameOrFp) {
+                nameToKey[peerNameOrFp] = fingerprint
+            }
+            if (immediate) {
+                states[key] = PeerPresence.Offline(System.currentTimeMillis())
+            } else {
+                offlineJobs[key] = mainScope.launch {
+                    delay(OFFLINE_UI_GRACE_MS)
+                    if (v.get() != version) return@launch // superseded by a newer event
+                    states[key] = PeerPresence.Offline(System.currentTimeMillis())
+                    offlineJobs.remove(key)
+                }
+            }
+        }
+        return true
     }
 
     /** Moves a peer's state from an old name to a new name (optionally to its fingerprint). */

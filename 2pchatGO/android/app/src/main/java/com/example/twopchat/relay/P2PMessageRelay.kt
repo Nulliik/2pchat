@@ -575,15 +575,18 @@ object P2PMessageRelay {
         isRunning = { isRunning },
         peerEndpoints = _peerEndpoints,
         presenceVersion = { com.example.twopchat.presence.PresenceRepository.currentVersion(it) },
-        onPeerObservedOnline = { context, peerName, transport, observedVersion ->
+        onPeerObservedOnline = { context, peerName, transport, fingerprint, observedVersion ->
             publishPeerOnlineIfCurrent(
                 context = context,
                 peerName = peerName,
                 transport = transport,
+                fingerprint = fingerprint,
                 expectedVersion = observedVersion,
             )
         },
-        onPeerObservedOffline = ::schedulePeerOfflineIfCurrent,
+        onPeerObservedOffline = { peerName, fingerprint, observedVersion ->
+            schedulePeerOfflineIfCurrent(peerName, observedVersion, fingerprint)
+        },
         log = ::log,
     )
 
@@ -625,14 +628,14 @@ object P2PMessageRelay {
         endpoint: String = "",
         seq: Long = 0,
     ) {
-        if (fingerprint.isNotBlank()) {
-            com.example.twopchat.presence.PresenceRepository.bindName(peerName, fingerprint)
-        }
+        // Alias binding + state write happen in one serialized Main block
+        // inside the repository; no separate bindName here.
         com.example.twopchat.presence.PresenceRepository.observeOnline(
             peerName,
             transport,
             endpoint.ifBlank { null },
             seq,
+            fingerprint.ifBlank { null },
         )
         if (transport != null) runOnMain {
             peerConnectionTransports[peerName] = transport
@@ -644,10 +647,17 @@ object P2PMessageRelay {
         peerName: String,
         transport: String?,
         expectedVersion: Long,
+        fingerprint: String = "",
     ) {
-        // The maintenance pull reflects the Go core's current state, so applying it is
-        // always self-healing, even if a session event arrived mid-cycle.
-        publishPeerOnline(peerName, transport)
+        // Version-gated: if a session event landed between the pull and this
+        // write, the CAS fails and the stale pull result is dropped.
+        com.example.twopchat.presence.PresenceRepository.observeOnlineIfVersion(
+            peerName,
+            transport,
+            peerEndpoints[peerName].orEmpty().ifEmpty { null },
+            expectedVersion,
+            fingerprint.ifBlank { null },
+        )
         sendConnectedPeerHeartbeat(context, peerName)
         val endpoint = peerEndpoints[peerName].orEmpty()
         processOfflineQueue(context, peerName, endpoint)
@@ -664,22 +674,41 @@ object P2PMessageRelay {
         )
     }
 
-    private fun clearPeerPresenceImmediately(peerName: String) {
-        com.example.twopchat.presence.PresenceRepository.observeOffline(peerName, immediate = true)
+    private fun clearPeerPresenceImmediately(peerName: String, fingerprint: String? = null) {
+        com.example.twopchat.presence.PresenceRepository.observeOffline(
+            peerName,
+            immediate = true,
+            fingerprint = fingerprint?.takeIf { it.isNotBlank() },
+        )
     }
 
-    private fun schedulePeerOffline(peerName: String) {
-        com.example.twopchat.presence.PresenceRepository.observeOffline(peerName)
+    private fun schedulePeerOfflineVerified(
+        peerName: String,
+        fingerprint: String?,
+        verifyOnline: () -> Boolean,
+        seq: Long = 0,
+    ) {
+        com.example.twopchat.presence.PresenceRepository.observeOffline(
+            peerName,
+            verifyOnline = verifyOnline,
+            seq = seq,
+            fingerprint = fingerprint?.takeIf { it.isNotBlank() },
+        )
     }
 
-    private fun schedulePeerOfflineVerified(peerName: String, verifyOnline: () -> Boolean, seq: Long = 0) {
-        com.example.twopchat.presence.PresenceRepository.observeOffline(peerName, verifyOnline = verifyOnline, seq = seq)
+    private fun schedulePeerOfflineIfCurrent(
+        peerName: String,
+        expectedVersion: Long,
+        fingerprint: String = "",
+    ) {
+        // Version-gated pull flip; dropped if a newer event landed first.
+        com.example.twopchat.presence.PresenceRepository.observeOfflineIfVersion(
+            peerName,
+            expectedVersion = expectedVersion,
+            fingerprint = fingerprint.ifBlank { null },
+        )
     }
 
-    private fun schedulePeerOfflineIfCurrent(peerName: String, expectedVersion: Long) {
-        // The pull is the Go core's current state; the same self-healing rule applies.
-        schedulePeerOffline(peerName)
-    }
     internal val outboundMessenger by lazy {
         P2POutboundMessenger(_peerEndpoints, ::log) { peerName, messageId, status ->
             serviceScope.launch(Dispatchers.Main) {
@@ -2687,7 +2716,7 @@ object P2PMessageRelay {
                         return true
                     }
                     if (!P2PPreferences.publishPeerIdentityIfExpected(appContext, resolvedPeerName, fingerprint, endpoint, aboutMe)) {
-                        clearPeerPresenceImmediately(resolvedPeerName)
+                        clearPeerPresenceImmediately(resolvedPeerName, fingerprint)
                         return false
                     }
                     if (aboutMe.isNotBlank()) {
@@ -2695,7 +2724,6 @@ object P2PMessageRelay {
                         ChatDatabaseHelper.getInstance(appContext).savePeerAboutMe(fingerprint, aboutMe)
                     }
                     getBridge(appContext).updatePeerNameMapping(fingerprint, resolvedPeerName)
-                    com.example.twopchat.presence.PresenceRepository.bindName(resolvedPeerName, fingerprint)
                     log(appContext, "Secure Double Ratchet session established")
                     publishPeerOnline(
                         peerName = resolvedPeerName,
@@ -2750,10 +2778,7 @@ object P2PMessageRelay {
                     // replacement (old close arriving after the new connect) does not
                     // flip a live peer to offline.
                     val verify = { getBridge(appContext).isPeerOnline(fingerprint, fingerprint) }
-                    schedulePeerOfflineVerified(resolvedPeerName, verify, seq)
-                    if (fingerprint.isNotBlank() && fingerprint != resolvedPeerName) {
-                        schedulePeerOfflineVerified(fingerprint, verify, seq)
-                    }
+                    schedulePeerOfflineVerified(resolvedPeerName, fingerprint.ifBlank { null }, verify, seq)
                 }
 
                 override fun onPeerRoutesUpdated(peerName: String, fingerprint: String, endpoints: String) {

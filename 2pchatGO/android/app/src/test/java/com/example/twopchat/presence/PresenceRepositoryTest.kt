@@ -82,4 +82,81 @@ class PresenceRepositoryTest {
         advanceGrace()
         assertFalse("stale snapshot must take effect after the grace window", PresenceRepository.isOnline(fp))
     }
+
+    @Test
+    fun ingestWithFingerprintLandsStateUnderCanonicalKey() {
+        // A first connect for a fresh nickname must not leave state under a
+        // nickname key that later dangles: the alias and the state land in
+        // one serialized block.
+        PresenceRepository.observeOnline("NewPeer", "tor", "onion", seq = 1, fingerprint = fp)
+        assertTrue("state must land under the fingerprint", PresenceRepository.isOnline(fp))
+        assertTrue("nickname must resolve to the same canonical state", PresenceRepository.isOnline("NewPeer"))
+    }
+
+    @Test
+    fun offlineIngestWithFingerprintLandsUnderCanonicalKey() {
+        PresenceRepository.observeOnline("NewPeer", "tor", "onion", seq = 1, fingerprint = fp)
+        PresenceRepository.observeOffline("NewPeer", immediate = true, seq = 2, fingerprint = fp)
+        assertFalse("canonical key must be offline", PresenceRepository.isOnline(fp))
+        assertFalse("nickname alias must follow the canonical state", PresenceRepository.isOnline("NewPeer"))
+    }
+
+    @Test
+    fun stalePullWriteIsDroppedWhenNewerEventLanded() {
+        // The review scenario: the pull captured its version, then a fresh
+        // session event landed before the pull result came back.
+        val versionAtPullStart = PresenceRepository.observeOnline(fp, "direct", "1.2.3.4:50001", seq = 1)
+        PresenceRepository.observeOffline(fp, immediate = true, seq = 2)
+        val applied = PresenceRepository.observeOnlineIfVersion(
+            peerNameOrFp = fp,
+            transport = "direct",
+            endpoint = "1.2.3.4:50001",
+            expectedVersion = versionAtPullStart,
+        )
+        assertFalse("stale pull result must not overwrite the newer disconnect", applied)
+        assertFalse(PresenceRepository.isOnline(fp))
+    }
+
+    @Test
+    fun pullWriteAppliesWhenNoNewerEventLanded() {
+        PresenceRepository.observeOnline(fp, "direct", "1.2.3.4:50001", seq = 1)
+        val versionAtPullStart = PresenceRepository.currentVersion(fp)
+        val applied = PresenceRepository.observeOnlineIfVersion(
+            peerNameOrFp = fp,
+            transport = "tor",
+            endpoint = "onion",
+            expectedVersion = versionAtPullStart,
+        )
+        assertTrue(applied)
+        assertTrue(PresenceRepository.isOnline(fp))
+    }
+
+    @Test
+    fun pullOfflineFlipHonoursGraceWindow() {
+        PresenceRepository.observeOnline(fp, seq = 1)
+        val versionAtPullStart = PresenceRepository.currentVersion(fp)
+        assertTrue(
+            PresenceRepository.observeOfflineIfVersion(
+                peerNameOrFp = fp,
+                expectedVersion = versionAtPullStart,
+            ),
+        )
+        assertTrue("grace window still applies to version-gated pull flips", PresenceRepository.isOnline(fp))
+        advanceGrace()
+        assertFalse("pull offline flip must land after the grace window", PresenceRepository.isOnline(fp))
+    }
+
+    @Test
+    fun pullOfflineFlipIsDroppedWhenConnectRaced() {
+        PresenceRepository.observeOnline(fp, seq = 1)
+        val versionAtPullStart = PresenceRepository.currentVersion(fp)
+        PresenceRepository.observeOnline(fp, "tor", "onion", seq = 2)
+        val applied = PresenceRepository.observeOfflineIfVersion(
+            peerNameOrFp = fp,
+            expectedVersion = versionAtPullStart,
+        )
+        assertFalse("stale pull offline must be dropped", applied)
+        advanceGrace()
+        assertTrue(PresenceRepository.isOnline(fp))
+    }
 }

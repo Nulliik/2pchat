@@ -592,7 +592,14 @@ object NativeBridge {
         data class FileProgress(val peerFP: String, val messageID: String, val transferred: Long, val total: Long, val speedKbps: Double) : NativeEvent()
     }
 
-    private val eventChannel = kotlinx.coroutines.channels.Channel<NativeEvent>(kotlinx.coroutines.channels.Channel.UNLIMITED)
+    // Bounded with drop-oldest: a stalled consumer must not let JNI producer
+    // threads accumulate unbounded memory. Newest events are kept, and
+    // presence self-heals from the Go snapshot reconcile on the next
+    // maintenance cycle if a presence event is dropped.
+    private val eventChannel = kotlinx.coroutines.channels.Channel<NativeEvent>(
+        1024,
+        kotlinx.coroutines.channels.BufferOverflow.DROP_OLDEST,
+    )
 
     private val eventConsumer = bridgeScope.launch(kotlinx.coroutines.Dispatchers.Default) {
         for (event in eventChannel) {
