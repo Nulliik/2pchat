@@ -51,7 +51,9 @@ internal object PresenceRepository {
     private val eventSeq = ConcurrentHashMap<String, AtomicLong>()
     private val offlineJobs = ConcurrentHashMap<String, Job>()
 
-    private val mainScope = CoroutineScope(Dispatchers.Main.immediate)
+    // Lazy so the Main dispatcher is bound on first use, not at class load
+    // (keeps the object testable with Dispatchers.setMain).
+    private val mainScope by lazy { CoroutineScope(Dispatchers.Main.immediate) }
 
     private fun onMain(block: () -> Unit) {
         // Main.immediate runs the block inline when already on the main thread,

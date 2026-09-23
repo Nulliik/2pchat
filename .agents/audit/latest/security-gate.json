@@ -1,18 +1,44 @@
-{
-  "status": "PARTIAL",
-  "timestamp": "2026-09-18T09:10:24+03:00",
-  "scope": [
-    "2pchatGO/android/app/src/main/java/com/example/twopchat/yggdrasil/ConfigurationProxy.kt",
-    "2pchatGO/android/app/src/test/java/com/example/twopchat/yggdrasil/ConfigurationProxyPersistenceTest.kt"
-  ],
-  "results": [
-    {"command":"go build ./...","cwd":"2pchatGO/android/core-go","exit_code":0,"status":"PASS","duration_seconds":3.6},
-    {"command":"go test ./...","cwd":"2pchatGO/android/core-go","exit_code":0,"status":"PASS","duration_seconds":7.02},
-    {"command":"go test -race ./...","cwd":"2pchatGO/android/core-go","exit_code":0,"status":"PASS","duration_seconds":9.71},
-    {"command":"go vet ./...","cwd":"2pchatGO/android/core-go","exit_code":0,"status":"PASS","duration_seconds":0.73},
-    {"command":"./gradlew.bat testDebugUnitTest lintDebug --console=plain","cwd":"2pchatGO/android","exit_code":0,"status":"PASS","duration_seconds":152,"summary":"800 tests passed, 1 skipped; lintDebug passed; buildGoCoreBinaries executed."},
-    {"command":"./gradlew.bat assembleDebug --console=plain","cwd":"2pchatGO/android","exit_code":0,"status":"PASS","duration_seconds":12,"summary":"Debug APK assembled; buildGoCoreBinaries executed."},
-    {"command":"staticcheck, govulncheck, semgrep, gitleaks, trivy","cwd":"repository root","exit_code":null,"status":"UNVERIFIED","summary":"Tools unavailable on PATH."},
-    {"command":"adb devices","cwd":"repository root","exit_code":0,"status":"UNVERIFIED","summary":"No emulator or device connected; runtime behavior on API 24-25 was not exercised."}
-  ]
-}
+[
+  {
+    "name": "go-build",
+    "status": "PASS",
+    "exit_code": 0,
+    "duration_sec": 1.89,
+    "stdout_tail": "",
+    "stderr_tail": ""
+  },
+  {
+    "name": "go-test",
+    "status": "PASS",
+    "exit_code": 0,
+    "duration_sec": 2.0,
+    "stdout_tail": "?   \ttwopchat/core/cmd/2pcore-cli\t[no test files]\n?   \ttwopchat/core/cmd/lib2pcore\t[no test files]\n?   \ttwopchat/core/cmd/soak\t[no test files]\nok  \ttwopchat/core/pkg/bridge\t(cached)\nok  \ttwopchat/core/pkg/crypto\t(cached)\nok  \ttwopchat/core/pkg/diagnostics\t(cached)\nok  \ttwopchat/core/pkg/discovery\t(cached)\nok  \ttwopchat/core/pkg/protocol\t(cached)\nok  \ttwopchat/core/pkg/session\t(cached)\nok  \ttwopchat/core/pkg/transport\t(cached)\n",
+    "stderr_tail": ""
+  },
+  {
+    "name": "go-race",
+    "status": "PASS",
+    "exit_code": 0,
+    "duration_sec": 2.05,
+    "stdout_tail": "?   \ttwopchat/core/cmd/2pcore-cli\t[no test files]\n?   \ttwopchat/core/cmd/lib2pcore\t[no test files]\n?   \ttwopchat/core/cmd/soak\t[no test files]\nok  \ttwopchat/core/pkg/bridge\t(cached)\nok  \ttwopchat/core/pkg/crypto\t(cached)\nok  \ttwopchat/core/pkg/diagnostics\t(cached)\nok  \ttwopchat/core/pkg/discovery\t(cached)\nok  \ttwopchat/core/pkg/protocol\t(cached)\nok  \ttwopchat/core/pkg/session\t(cached)\nok  \ttwopchat/core/pkg/transport\t(cached)\n",
+    "stderr_tail": ""
+  },
+  {
+    "name": "go-vet",
+    "status": "PASS",
+    "exit_code": 0,
+    "duration_sec": 0.6,
+    "stdout_tail": "",
+    "stderr_tail": ""
+  },
+  {
+    "name": "android-unit",
+    "status": "UNVERIFIED",
+    "error": "[WinError 2] \u041d\u0435 \u0443\u0434\u0430\u0435\u0442\u0441\u044f \u043d\u0430\u0439\u0442\u0438 \u0443\u043a\u0430\u0437\u0430\u043d\u043d\u044b\u0439 \u0444\u0430\u0439\u043b"
+  },
+  {
+    "name": "android-apk",
+    "status": "UNVERIFIED",
+    "error": "[WinError 2] \u041d\u0435 \u0443\u0434\u0430\u0435\u0442\u0441\u044f \u043d\u0430\u0439\u0442\u0438 \u0443\u043a\u0430\u0437\u0430\u043d\u043d\u044b\u0439 \u0444\u0430\u0439\u043b"
+  }
+]
