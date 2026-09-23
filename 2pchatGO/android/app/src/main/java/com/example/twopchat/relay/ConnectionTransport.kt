@@ -17,17 +17,12 @@ internal enum class ConnectionTransportKind {
 internal fun connectionTransportKind(
     rawTransport: String?,
     endpoint: String? = null,
-    preferSpecificEndpoint: Boolean = false,
 ): ConnectionTransportKind {
-    val endpointKind = endpointTransportKind(endpoint)
-    // A concrete onion/Yggdrasil destination is more specific than a stale
-    // generic Direct P2P label kept by the UI from an earlier connection.
-    if (preferSpecificEndpoint &&
-        (endpointKind == ConnectionTransportKind.ONION || endpointKind == ConnectionTransportKind.YGGDRASIL)
-    ) {
-        return endpointKind
-    }
-
+    // The live session's transport label (written by the bridge on session
+    // establishment) is authoritative. The endpoint argument is often the
+    // comma-joined candidate list of every known peer address (IPv4,
+    // Yggdrasil, onion) rather than the live route, so it is only a fallback
+    // when no live label is available.
     val normalized = rawTransport.orEmpty().trim().lowercase()
     when {
         "onion" in normalized || "tor" in normalized -> return ConnectionTransportKind.ONION
@@ -37,7 +32,7 @@ internal fun connectionTransportKind(
             return ConnectionTransportKind.DIRECT
     }
 
-    return endpointKind
+    return endpointTransportKind(endpoint)
 }
 
 private fun endpointTransportKind(endpoint: String?): ConnectionTransportKind {
@@ -71,7 +66,7 @@ private fun isYggdrasilIpv6(host: String): Boolean {
 internal fun canonicalConnectionTransport(
     rawTransport: String?,
     endpoint: String? = null,
-): String? = when (connectionTransportKind(rawTransport, endpoint, preferSpecificEndpoint = true)) {
+): String? = when (connectionTransportKind(rawTransport, endpoint)) {
     ConnectionTransportKind.ONION -> "Tor Onion"
     ConnectionTransportKind.DIRECT -> "Direct P2P"
     ConnectionTransportKind.YGGDRASIL -> "Yggdrasil"
@@ -101,7 +96,7 @@ fun resolveTransportType(
     isOnline: Boolean = true,
 ): TransportType {
     if (!isOnline) return TransportType.DISCONNECTED
-    return when (connectionTransportKind(rawTransport, endpoint, preferSpecificEndpoint = true)) {
+    return when (connectionTransportKind(rawTransport, endpoint)) {
         ConnectionTransportKind.ONION -> TransportType.ONION
         ConnectionTransportKind.DIRECT -> TransportType.DIRECT
         ConnectionTransportKind.YGGDRASIL -> TransportType.YGGDRASIL

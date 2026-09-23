@@ -88,14 +88,6 @@ class ConnectionTransportSyncTest {
             ConnectionTransportKind.YGGDRASIL,
             connectionTransportKind("ygg_mesh", "127.0.0.1:9053")
         )
-        assertEquals(
-            "Yggdrasil",
-            canonicalConnectionTransport("Direct P2P", "[200:1234:5678::1]:50001")
-        )
-        assertEquals(
-            "Tor Onion",
-            canonicalConnectionTransport("Direct P2P", "vww6ybal4bd7szmgncyruucpgfkqahzddi37ktceo3ah7ngmcopnpyyd.onion:50001")
-        )
     }
 
     @Test
@@ -177,5 +169,26 @@ class ConnectionTransportSyncTest {
         val yggRoute = endpoints.firstOrNull { it.contains("[200:") }
         assertNotNull(yggRoute)
         assertEquals("[200:abcd:1234::1]:50001", yggRoute)
+    }
+
+    @Test
+    fun testLiveTransportLabelWinsOverStaleCandidateList() {
+        // peerEndpoints is a comma-joined candidate list of every known peer
+        // address (IPv4 + Yggdrasil + onion), not the live route. A stale
+        // onion candidate must not relabel a live direct/ygg session as Tor.
+        val candidates =
+            "192.168.1.50:50001,[200:abcd::12]:50001,vww6ybal4bd7szmgncyruucpgfkqahzddi37ktceo3ah7ngmcopnpyyd.onion:50001"
+        assertEquals(
+            TransportType.DIRECT,
+            resolveTransportType("Direct P2P", candidates, isOnline = true)
+        )
+        assertEquals(
+            TransportType.YGGDRASIL,
+            resolveTransportType("Yggdrasil", candidates, isOnline = true)
+        )
+        assertEquals(
+            TransportType.ONION,
+            resolveTransportType("Tor Onion", candidates, isOnline = true)
+        )
     }
 }
