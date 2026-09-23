@@ -1690,7 +1690,7 @@ object P2PMessageRelay {
                                 "heartbeat" -> return
                                 "profile_request" -> {
                                     val requester = payloadNickname.ifBlank { resolvedSender }
-                                    log(appContext, "Received profile request from $requester, replying with full profile", "INFO", null)
+                                    log(appContext, "Received profile request from $requester, replying with full profile", "DEBUG", null)
                                     shareAvatar(appContext, requester, force = true)
                                     return
                                 }
@@ -1934,14 +1934,12 @@ object P2PMessageRelay {
                                                             avatarCache.put(sender, bitmap)
                                                         }
                                                     }
-                                                    log(appContext, "Received and cached an authenticated peer avatar for $resolvedSender")
-                                                    
                                                     try {
                                                         avatarCache.savePersisted(appContext, resolvedSender, bitmap)
                                                         if (resolvedSender != sender) {
                                                             avatarCache.savePersisted(appContext, sender, bitmap)
                                                         }
-                                                        log(appContext, "Saved an encrypted peer avatar")
+                                                        log(appContext, "Accepted and saved authenticated peer avatar for $resolvedSender")
                                                     } catch (saveEx: Exception) {
                                                         log(appContext, "Failed to save avatar file: ${saveEx.message}", "ERROR", saveEx)
                                                     }
@@ -2711,7 +2709,7 @@ object P2PMessageRelay {
                         // it contains the identity information needed to bind the nickname.
                         // This used to send only the optional onion-address control message,
                         // leaving anonymous peers unable to complete profile discovery.
-                        log(appContext, "Authenticated unnamed session awaiting identity information - sending self profile")
+                        log(appContext, "Authenticated unnamed session awaiting identity information - sending self profile", "DEBUG")
                         shareAvatar(appContext, fingerprint, endpoint, force = true)
                         return true
                     }
@@ -2799,11 +2797,21 @@ object P2PMessageRelay {
                             else -> onionRoute
                         }
                         if (onionHost.endsWith(".onion", ignoreCase = true)) {
-                            P2PPreferences.setPeerOnionAddress(appContext, resolvedPeerName, onionHost)
-                            if (fingerprint.isNotBlank() && fingerprint != resolvedPeerName) {
-                                P2PPreferences.setPeerOnionAddress(appContext, fingerprint, onionHost)
+                            val changed = !onionHost.equals(
+                                P2PPreferences.getPeerOnionAddress(appContext, resolvedPeerName)?.substringBefore(':'),
+                                ignoreCase = true,
+                            ) || (fingerprint.isNotBlank() && fingerprint != resolvedPeerName &&
+                                !onionHost.equals(
+                                    P2PPreferences.getPeerOnionAddress(appContext, fingerprint)?.substringBefore(':'),
+                                    ignoreCase = true,
+                                ))
+                            if (changed) {
+                                P2PPreferences.setPeerOnionAddress(appContext, resolvedPeerName, onionHost)
+                                if (fingerprint.isNotBlank() && fingerprint != resolvedPeerName) {
+                                    P2PPreferences.setPeerOnionAddress(appContext, fingerprint, onionHost)
+                                }
+                                log(appContext, "Saved authenticated Tor .onion address for $resolvedPeerName: $onionHost")
                             }
-                            log(appContext, "Saved authenticated Tor .onion address for $resolvedPeerName: $onionHost")
                         }
                     }
 
@@ -2814,11 +2822,16 @@ object P2PMessageRelay {
                         .map { it.trim() }
                         .firstOrNull { P2PPreferences.isYggdrasilEndpoint(it) }
                     if (!yggRoute.isNullOrBlank()) {
-                        P2PPreferences.setPeerYggdrasilAddress(appContext, resolvedPeerName, yggRoute)
-                        if (fingerprint.isNotBlank() && fingerprint != resolvedPeerName) {
-                            P2PPreferences.setPeerYggdrasilAddress(appContext, fingerprint, yggRoute)
+                        val changed = yggRoute != P2PPreferences.getPeerYggdrasilAddress(appContext, resolvedPeerName) ||
+                            (fingerprint.isNotBlank() && fingerprint != resolvedPeerName &&
+                                yggRoute != P2PPreferences.getPeerYggdrasilAddress(appContext, fingerprint))
+                        if (changed) {
+                            P2PPreferences.setPeerYggdrasilAddress(appContext, resolvedPeerName, yggRoute)
+                            if (fingerprint.isNotBlank() && fingerprint != resolvedPeerName) {
+                                P2PPreferences.setPeerYggdrasilAddress(appContext, fingerprint, yggRoute)
+                            }
+                            log(appContext, "Saved authenticated Yggdrasil endpoint for $resolvedPeerName: $yggRoute")
                         }
-                        log(appContext, "Saved authenticated Yggdrasil endpoint for $resolvedPeerName: $yggRoute")
                     }
                 }
 
@@ -3143,7 +3156,6 @@ object P2PMessageRelay {
                     val success = bridge.sendP2pMessage(peerName, endpoint, payload, expectedFingerprint)
                     if (success) lastAvatarShareAt[shareKey] = System.currentTimeMillis()
                     if (!success) log(context, "Profile share deferred; $peerName is not reachable yet")
-                    log(context, "Profile send status: $success")
                 }
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
@@ -3307,10 +3319,10 @@ object P2PMessageRelay {
                     return@launch
                 }
 
-                log(context, "Sharing Tor .onion address with $peerName")
+                log(context, "Sharing Tor .onion address with $peerName", "DEBUG")
                 val success = bridge.sendP2pMessage(peerName, resolvedEndpoint, payload, expectedFingerprint)
                 if (success) lastOnionShareAt[shareKey] = System.currentTimeMillis()
-                log(context, "Onion address share status: $success")
+                log(context, "Onion address share status: $success", "DEBUG")
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
                 log(context, "Failed to share onion address with peer", "ERROR", e)
