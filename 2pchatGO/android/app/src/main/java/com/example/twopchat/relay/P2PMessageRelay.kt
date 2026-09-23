@@ -526,7 +526,8 @@ object P2PMessageRelay {
     private val lastOnionShareAt = ConcurrentHashMap<String, Long>()
 
     fun getPeerTransportType(context: Context, peerName: String): TransportType {
-        val isOnline = isPeerOnline(context, peerName)
+        // Composition-safe: presence from the repository, never a JNI pull.
+        val isOnline = com.example.twopchat.presence.PresenceRepository.isOnline(peerName)
         if (!isOnline) return TransportType.DISCONNECTED
         val fp = P2PPreferences.prefs(context).getString(P2PPreferences.peerFingerprint(peerName), null)
         val raw = peerConnectionTransports[peerName]
@@ -539,8 +540,8 @@ object P2PMessageRelay {
     }
 
     fun getPeerTransportType(peerName: String): TransportType {
-        val isOnline = storedAppContext?.let { isPeerOnline(it, peerName) }
-            ?: com.example.twopchat.presence.PresenceRepository.isOnline(peerName)
+        // Composition-safe: presence from the repository, never a JNI pull.
+        val isOnline = com.example.twopchat.presence.PresenceRepository.isOnline(peerName)
         if (!isOnline) return TransportType.DISCONNECTED
         val raw = peerConnectionTransports[peerName]
             ?: (fingerprintToPeerName.entries.firstOrNull { it.value == peerName }?.key?.let { peerConnectionTransports[it] })

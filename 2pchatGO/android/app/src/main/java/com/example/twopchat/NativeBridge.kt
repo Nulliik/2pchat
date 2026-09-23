@@ -620,6 +620,10 @@ object NativeBridge {
                         onFileProgressListener?.invoke(event.peerFP, event.messageID, event.transferred, event.total, event.speedKbps)
                 }
             } catch (e: Throwable) {
+                // A handler CancellationException must not kill the pipeline: it is a
+                // handler-side signal, not a consumer cancellation. Genuine scope
+                // cancellation still terminates the loop, because it hits the
+                // channel receive outside this try block.
                 SafeLog.e(TAG, "Error dispatching native event: ${event::class.simpleName}", e)
             }
         }

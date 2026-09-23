@@ -68,7 +68,7 @@ class NativeBridgeImpl(
 
     private var messageListener: BridgeMessageListener? = null
     private var sessionListener: BridgeSessionListener? = null
-    private val onlinePeers = ConcurrentHashMap<String, Boolean>()
+    // presence state lives exclusively in com.example.twopchat.presence.PresenceRepository
     private val peerNameMap = ConcurrentHashMap<String, String>()
     private val nameToFpMap = ConcurrentHashMap<String, String>()
     private val activeEndpoints = ConcurrentHashMap<String, String>()
@@ -167,9 +167,7 @@ class NativeBridgeImpl(
                 if (peerName.isNotBlank() && !P2PMessageRelay.isPlaceholderPeerName(peerName)) {
                     val fp = prefs.getString("peer_fingerprint_$peerName", null)
                     if (!fp.isNullOrBlank()) {
-                        peerNameMap[fp] = peerName
-                        nameToFpMap[peerName] = fp
-                        NativeBridge.updatePeerNameMapping(fp, peerName)
+                        registerNameMapping(fp, peerName)
                     }
                 }
             }
@@ -178,6 +176,19 @@ class NativeBridgeImpl(
         } catch (_: Throwable) {
             // intentionally ignored: appContext uninitialized in pure JVM unit tests
         }
+    }
+
+    /**
+     * Registers a bidirectional name↔fingerprint mapping in the local caches,
+     * in the Go core, and as a presence alias in PresenceRepository (the
+     * single owner of online/offline state).
+     */
+    private fun registerNameMapping(peerFP: String, peerName: String) {
+        if (peerFP.isBlank() || peerName.isBlank()) return
+        peerNameMap[peerFP] = peerName
+        nameToFpMap[peerName] = peerFP
+        NativeBridge.updatePeerNameMapping(peerFP, peerName)
+        com.example.twopchat.presence.PresenceRepository.bindName(peerName, peerFP)
     }
 
     private fun resolvePeerName(fingerprint: String): String? {
@@ -190,9 +201,7 @@ class NativeBridgeImpl(
                 name = com.example.twopchat.data.ChatDatabaseHelper.getInstance(appContext).getPeerNameByFingerprint(fingerprint)
             }
             if (!name.isNullOrBlank()) {
-                peerNameMap[fingerprint] = name
-                nameToFpMap[name] = fingerprint
-                NativeBridge.updatePeerNameMapping(fingerprint, name)
+                registerNameMapping(fingerprint, name)
                 name
             } else {
                 null
@@ -212,9 +221,7 @@ class NativeBridgeImpl(
                 fp = com.example.twopchat.data.ChatDatabaseHelper.getInstance(appContext).getPeerFingerprint(peerName)
             }
             if (!fp.isNullOrBlank()) {
-                nameToFpMap[peerName] = fp
-                peerNameMap[fp] = peerName
-                NativeBridge.updatePeerNameMapping(fp, peerName)
+                registerNameMapping(peerName, fp)
                 fp
             } else {
                 null
@@ -243,18 +250,13 @@ class NativeBridgeImpl(
         NativeBridge.onPeerConnectedListener = connected@{ peerFP, endpoint, seq ->
             SafeLog.i(TAG, "[GoCore] Peer connected: ${SafeLog.fp(peerFP)}")
             SafeLog.d(TAG, "[GoCore] Peer connected: ${SafeLog.fp(peerFP)} @ $endpoint")
-            // CRITICAL: populate bidirectional name↔fp maps BEFORE setting onlinePeers.
-            // Any concurrent isPeerOnline(nickname, fp) call must find the mapping already
-            // present; otherwise it returns false and causes offline UI / skipped avatar share.
+            // CRITICAL: populate the name↔fp mapping (and the presence alias) BEFORE
+            // anything that resolves the peer by name; otherwise concurrent lookups
+            // return the raw fingerprint and cause offline UI / skipped avatar share.
             val resolvedName = resolvePeerName(peerFP) ?: peerNameMap[peerFP] ?: peerFP
             if (resolvedName != peerFP) {
-                nameToFpMap[resolvedName] = peerFP
-                peerNameMap[peerFP] = resolvedName
-                NativeBridge.updatePeerNameMapping(peerFP, resolvedName)
+                registerNameMapping(peerFP, resolvedName)
             }
-            // Now mark online under BOTH the fingerprint key and the resolved nickname key.
-            onlinePeers[peerFP] = true
-            onlinePeers[resolvedName] = true
             // Reset send backoff so the first message after reconnect is never silently dropped
             P2PMessageRelay.resetPeerBackoffs(peerFP)
             if (resolvedName != peerFP) {
@@ -301,8 +303,6 @@ class NativeBridgeImpl(
             com.example.twopchat.protocol.ProtocolVersionManager.refresh(peerFP)
             SafeLog.i(TAG, "[GoCore] Peer disconnected: ${SafeLog.fp(peerFP)}, reason: $reason")
             val resolvedName = resolvePeerName(peerFP) ?: peerNameMap[peerFP] ?: peerFP
-            onlinePeers[peerFP] = false
-            onlinePeers[resolvedName] = false
             lastAuthenticatedInboundAt.remove(peerFP)
             if (!NativeBridge.isPeerOnline(peerFP)) PeerEndpointStore.disconnected(peerFP)
             activeEndpoints.remove(peerFP)
@@ -337,7 +337,7 @@ class NativeBridgeImpl(
                                 // contact alias for this same identity before publishing the
                                 // new session state, otherwise one device appears twice.
                                 P2PMessageRelay.adoptAuthenticatedPeerNickname(appContext, peerFP, remoteNick)
-                                val wasNameOnline = onlinePeers[remoteNick] == true
+                                val wasNameOnline = com.example.twopchat.presence.PresenceRepository.isOnline(remoteNick)
                                 val existingNameForFingerprint = peerNameMap[peerFP]
                                 val existingFingerprintForName = nameToFpMap[remoteNick]
                                 nameToFpMap.entries
@@ -345,12 +345,8 @@ class NativeBridgeImpl(
                                     .map { it.key }
                                     .forEach { staleName ->
                                         nameToFpMap.remove(staleName)
-                                        onlinePeers.remove(staleName)
                                     }
-                                peerNameMap[peerFP] = remoteNick
-                                nameToFpMap[remoteNick] = peerFP
-                                onlinePeers[remoteNick] = true
-                                onlinePeers[peerFP] = true
+                                registerNameMapping(peerFP, remoteNick)
                                 val peerPrefs = P2PPreferences.prefs(appContext)
                                 val pendingRoutes = peerPrefs.getString(
                                     P2PPreferences.lastEndpoint(peerFP), null
@@ -450,10 +446,7 @@ class NativeBridgeImpl(
 
     override fun updatePeerNameMapping(fingerprint: String, peerName: String) {
         if (fingerprint.isNotBlank() && peerName.isNotBlank()) {
-            peerNameMap[fingerprint] = peerName
-            nameToFpMap[peerName] = fingerprint
-            onlinePeers[peerName] = (onlinePeers[fingerprint] == true)
-            NativeBridge.updatePeerNameMapping(fingerprint, peerName)
+            registerNameMapping(fingerprint, peerName)
             flushPendingMessages(fingerprint)
         }
     }
@@ -531,7 +524,7 @@ class NativeBridgeImpl(
         // convey our private route list, so refresh it over those existing
         // encrypted sessions as soon as discovery accepted the update.
         if (started) {
-            onlinePeers.filterValues { it }.keys
+            com.example.twopchat.presence.PresenceRepository.onlineNames()
                 .map { nameToFpMap[it] ?: it }
                 .distinct()
                 .forEach(::sendAuthenticatedRouteUpdate)
@@ -813,8 +806,7 @@ class NativeBridgeImpl(
     private fun reconnectWithRetainedRoutes(peerName: String, endpoint: String, fingerprint: String?, includeReserve: Boolean): Boolean {
         if (endpoint.isBlank() && fingerprint.isNullOrBlank()) return false
         if (!fingerprint.isNullOrBlank()) {
-            peerNameMap[fingerprint] = peerName
-            nameToFpMap[peerName] = fingerprint
+            registerNameMapping(fingerprint, peerName)
         }
         if (isPeerOnline(peerName, fingerprint)) {
             SafeLog.d(TAG, "[GoCore] Peer $peerName (${SafeLog.fp(fingerprint)}) is already online; aborting retained route dial")
@@ -988,16 +980,15 @@ class NativeBridgeImpl(
 
     override fun closePeerSession(peerName: String, expectedFingerprint: String?): Boolean {
         if (!expectedFingerprint.isNullOrBlank()) {
-            onlinePeers[expectedFingerprint] = false
             lastAuthenticatedInboundAt.remove(expectedFingerprint)
         }
-        nameToFpMap[peerName]?.let { onlinePeers[it] = false }
-        onlinePeers[peerName] = false
         return true
     }
 
     override fun isPeerOnline(peerName: String, expectedFingerprint: String?): Boolean {
-        // Go Core is the authoritative single source of truth for active sessions.
+        // Pure pull: the Go core is the authoritative source for active sessions.
+        // This MUST NOT write presence state; PresenceRepository is fed by events
+        // and the maintenance reconcile only.
         val targetFP = expectedFingerprint?.takeIf { it.isNotBlank() }
             ?: nameToFpMap[peerName]
             ?: resolveFingerprint(peerName)
@@ -1009,14 +1000,9 @@ class NativeBridgeImpl(
                 ?: false
             // A ratchet-authenticated heartbeat/message is stronger evidence than
             // a transient empty lookup during simultaneous session replacement.
-            val isOnline = nativeOnline || authenticatedRecently
-            onlinePeers[targetFP] = isOnline
-            onlinePeers[peerName] = isOnline
-            return isOnline
+            return nativeOnline || authenticatedRecently
         }
-        val isOnline = NativeBridge.isPeerOnline(peerName)
-        onlinePeers[peerName] = isOnline
-        return isOnline
+        return NativeBridge.isPeerOnline(peerName)
     }
 
     override fun shutdownAllSessions(): Boolean {
@@ -1031,7 +1017,6 @@ class NativeBridgeImpl(
         reconnectsInFlight.clear()
         NativeBridge.stopDiscovery()
         NativeBridge.stopListener()
-        onlinePeers.clear()
         lastAuthenticatedInboundAt.clear()
         pendingMessages.clear()
         return true

@@ -3420,7 +3420,7 @@ private fun MemberProfileModal(
                     }
 
                     if (member.statusLabel.isNotBlank()) {
-                        val isOnlineStatus = member.statusLabel.contains("В сети") || member.statusLabel.contains("Online")
+                        val isOnlineStatus = com.example.twopchat.presence.PresenceRepository.isOnline(member.displayName)
                         val dotColor = if (isOnlineStatus) Color(0xFF34C759) else Color(0xFF8E929A)
                         Spacer(Modifier.height(6.dp))
                         Row(verticalAlignment = Alignment.CenterVertically) {
