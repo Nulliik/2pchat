@@ -47,6 +47,7 @@ import com.example.twopchat.relay.P2PMessageRelay
 import com.example.twopchat.config.P2PPreferences
 import com.example.twopchat.tor.*
 import com.example.twopchat.relay.connectionTransportLabel
+import com.example.twopchat.yggdrasil.YggdrasilLivenessProbe
 import com.example.twopchat.theme.*
 import com.example.twopchat.data.Localizations
 import kotlinx.coroutines.Dispatchers
@@ -289,7 +290,15 @@ private suspend fun runConnectionDiagnosticsTest(context: Context): ConnectionSw
     val yggOk = yggAddr.isNotBlank() && yggAddr != "N/A" && yggAddr != "unavailable"
     val yggMode = P2PPreferences.getYggdrasilMode(context)
     val yggModeLabel = if (yggMode == P2PPreferences.YggdrasilMode.PROXY) "Proxy (SOCKS5 :9053)" else "System VPN"
-    sb.appendLine("3. [YGGDRASIL] IPv6: ${if (yggAddr.isNotBlank()) yggAddr else "Not Active"} · Mode: $yggModeLabel · State: ${if (yggOk) "CONNECTED (OK)" else "OFFLINE"}")
+    val yggLiveness = runCatching {
+        context.getSharedPreferences(YggdrasilLivenessProbe.RUNTIME_PREFS_FILE, Context.MODE_PRIVATE)
+            .getString(YggdrasilLivenessProbe.PREF_LIVENESS, null)
+    }.getOrNull()
+    sb.appendLine(
+        "3. [YGGDRASIL] IPv6: ${if (yggAddr.isNotBlank()) yggAddr else "Not Active"} · Mode: $yggModeLabel · " +
+            "State: ${if (yggOk) "CONNECTED (OK)" else "OFFLINE"}" +
+            if (yggLiveness != null) " · Liveness: $yggLiveness" else ""
+    )
 
     // 4. Tor & Onion Routing
     val isTorRunning = TorManager.isTorRunning.value

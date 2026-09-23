@@ -395,6 +395,7 @@ class YggdrasilProxyService : Service() {
         var lastLoggedPeers = -1
         var lastLogTime = 0L
         val probeStartedAt = System.currentTimeMillis()
+        var lastLiveness = 0L
         updates@ while (currentCoroutineContext().isActive && started.get()) {
             val ygg = yggdrasil ?: break@updates
             val treeJSON = runCatching { ygg.treeJSON }.getOrNull()
@@ -414,6 +415,7 @@ class YggdrasilProxyService : Service() {
                 val intent = Intent(YGG_STATE_INTENT)
                 val routes = ygg.routingEntries.toInt()
                 val peerCount = jsonArrayLength(ygg.peersJSON)
+                val upCount = YggdrasilLivenessProbe.countUpPeers(ygg.peersJSON)
                 var treeNodes = 0
                 var state = STATE_ENABLED
                 if (routes > 0) {
@@ -432,10 +434,32 @@ class YggdrasilProxyService : Service() {
                 lastStateUpdate = curTime
 
                 if (state != lastLoggedState || peerCount != lastLoggedPeers || curTime - lastLogTime >= 30_000L) {
-                    yggLog(applicationContext, "Mesh state=$state, peers=$peerCount, routes=$routes, treeNodes=$treeNodes, IPv6=${ygg.addressString}")
+                    yggLog(applicationContext, "Mesh state=$state, peers=$peerCount (up=$upCount), routes=$routes, treeNodes=$treeNodes, IPv6=${ygg.addressString}")
                     lastLoggedState = state
                     lastLoggedPeers = peerCount
                     lastLogTime = curTime
+                }
+            }
+
+            // Liveness probe: first ~20 s after start, then every 60 s. Runs on
+            // Dispatchers.IO inside the probe, so the shared lifecycle
+            // dispatcher is never blocked on probe I/O.
+            if (curTime - lastLiveness >= 60_000L && curTime - probeStartedAt >= 20_000L) {
+                lastLiveness = curTime
+                try {
+                    val report = YggdrasilLivenessProbe.run(
+                        context = applicationContext,
+                        mode = P2PPreferences.YggdrasilMode.PROXY,
+                        peersJson = ygg.peersJSON,
+                        ownAddress = ygg.addressString,
+                    )
+                    yggLog(
+                        applicationContext,
+                        report.summaryLine(),
+                        if (report.verdict == YggdrasilLivenessProbe.Verdict.DEAD) "WARN" else "INFO",
+                    )
+                } catch (e: Throwable) {
+                    yggLog(applicationContext, "Liveness probe failed: ${e.message}", "DEBUG")
                 }
             }
 
