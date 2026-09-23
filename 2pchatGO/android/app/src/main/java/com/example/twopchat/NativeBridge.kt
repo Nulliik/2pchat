@@ -557,55 +557,110 @@ object NativeBridge {
 
     private val bridgeScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Default + kotlinx.coroutines.SupervisorJob())
 
+    /**
+     * Every native event is enqueued in arrival order and processed by a
+     * single consumer coroutine. This guarantees FIFO dispatch to listeners
+     * (no cross-event reordering on the thread pool) and keeps the JNI
+     * threads that emit events from Go goroutines free immediately — a slow
+     * listener can no longer block the emitting goroutine.
+     */
+    internal sealed class NativeEvent {
+        data class EndpointResult(val peerFP: String, val endpoint: String, val success: Boolean, val observedAt: Long) : NativeEvent()
+        data class PeerConnected(val peerFP: String, val endpoint: String) : NativeEvent()
+        data class PeerDisconnected(val peerFP: String, val reason: String) : NativeEvent()
+        data class MessageReceived(val peerFP: String, val payload: ByteArray, val messageID: String) : NativeEvent()
+        data class Error(val code: Int, val message: String) : NativeEvent()
+        data class PeerDiscovered(val infoHashHex: String, val endpoint: String, val source: String) : NativeEvent()
+        data class DiscoverySeqPersist(val seq: Long) : NativeEvent()
+        data class HeartbeatSeqPersist(val groupId: String, val seq: Long) : NativeEvent()
+        data class TrackerStatus(val trackerUrl: String, val success: Boolean, val peerCount: Int, val elapsedMs: Long, val detail: String) : NativeEvent()
+        data class FileProgress(val peerFP: String, val messageID: String, val transferred: Long, val total: Long, val speedKbps: Double) : NativeEvent()
+    }
+
+    private val eventChannel = kotlinx.coroutines.channels.Channel<NativeEvent>(kotlinx.coroutines.channels.Channel.UNLIMITED)
+
+    private val eventConsumer = bridgeScope.launch(kotlinx.coroutines.Dispatchers.Default) {
+        for (event in eventChannel) {
+            try {
+                when (event) {
+                    is NativeEvent.EndpointResult ->
+                        onEndpointResultListener?.invoke(event.peerFP, event.endpoint, event.success, event.observedAt)
+                    is NativeEvent.PeerConnected ->
+                        onPeerConnectedListener?.invoke(event.peerFP, event.endpoint)
+                    is NativeEvent.PeerDisconnected ->
+                        onPeerDisconnectedListener?.invoke(event.peerFP, event.reason)
+                    is NativeEvent.MessageReceived ->
+                        onMessageReceivedListener?.invoke(event.peerFP, event.payload, event.messageID)
+                    is NativeEvent.Error ->
+                        onErrorListener?.invoke(event.code, event.message)
+                    is NativeEvent.PeerDiscovered ->
+                        onPeerDiscoveredListener?.invoke(event.infoHashHex, event.endpoint, event.source)
+                    is NativeEvent.DiscoverySeqPersist ->
+                        onDiscoverySeqPersistListener?.invoke(event.seq)
+                    is NativeEvent.HeartbeatSeqPersist ->
+                        onHeartbeatSeqPersistListener?.invoke(event.groupId, event.seq)
+                    is NativeEvent.TrackerStatus ->
+                        handleTrackerStatus(event)
+                    is NativeEvent.FileProgress ->
+                        onFileProgressListener?.invoke(event.peerFP, event.messageID, event.transferred, event.total, event.speedKbps)
+                }
+            } catch (e: Throwable) {
+                SafeLog.e(TAG, "Error dispatching native event: ${event::class.simpleName}", e)
+            }
+        }
+    }
+
+    private fun handleTrackerStatus(event: NativeEvent.TrackerStatus) {
+        val cleanDetail = event.detail
+        val shouldLog = shouldLogTrackerEvent(event.trackerUrl, event.success, event.peerCount, cleanDetail)
+        if (shouldLog) {
+            val result = if (event.success) "OK" else "FAIL"
+            val summary = "announce=$result, peers=${event.peerCount.coerceAtLeast(0)}, announce_rtt=${event.elapsedMs.coerceAtLeast(0)}ms" +
+                cleanDetail.takeIf { it.isNotBlank() }?.let { ", detail=$it" }.orEmpty()
+            if (event.success) SafeLog.i(TAG, "[TRACKER] ${event.trackerUrl} $summary") else SafeLog.w(TAG, "[TRACKER] ${event.trackerUrl} $summary")
+        }
+
+        val context = runCatching { com.example.twopchat.yggdrasil.GlobalApplication.appContext }.getOrNull()
+        if (context != null) {
+            com.example.twopchat.config.TrackerPreferences.recordDiagnosticStatus(
+                context, event.trackerUrl, event.success, event.peerCount, event.elapsedMs, cleanDetail,
+            )
+            if (shouldLog) {
+                val result = if (event.success) "OK" else "FAIL"
+                val summary = "announce=$result, peers=${event.peerCount.coerceAtLeast(0)}, announce_rtt=${event.elapsedMs.coerceAtLeast(0)}ms" +
+                    cleanDetail.takeIf { it.isNotBlank() }?.let { ", detail=$it" }.orEmpty()
+                bridgeScope.launch {
+                    AppLog.append(context, "[TRACKER] ${event.trackerUrl} $summary\n")
+                }
+            }
+        }
+        onTrackerStatusListener?.invoke(event.trackerUrl, event.success, event.peerCount, event.elapsedMs, cleanDetail)
+    }
+
     // --- JNI Callbacks from Go to Kotlin ---
 
     @JvmStatic
     fun onEndpointResult(peerFP: String, endpoint: String, success: Boolean) {
-        val observedAt = System.currentTimeMillis()
-        bridgeScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-            try {
-                onEndpointResultListener?.invoke(peerFP, endpoint, success, observedAt)
-            } catch (e: Exception) {
-                SafeLog.e(TAG, "Error persisting endpoint result", e)
-            }
-        }
+        eventChannel.trySend(NativeEvent.EndpointResult(peerFP, endpoint, success, System.currentTimeMillis()))
     }
 
     @JvmStatic
     fun onPeerConnected(peerFP: String, endpoint: String) {
         SafeLog.i(TAG, "[P2P] Peer connected: ${SafeLog.fp(peerFP)}")
         SafeLog.d(TAG, "[P2P] Peer connected: ${SafeLog.fp(peerFP)} @ $endpoint")
-        bridgeScope.launch {
-            try {
-                onPeerConnectedListener?.invoke(peerFP, endpoint)
-            } catch (e: Throwable) {
-                SafeLog.e(TAG, "Error in onPeerConnectedListener", e)
-            }
-        }
+        eventChannel.trySend(NativeEvent.PeerConnected(peerFP, endpoint))
     }
 
     @JvmStatic
     fun onPeerDisconnected(peerFP: String, reason: String) {
         SafeLog.i(TAG, "[P2P] Peer disconnected: ${SafeLog.fp(peerFP)}, reason: $reason")
-        bridgeScope.launch {
-            try {
-                onPeerDisconnectedListener?.invoke(peerFP, reason)
-            } catch (e: Throwable) {
-                SafeLog.e(TAG, "Error in onPeerDisconnectedListener", e)
-            }
-        }
+        eventChannel.trySend(NativeEvent.PeerDisconnected(peerFP, reason))
     }
 
     @JvmStatic
     fun onMessageReceived(peerFP: String, payload: ByteArray, messageID: String) {
         SafeLog.d(TAG, "[P2P] Message received from ${SafeLog.fp(peerFP)}, ID: $messageID (${payload.size} bytes)")
-        bridgeScope.launch {
-            try {
-                onMessageReceivedListener?.invoke(peerFP, payload, messageID)
-            } catch (e: Throwable) {
-                SafeLog.e(TAG, "Error in onMessageReceivedListener", e)
-            }
-        }
+        eventChannel.trySend(NativeEvent.MessageReceived(peerFP, payload, messageID))
     }
 
     @JvmStatic
@@ -615,49 +670,25 @@ object NativeBridge {
         } else {
             SafeLog.e(TAG, "[P2P] Native error ($code): $message")
         }
-        bridgeScope.launch {
-            try {
-                onErrorListener?.invoke(code, message)
-            } catch (e: Throwable) {
-                SafeLog.e(TAG, "Error in onErrorListener", e)
-            }
-        }
+        eventChannel.trySend(NativeEvent.Error(code, message))
     }
 
     @JvmStatic
     fun onPeerDiscovered(infoHashHex: String, endpoint: String, source: String) {
         SafeLog.d(TAG, "[P2P-Discovery] Discovered peer for ${SafeLog.fp(infoHashHex)} @ $endpoint (source: $source)")
-        bridgeScope.launch {
-            try {
-                onPeerDiscoveredListener?.invoke(infoHashHex, endpoint, source)
-            } catch (e: Throwable) {
-                SafeLog.e(TAG, "Error in onPeerDiscoveredListener", e)
-            }
-        }
+        eventChannel.trySend(NativeEvent.PeerDiscovered(infoHashHex, endpoint, source))
     }
 
     @JvmStatic
     fun onDiscoverySeqPersist(seq: Long) {
         SafeLog.d(TAG, "[P2P-Discovery] Persisting discovery sequence counter: $seq")
-        bridgeScope.launch {
-            try {
-                onDiscoverySeqPersistListener?.invoke(seq)
-            } catch (e: Throwable) {
-                SafeLog.e(TAG, "Error in onDiscoverySeqPersistListener", e)
-            }
-        }
+        eventChannel.trySend(NativeEvent.DiscoverySeqPersist(seq))
     }
 
     @JvmStatic
     fun onHeartbeatSeqPersist(groupId: String, seq: Long) {
         SafeLog.d(TAG, "[P2P-Succession] Persisting heartbeat sequence counter for $groupId: $seq")
-        bridgeScope.launch {
-            try {
-                onHeartbeatSeqPersistListener?.invoke(groupId, seq)
-            } catch (e: Throwable) {
-                SafeLog.e(TAG, "Error in onHeartbeatSeqPersistListener", e)
-            }
-        }
+        eventChannel.trySend(NativeEvent.HeartbeatSeqPersist(groupId, seq))
     }
 
     private data class TrackerLogRecord(
@@ -709,45 +740,13 @@ object NativeBridge {
     @JvmStatic
     fun onTrackerStatus(trackerUrl: String, success: Boolean, peerCount: Int, elapsedMs: Long, detail: String) {
         val cleanDetail = detail.replace(TRACKER_WHITESPACE_REGEX, " ").take(160)
-        val shouldLog = shouldLogTrackerEvent(trackerUrl, success, peerCount, cleanDetail)
-        if (shouldLog) {
-            val result = if (success) "OK" else "FAIL"
-            val summary = "announce=$result, peers=${peerCount.coerceAtLeast(0)}, announce_rtt=${elapsedMs.coerceAtLeast(0)}ms" +
-                cleanDetail.takeIf { it.isNotBlank() }?.let { ", detail=$it" }.orEmpty()
-            if (success) SafeLog.i(TAG, "[TRACKER] $trackerUrl $summary") else SafeLog.w(TAG, "[TRACKER] $trackerUrl $summary")
-        }
-
-        val context = runCatching { com.example.twopchat.yggdrasil.GlobalApplication.appContext }.getOrNull()
-        if (context != null) {
-            com.example.twopchat.config.TrackerPreferences.recordDiagnosticStatus(
-                context, trackerUrl, success, peerCount, elapsedMs, cleanDetail,
-            )
-            if (shouldLog) {
-                val result = if (success) "OK" else "FAIL"
-                val summary = "announce=$result, peers=${peerCount.coerceAtLeast(0)}, announce_rtt=${elapsedMs.coerceAtLeast(0)}ms" +
-                    cleanDetail.takeIf { it.isNotBlank() }?.let { ", detail=$it" }.orEmpty()
-                bridgeScope.launch {
-                    AppLog.append(context, "[TRACKER] $trackerUrl $summary\n")
-                }
-            }
-        }
-        onTrackerStatusListener?.let { listener ->
-            bridgeScope.launch {
-                listener.invoke(trackerUrl, success, peerCount, elapsedMs, cleanDetail)
-            }
-        }
+        eventChannel.trySend(NativeEvent.TrackerStatus(trackerUrl, success, peerCount, elapsedMs, cleanDetail))
     }
 
     @JvmStatic
     fun onFileProgress(peerFP: String, messageID: String, transferred: Long, total: Long, speedKbps: Double) {
         SafeLog.d(TAG, "[P2P-File] Progress for $messageID: $transferred / $total bytes ($speedKbps kbps)")
-        bridgeScope.launch {
-            try {
-                onFileProgressListener?.invoke(peerFP, messageID, transferred, total, speedKbps)
-            } catch (e: Throwable) {
-                SafeLog.e(TAG, "Error in onFileProgressListener", e)
-            }
-        }
+        eventChannel.trySend(NativeEvent.FileProgress(peerFP, messageID, transferred, total, speedKbps))
     }
 
     fun triggerNatTraversal(): Boolean {
