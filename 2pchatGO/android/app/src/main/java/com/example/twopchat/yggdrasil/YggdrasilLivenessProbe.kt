@@ -5,25 +5,24 @@ import com.example.twopchat.config.P2PPreferences
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
-import java.net.HttpURLConnection
 import java.net.ConnectException
 import java.net.Inet6Address
 import java.net.InetAddress
 import java.net.InetSocketAddress
-import java.net.Proxy
 import java.net.Socket
 import java.net.SocketTimeoutException
-import java.net.URL
 
 /**
  * Runtime liveness test for the Yggdrasil mesh.
  *
  * The native mesh reports `state` and a `peers` count, but `peers` is the number
  * of configured/tracked links, not live ones, and neither proves the data plane
- * can actually carry traffic. This probe verifies that on two separately
- * labeled planes:
+ * can actually carry traffic. The mesh is a standalone overlay: 200::/7
+ * traffic cannot reach the clearnet and vice versa, so the verdict is based
+ * on the mesh plane alone. The phone's own Wi-Fi / mobile network state is
+ * irrelevant to whether the mesh is alive and is deliberately not probed.
  *
- * 1. MESH — loads a well-known Yggdrasil service through the active mesh path
+ * MESH — loads a well-known Yggdrasil service through the active mesh path
  *    and verifies the page bytes come back. Primary target is the Yggdrasil
  *    Web directory (http://[21e:a51c:885b:7db0:166e:927:98cd:d186]/ — a
  *    200::/7 address, so it can only be reached through the mesh); fallback
@@ -33,13 +32,6 @@ import java.net.URL
  *    completed TCP connect is definitive proof the mesh carries data; a fast
  *    RST means the SYN reached the peer, so the data plane is alive even
  *    though that peer's relay port is closed.
- *
- * 2. CLEARNET — DNS resolve + a small HTTP GET of the device's own Wi-Fi /
- *    mobile network. Both modes are deliberately split-tunnelled (VPN routes
- *    only 200::/7; the SOCKS stack rejects non-mesh destinations), so clearnet
- *    traffic never touches the mesh. This plane exists to distinguish "the
- *    phone has internet, the mesh is dead" from "the phone has no network at
- *    all" — the exact case a `peers=6` log line alone cannot tell.
  *
  * Verdicts:
  *  - LIVE     — the mesh data plane carried a TCP connect (and, for the web
@@ -53,9 +45,6 @@ object YggdrasilLivenessProbe {
 
     const val RUNTIME_PREFS_FILE = "yggdrasil_runtime_ephemeral"
     const val PREF_LIVENESS = "yggdrasil_liveness"
-
-    const val CLEARNET_DOMAIN = "example.com"
-    const val CLEARNET_URL = "http://example.com/"
 
     /** Direct-connect budget for VPN mode: 200::/7 is routed through the TUN. */
     const val VPN_PROBE_TIMEOUT_MS = 6_000
@@ -87,13 +76,6 @@ object YggdrasilLivenessProbe {
         val detail: String,
     )
 
-    data class ClearnetResult(
-        val ok: Boolean,
-        val dnsMs: Long?,
-        val httpMs: Long?,
-        val detail: String,
-    )
-
     data class ProbeTarget(val host: String, val port: Int, val label: String)
 
     data class HttpResult(val statusCode: Int?, val detail: String)
@@ -103,7 +85,6 @@ object YggdrasilLivenessProbe {
         val mesh: MeshResult,
         val upPeers: Int,
         val configuredPeers: Int,
-        val clearnet: ClearnetResult,
     ) {
         /** One greppable line for the app log and the diagnostics dialog. */
         fun summaryLine(): String {
@@ -114,17 +95,7 @@ object YggdrasilLivenessProbe {
                 MeshState.DEAD -> "mesh=DEAD(${mesh.detail})${mesh.target?.let { " target=$it" } ?: ""}"
                 MeshState.UNVERIFIED -> "mesh=UNVERIFIED(${mesh.detail})"
             }
-            val clearnetPart = if (clearnet.ok) {
-                "clearnet=OK dns=${clearnet.dnsMs}ms http=${clearnet.httpMs}ms"
-            } else {
-                "clearnet=DEAD(${clearnet.detail})"
-            }
-            val line = "[LIVENESS] $verdict $meshPart up=$upPeers/$configuredPeers $clearnetPart"
-            return if (verdict == Verdict.DEAD && clearnet.ok) {
-                "$line => phone network is fine; the Yggdrasil mesh has no active data path"
-            } else {
-                line
-            }
+            return "[LIVENESS] $verdict $meshPart up=$upPeers/$configuredPeers"
         }
     }
 
@@ -233,19 +204,22 @@ object YggdrasilLivenessProbe {
         }
     }
 
-    /** Combines plane results into the final verdict. */
+    /**
+     * Combines the mesh plane result and link counts into the final verdict.
+     * The mesh is a standalone 200::/7 overlay that cannot reach the
+     * clearnet, so only the mesh plane decides liveness.
+     */
     fun evaluate(
         mesh: MeshResult,
         upPeers: Int,
         configuredPeers: Int,
-        clearnet: ClearnetResult,
     ): Report {
         val verdict = when {
             mesh.state == MeshState.LIVE || mesh.state == MeshState.LIVE_PORT_CLOSED -> Verdict.LIVE
             mesh.state == MeshState.UNVERIFIED && upPeers > 0 -> Verdict.PARTIAL
             else -> Verdict.DEAD
         }
-        return Report(verdict, mesh, upPeers, configuredPeers, clearnet)
+        return Report(verdict, mesh, upPeers, configuredPeers)
     }
 
     // ------------------------------------------------------------------
@@ -269,8 +243,7 @@ object YggdrasilLivenessProbe {
             val upPeers = countUpPeers(peersJson)
             val configuredPeers = countConfiguredPeers(peersJson)
             val mesh = runMeshProbe(context, mode, ownAddress, socksHost, socksPort)
-            val clearnet = probeClearnet()
-            evaluate(mesh, upPeers, configuredPeers, clearnet)
+            evaluate(mesh, upPeers, configuredPeers)
         }
         persist(context, report)
         return report
@@ -432,32 +405,6 @@ object YggdrasilLivenessProbe {
             return MeshResult(MeshState.DEAD, label, rttMs, http.detail)
         }
         return MeshResult(MeshState.LIVE, label, rttMs, "connected$transportDetail, ${http.detail}")
-    }
-
-    /**
-     * Clearnet plane: DNS resolve + tiny HTTP GET of the device's own
-     * network, always with Proxy.NO_PROXY so it never routes through Tor,
-     * the Yggdrasil SOCKS stack, or any other proxy.
-     */
-    private fun probeClearnet(): ClearnetResult {
-        return try {
-            val dnsStart = System.currentTimeMillis()
-            InetAddress.getByName(CLEARNET_DOMAIN)
-            val dnsMs = System.currentTimeMillis() - dnsStart
-            val connection = (URL(CLEARNET_URL).openConnection(Proxy.NO_PROXY) as HttpURLConnection).apply {
-                connectTimeout = 5_000
-                readTimeout = 5_000
-                instanceFollowRedirects = true
-            }
-            val httpStart = System.currentTimeMillis()
-            connection.responseCode
-            connection.inputStream.use { it.read(ByteArray(256)) }
-            val httpMs = System.currentTimeMillis() - httpStart
-            connection.disconnect()
-            ClearnetResult(ok = true, dnsMs = dnsMs, httpMs = httpMs, detail = "ok")
-        } catch (e: Exception) {
-            ClearnetResult(ok = false, dnsMs = null, httpMs = null, detail = e.javaClass.simpleName)
-        }
     }
 
     private fun readStoredYggEndpoints(context: Context): Map<String, String> {

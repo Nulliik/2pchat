@@ -1,7 +1,6 @@
 package com.example.twopchat.yggdrasil
 
 import com.example.twopchat.config.P2PPreferences
-import com.example.twopchat.yggdrasil.YggdrasilLivenessProbe.ClearnetResult
 import com.example.twopchat.yggdrasil.YggdrasilLivenessProbe.MeshResult
 import com.example.twopchat.yggdrasil.YggdrasilLivenessProbe.MeshState
 import com.example.twopchat.yggdrasil.YggdrasilLivenessProbe.Verdict
@@ -103,37 +102,35 @@ class YggdrasilLivenessProbeTest {
     }
 
     @Test
-    fun evaluateVerdictsByPlaneResults() {
-        val okClearnet = ClearnetResult(true, 10L, 100L, "ok")
-
+    fun evaluateVerdictsFromMeshPlane() {
         assertEquals(
             Verdict.LIVE,
             YggdrasilLivenessProbe.evaluate(
-                MeshResult(MeshState.LIVE, "t", 50L, "connected"), 3, 6, okClearnet
+                MeshResult(MeshState.LIVE, "t", 50L, "connected"), 3, 6
             ).verdict
         )
         assertEquals(
             Verdict.LIVE,
             YggdrasilLivenessProbe.evaluate(
-                MeshResult(MeshState.LIVE_PORT_CLOSED, "t", null, "refused"), 3, 6, okClearnet
+                MeshResult(MeshState.LIVE_PORT_CLOSED, "t", null, "refused"), 3, 6
             ).verdict
         )
         assertEquals(
             Verdict.PARTIAL,
             YggdrasilLivenessProbe.evaluate(
-                MeshResult(MeshState.UNVERIFIED, null, null, "no endpoint"), 3, 6, okClearnet
+                MeshResult(MeshState.UNVERIFIED, null, null, "no endpoint"), 3, 6
             ).verdict
         )
         assertEquals(
             Verdict.DEAD,
             YggdrasilLivenessProbe.evaluate(
-                MeshResult(MeshState.UNVERIFIED, null, null, "no endpoint"), 0, 6, okClearnet
+                MeshResult(MeshState.UNVERIFIED, null, null, "no endpoint"), 0, 6
             ).verdict
         )
         assertEquals(
             Verdict.DEAD,
             YggdrasilLivenessProbe.evaluate(
-                MeshResult(MeshState.DEAD, "t", null, "timeout"), 3, 6, okClearnet
+                MeshResult(MeshState.DEAD, "t", null, "timeout"), 3, 6
             ).verdict
         )
     }
@@ -142,43 +139,36 @@ class YggdrasilLivenessProbeTest {
     fun summaryLineCarriesVerdictCountsAndDiagnosis() {
         val live = YggdrasilLivenessProbe.evaluate(
             MeshResult(MeshState.LIVE, "[200:aaaa::1]:50001", 243L, "connected"), 3, 6,
-            ClearnetResult(true, 11L, 287L, "ok"),
         )
         val liveLine = live.summaryLine()
         assertTrue(liveLine.contains("[LIVENESS] LIVE"))
         assertTrue(liveLine.contains("mesh=OK"))
         assertTrue(liveLine.contains("rtt=243ms"))
         assertTrue(liveLine.contains("up=3/6"))
-        assertTrue(liveLine.contains("clearnet=OK"))
+        // The mesh is a standalone 200::/7 overlay: the verdict line must
+        // never mention the clearnet, which the mesh cannot reach.
+        assertFalse(liveLine.contains("clearnet"))
 
         val dead = YggdrasilLivenessProbe.evaluate(
             MeshResult(MeshState.DEAD, "[200:aaaa::1]:50001", null, "timeout"), 0, 6,
-            ClearnetResult(true, 9L, 204L, "ok"),
         )
         val deadLine = dead.summaryLine()
         assertTrue(deadLine.contains("[LIVENESS] DEAD"))
-        assertTrue(deadLine.contains("phone network is fine; the Yggdrasil mesh has no active data path"))
-
-        val noNet = YggdrasilLivenessProbe.evaluate(
-            MeshResult(MeshState.DEAD, null, null, "timeout"), 0, 6,
-            ClearnetResult(false, null, null, "SocketTimeoutException"),
-        )
-        assertFalse(noNet.summaryLine().contains("phone network is fine"))
-        assertTrue(noNet.summaryLine().contains("clearnet=DEAD"))
+        assertTrue(deadLine.contains("mesh=DEAD(timeout)"))
+        assertFalse(deadLine.contains("clearnet"))
     }
 
     @Test
     fun parseVerdictRoundTripsSummaryLines() {
-        val okClearnet = ClearnetResult(true, 10L, 100L, "ok")
         val lines = listOf(
             YggdrasilLivenessProbe.evaluate(
-                MeshResult(MeshState.LIVE, "[200:aaaa::1]:80", 50L, "connected, http=200"), 3, 6, okClearnet
+                MeshResult(MeshState.LIVE, "[200:aaaa::1]:80", 50L, "connected, http=200"), 3, 6
             ).summaryLine() to YggdrasilLivenessProbe.Verdict.LIVE,
             YggdrasilLivenessProbe.evaluate(
-                MeshResult(MeshState.UNVERIFIED, null, null, "no endpoint"), 3, 6, okClearnet
+                MeshResult(MeshState.UNVERIFIED, null, null, "no endpoint"), 3, 6
             ).summaryLine() to YggdrasilLivenessProbe.Verdict.PARTIAL,
             YggdrasilLivenessProbe.evaluate(
-                MeshResult(MeshState.DEAD, "[200:aaaa::1]:80", null, "timeout"), 0, 6, okClearnet
+                MeshResult(MeshState.DEAD, "[200:aaaa::1]:80", null, "timeout"), 0, 6
             ).summaryLine() to YggdrasilLivenessProbe.Verdict.DEAD,
         )
         for ((line, expected) in lines) {
