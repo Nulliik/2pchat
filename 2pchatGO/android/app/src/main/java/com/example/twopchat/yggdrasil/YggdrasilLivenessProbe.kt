@@ -37,22 +37,33 @@ import java.net.SocketTimeoutException
  *  - LIVE     — the mesh data plane carried a TCP connect (and, for the web
  *               directory, an HTTP status over the mesh).
  *  - PARTIAL  — the mesh has Up links but the data plane is UNVERIFIED
- *               (defensive: reachable only if the service and all peer
- *               targets are absent, which normally cannot happen).
+ *               (a target completed TCP but returned no bytes, or the first
+ *               failed sample while control-plane links are still Up).
  *  - DEAD     — the mesh data plane is unreachable or has no Up links.
+ *               A single failed sample with live Up links is surfaced as
+ *               PARTIAL; DEAD requires two consecutive failed probe cycles,
+ *               because one transient target timeout must not call a working
+ *               mesh dead.
  */
 object YggdrasilLivenessProbe {
 
     const val RUNTIME_PREFS_FILE = "yggdrasil_runtime_ephemeral"
     const val PREF_LIVENESS = "yggdrasil_liveness"
 
+    /** Consecutive failed data-plane samples; see [withDeadHysteresis]. */
+    private val deadStreak = java.util.concurrent.atomic.AtomicInteger()
+
     /** Direct-connect budget for VPN mode: 200::/7 is routed through the TUN. */
     const val VPN_PROBE_TIMEOUT_MS = 6_000
     /** SOCKS budget must cover the user-space stack's 12 s mesh TCP handshake deadline. */
     const val SOCKS_PROBE_TIMEOUT_MS = 15_000
 
-    /** Read budget for the follow-up HTTP status fetch over the connected socket. */
-    const val HTTP_CHECK_TIMEOUT_MS = 5_000
+    /**
+     * Read budget for the follow-up HTTP status fetch over the connected socket.
+     * Mesh paths under load can be slower than the browser's patience; 5 s
+     * produced false `http=timeout` verdicts while Chrome loaded fine.
+     */
+    const val HTTP_CHECK_TIMEOUT_MS = 10_000
 
     /** Relay port the peer app listens on for P2P messages (P2PPreferences.DEFAULT_LISTENER_PORT). */
     const val PEER_RELAY_PORT = 50001
@@ -243,10 +254,32 @@ object YggdrasilLivenessProbe {
             val upPeers = countUpPeers(peersJson)
             val configuredPeers = countConfiguredPeers(peersJson)
             val mesh = runMeshProbe(context, mode, ownAddress, socksHost, socksPort)
-            evaluate(mesh, upPeers, configuredPeers)
+            val base = evaluate(mesh, upPeers, configuredPeers)
+            withDeadHysteresis(base)
         }
         persist(context, report)
         return report
+    }
+
+    /**
+     * A failed data-plane sample while the control plane still reports Up links
+     * is surfaced as PARTIAL until a second consecutive cycle confirms it as
+     * DEAD. One target timeout (sleeping phone, dead public service, mesh
+     * re-key) must not paint a working mesh as dead in the UI.
+     */
+    internal fun withDeadHysteresis(base: Report): Report {
+        if (base.verdict == Verdict.LIVE) {
+            deadStreak.set(0)
+            return base
+        }
+        if (base.verdict == Verdict.DEAD && base.upPeers > 0) {
+            if (deadStreak.incrementAndGet() < 2) {
+                return base.copy(verdict = Verdict.PARTIAL)
+            }
+        } else {
+            deadStreak.set(0)
+        }
+        return base
     }
 
     private fun runMeshProbe(
@@ -259,17 +292,24 @@ object YggdrasilLivenessProbe {
         val serviceTarget = ProbeTarget(MESH_SERVICE_ENDPOINT, MESH_SERVICE_PORT, "ygg-web-dir")
         val targets = buildList {
             add(serviceTarget)
-            addAll(selectTargets(readStoredYggEndpoints(context), ownAddress, max = 1))
+            // Two authenticated peers: a single peer sitting in doze must not
+            // decide the verdict when another reachable one exists.
+            addAll(selectTargets(readStoredYggEndpoints(context), ownAddress, max = 2))
         }
-        var lastDead = MeshResult(MeshState.DEAD, null, null, "no probe attempted")
+        var lastFailure: MeshResult? = null
         for (target in targets) {
             val result = probeMeshTcp(target, mode, socksHost, socksPort)
             if (result.state == MeshState.LIVE || result.state == MeshState.LIVE_PORT_CLOSED) {
                 return result
             }
-            lastDead = result
+            // Prefer an ambiguous-but-connected failure (UNVERIFIED) over a
+            // hard timeout when reporting the final diagnosis.
+            val previous = lastFailure
+            if (previous == null || (previous.state == MeshState.DEAD && result.state != MeshState.DEAD)) {
+                lastFailure = result
+            }
         }
-        return lastDead
+        return lastFailure ?: MeshResult(MeshState.DEAD, null, null, "no probe attempted")
     }
 
     private fun probeMeshTcp(
@@ -401,8 +441,13 @@ object YggdrasilLivenessProbe {
         mode == P2PPreferences.YggdrasilMode.VPN && error is ConnectException
 
     internal fun connectedTargetResult(target: ProbeTarget, label: String, rttMs: Long, http: HttpResult, transportDetail: String = ""): MeshResult {
-        if (target.label == "ygg-web-dir" && http.statusCode != 200) {
-            return MeshResult(MeshState.DEAD, label, rttMs, http.detail)
+        // A completed TCP handshake over the mesh already proves the data
+        // plane. The web directory returning any HTTP status (even a
+        // redirect) proves bytes flowed too. Only zero bytes leaves the
+        // target's own health unproven — that is unverified, not dead: the
+        // service may be down while the mesh itself is fine.
+        if (target.label == "ygg-web-dir" && http.statusCode == null) {
+            return MeshResult(MeshState.UNVERIFIED, label, rttMs, http.detail)
         }
         return MeshResult(MeshState.LIVE, label, rttMs, "connected$transportDetail, ${http.detail}")
     }

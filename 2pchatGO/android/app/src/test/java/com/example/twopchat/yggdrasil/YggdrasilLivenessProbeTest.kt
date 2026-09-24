@@ -187,10 +187,34 @@ class YggdrasilLivenessProbeTest {
     }
 
     @Test
-    fun webDirectoryRequiresHttp200ButPeerRelayNeedsOnlyTcp() {
+    fun connectedTargetSemanticsAfterMeshHandshake() {
         val web = YggdrasilLivenessProbe.ProbeTarget("21e:a51c:885b:7db0:166e:927:98cd:d186", 80, "ygg-web-dir")
         val peer = YggdrasilLivenessProbe.ProbeTarget("200:aaaa::1", 50001, "peer")
-        assertEquals(MeshState.DEAD, YggdrasilLivenessProbe.connectedTargetResult(web, "[web]:80", 5, YggdrasilLivenessProbe.HttpResult(null, "http=timeout")).state)
+        // Any HTTP status came back over the mesh -> bytes flowed -> LIVE,
+        // even a redirect/error code: the service's health is not the mesh's.
+        assertEquals(MeshState.LIVE, YggdrasilLivenessProbe.connectedTargetResult(web, "[web]:80", 5, YggdrasilLivenessProbe.HttpResult(301, "http=301")).state)
+        // TCP completed through the mesh but zero bytes: unproven, not dead.
+        assertEquals(MeshState.UNVERIFIED, YggdrasilLivenessProbe.connectedTargetResult(web, "[web]:80", 5, YggdrasilLivenessProbe.HttpResult(null, "http=timeout")).state)
+        // A peer relay answering the handshake needs no HTTP at all.
         assertEquals(MeshState.LIVE, YggdrasilLivenessProbe.connectedTargetResult(peer, "[peer]:50001", 5, YggdrasilLivenessProbe.HttpResult(null, "http=timeout")).state)
+    }
+
+    @Test
+    fun deadVerdictNeedsTwoConsecutiveSamplesWhileLinksAreUp() {
+        val meshDead = MeshResult(MeshState.DEAD, "[200:aaaa::1]:50001", null, "timeout")
+        fun deadReport(up: Int) = YggdrasilLivenessProbe.evaluate(meshDead, up, 6)
+        val liveReport = YggdrasilLivenessProbe.evaluate(
+            MeshResult(MeshState.LIVE, "t", 10L, "connected"), 3, 6
+        )
+        // Deterministic start: a live sample resets the streak.
+        assertEquals(Verdict.LIVE, YggdrasilLivenessProbe.withDeadHysteresis(liveReport).verdict)
+        // First failed sample with Up links: downgraded to PARTIAL.
+        assertEquals(Verdict.PARTIAL, YggdrasilLivenessProbe.withDeadHysteresis(deadReport(3)).verdict)
+        // Second consecutive failure confirms DEAD.
+        assertEquals(Verdict.DEAD, YggdrasilLivenessProbe.withDeadHysteresis(deadReport(3)).verdict)
+        // Reset, then a no-links failure is DEAD immediately (control plane
+        // itself reports nothing up — nothing to be hysteresis about).
+        assertEquals(Verdict.LIVE, YggdrasilLivenessProbe.withDeadHysteresis(liveReport).verdict)
+        assertEquals(Verdict.DEAD, YggdrasilLivenessProbe.withDeadHysteresis(deadReport(0)).verdict)
     }
 }

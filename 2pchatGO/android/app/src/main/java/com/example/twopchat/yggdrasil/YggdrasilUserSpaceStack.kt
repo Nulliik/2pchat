@@ -330,8 +330,16 @@ class YggdrasilUserSpaceStack(
                     ack = 0L,
                     flags = 0x02 // SYN
                 )
+                // Never wait past the advertised 12 s deadline: the last
+                // retransmit used to block up to its full 4 s RTO beyond it,
+                // so a client with a 15 s budget raced the code=4 reply.
+                val remaining = deadline - System.currentTimeMillis()
+                if (remaining <= 0) break
                 try {
-                    success = handshakeFuture.get(rto, java.util.concurrent.TimeUnit.MILLISECONDS)
+                    success = handshakeFuture.get(
+                        minOf(rto, remaining),
+                        java.util.concurrent.TimeUnit.MILLISECONDS
+                    )
                     if (success) break
                 } catch (_: java.util.concurrent.TimeoutException) {
                     rto = minOf(rto * 2, 4_000L)
