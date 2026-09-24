@@ -63,12 +63,12 @@ class StickerSupportTest {
     }
 
     @Test
-    fun validatesAnimatedTimelineAndRejectsOverThreeSeconds() {
+    fun validatesAnimatedTimelineAndRejectsOverFiveSeconds() {
         val safeFile = File.createTempFile("2psticker_safe_", ".webp")
         val longFile = File.createTempFile("2psticker_long_", ".webp")
         try {
-            safeFile.writeBytes(animatedWebP(durationMs = 3_000))
-            longFile.writeBytes(animatedWebP(durationMs = 3_001))
+            safeFile.writeBytes(animatedWebP(durationMs = 5_000))
+            longFile.writeBytes(animatedWebP(durationMs = 5_001))
 
             assertEquals(
                 WebPInfo(512, 512, animated = true),
@@ -78,6 +78,25 @@ class StickerSupportTest {
         } finally {
             safeFile.delete()
             longFile.delete()
+        }
+    }
+
+    @Test
+    fun validatesAnimatedFrameCountLimit() {
+        val safeFile = File.createTempFile("2psticker_frames_180_", ".webp")
+        val overFile = File.createTempFile("2psticker_frames_181_", ".webp")
+        try {
+            safeFile.writeBytes(animatedWebPMultiFrame(frameCount = 180, durationPerFrameMs = 20))
+            overFile.writeBytes(animatedWebPMultiFrame(frameCount = 181, durationPerFrameMs = 20))
+
+            assertEquals(
+                WebPInfo(512, 512, animated = true),
+                StickerSupport.validateWebP(safeFile),
+            )
+            assertNull(StickerSupport.validateWebP(overFile))
+        } finally {
+            safeFile.delete()
+            overFile.delete()
         }
     }
 
@@ -199,6 +218,29 @@ class StickerSupportTest {
         putAscii(44, "ANMF")
         putUInt32Le(48, 16)
         putUInt24Le(64, durationMs)
+    }
+
+    private fun animatedWebPMultiFrame(frameCount: Int, durationPerFrameMs: Int): ByteArray {
+        val totalSize = 44 + frameCount * 24
+        return ByteArray(totalSize).apply {
+            putAscii(0, "RIFF")
+            putUInt32Le(4, size - 8)
+            putAscii(8, "WEBP")
+            putAscii(12, "VP8X")
+            putUInt32Le(16, 10)
+            this[20] = 0x02
+            putUInt24Le(24, 511)
+            putUInt24Le(27, 511)
+            putAscii(30, "ANIM")
+            putUInt32Le(34, 6)
+            var offset = 44
+            for (i in 0 until frameCount) {
+                putAscii(offset, "ANMF")
+                putUInt32Le(offset + 4, 16)
+                putUInt24Le(offset + 20, durationPerFrameMs)
+                offset += 24
+            }
+        }
     }
 
     private fun ByteArray.putAscii(offset: Int, value: String) {

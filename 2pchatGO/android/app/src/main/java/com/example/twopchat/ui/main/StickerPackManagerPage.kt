@@ -340,7 +340,7 @@ internal fun StickerPackManagerPage(
                     selectedStickerId = null
                 },
                 onSelectSticker = { selectedStickerId = it.stickerId },
-                onAdd = { sourcePicker.launch(arrayOf("image/*")) },
+                onAdd = { sourcePicker.launch(arrayOf("image/*", "video/mp4", "video/*")) },
                 onAddCutout = { cutoutPicker.launch(arrayOf("image/*")) },
                 onRename = { showRenameDialog = true },
                 onCopy = { showCopyDialog = true },
@@ -401,7 +401,7 @@ internal fun StickerPackManagerPage(
             onConfirm = { title ->
                 showCreateDialog = false
                 pendingCreate = title to author
-                sourcePicker.launch(arrayOf("image/*"))
+                sourcePicker.launch(arrayOf("image/*", "video/mp4", "video/*"))
             },
         )
     }

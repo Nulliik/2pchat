@@ -689,7 +689,7 @@ fun StorageSettingsPage(
                                         }
                                     }
                                 },
-                                label = { Text("$limitMb MB") },
+                                label = { Text(if (limitMb >= 1024) "${limitMb / 1024} GB" else "$limitMb MB") },
                                 leadingIcon = if (stickerCacheLimitMb == limitMb) {
                                     {
                                         Icon(

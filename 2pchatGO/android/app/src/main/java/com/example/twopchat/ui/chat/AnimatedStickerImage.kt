@@ -93,7 +93,8 @@ internal fun AnimatedStickerImage(
             stickerDecodeSlots.withPermit {
                 val file = File(filePath)
                 val info = StickerSupport.validateWebP(file)
-                if (info == null) {
+                val isGif = if (info == null) StickerSupport.isGif(file) else false
+                if (info == null && !isGif) {
                     null
                 } else {
                     runCatching {
@@ -115,7 +116,7 @@ internal fun AnimatedStickerImage(
                                     (height * scale).toInt().coerceAtLeast(1),
                                 )
                             }
-                        } else if (info.animated) {
+                        } else if (info?.animated == true) {
                             WebPDrawable.fromFile(file.absolutePath)
                         } else {
                             @Suppress("DEPRECATION")
@@ -129,6 +130,8 @@ internal fun AnimatedStickerImage(
     DisposableEffect(drawable, shouldAnimate) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             setInfinitePlatformRepeat(drawable)
+        } else {
+            (drawable as? WebPDrawable)?.setLoopLimit(0)
         }
         if (shouldAnimate) {
             (drawable as? Animatable)?.start()
@@ -157,12 +160,21 @@ internal fun AnimatedStickerImage(
                     }
                 },
                 update = { imageView ->
-                    if (imageView.drawable !== drawable) imageView.setImageDrawable(drawable)
+                    if (imageView.drawable !== drawable) {
+                        imageView.setImageDrawable(drawable)
+                    }
+                    if (shouldAnimate) {
+                        (drawable as? Animatable)?.start()
+                    } else {
+                        (drawable as? Animatable)?.stop()
+                    }
                 },
                 onReset = { imageView ->
+                    (imageView.drawable as? Animatable)?.stop()
                     imageView.setImageDrawable(null)
                 },
                 onRelease = { imageView ->
+                    (imageView.drawable as? Animatable)?.stop()
                     imageView.setImageDrawable(null)
                 },
                 modifier = Modifier.fillMaxSize(),

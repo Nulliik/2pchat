@@ -452,8 +452,8 @@ object P2PPreferences : com.example.twopchat.security.SensitiveMemoryHolder {
             transport = torTransport(context),
         )
 
-    const val DEFAULT_STICKER_CACHE_LIMIT_MB = 100
-    val STICKER_CACHE_LIMIT_OPTIONS_MB = listOf(50, 100, 250, 500)
+    const val DEFAULT_STICKER_CACHE_LIMIT_MB = 250
+    val STICKER_CACHE_LIMIT_OPTIONS_MB = listOf(100, 250, 500, 1024)
     const val DEFAULT_MEDIA_RETENTION_DAYS = 0
     val MEDIA_RETENTION_OPTIONS_DAYS = listOf(3, 7, 30, 0)
     const val DEFAULT_MAX_CACHE_SIZE_MB = 0

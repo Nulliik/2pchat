@@ -47,11 +47,15 @@ object StickerThumbnailCache {
         val file = File(filePath)
         if (!file.isFile || file.length() == 0L) return null
         return try {
-            val bmp = ImageSanitizer.decodeSampledBitmap(
-                filePath = file.absolutePath,
-                maxDim = targetSizePx,
-                preferRgb565 = false,
-            )
+            val bmp = if (StickerSupport.isMp4(file)) {
+                StickerSupport.extractVideoFirstFrame(file, targetSizePx)
+            } else {
+                ImageSanitizer.decodeSampledBitmap(
+                    filePath = file.absolutePath,
+                    maxDim = targetSizePx,
+                    preferRgb565 = false,
+                )
+            }
             bmp?.also { put(filePath, it) }
         } catch (_: Throwable) {
             null

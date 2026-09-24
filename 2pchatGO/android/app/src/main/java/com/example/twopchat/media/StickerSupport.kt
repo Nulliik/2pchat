@@ -69,11 +69,13 @@ object StickerSupport {
     const val PACK_FILE_PREFIX = "2pstickerpack_"
     const val PACK_FILE_EXTENSION = ".2psticker"
     const val MAX_DIMENSION = 512
-    const val MAX_STATIC_BYTES = 128 * 1024L
-    const val MAX_ANIMATED_BYTES = 512 * 1024L
-    const val MAX_CACHE_BYTES = 100L * 1024L * 1024L
+    const val MAX_STATIC_BYTES = 512 * 1024L
+    const val MAX_ANIMATED_BYTES = 1024 * 1024L
+    const val MAX_CACHE_BYTES = 250L * 1024L * 1024L
     const val MAX_PACK_STICKERS = 120
-    const val MAX_PACK_BYTES = 32L * 1024L * 1024L
+    const val MAX_PACK_BYTES = 100L * 1024L * 1024L
+    const val MAX_ANIMATION_DURATION_MS = 5_000L
+    const val MAX_FRAME_COUNT = 180
     private data class InstalledPacksSnapshot(
         val rootPath: String,
         val packs: List<BuiltinStickerPack>,
@@ -89,7 +91,7 @@ object StickerSupport {
     private var installedPacksSnapshot: InstalledPacksSnapshot? = null
     private const val OWNED_MARKER = ".owned"
     private const val ORDER_FILE = "sticker_pack_order.json"
-    private const val MAX_SOURCE_BYTES = 20L * 1024L * 1024L
+    private const val MAX_SOURCE_BYTES = 100L * 1024L * 1024L
 
     val builtinPacks: List<BuiltinStickerPack> = listOf(
         BuiltinStickerPack(
@@ -979,6 +981,13 @@ object StickerSupport {
                 }
                 return validateWebP(target) != null
             }
+            if (AnimatedStickerConverter.isAnimatedSource(source)) {
+                if (AnimatedStickerConverter.convertToAnimatedSticker(source, target)) {
+                    if (validateWebP(target) != null) {
+                        return true
+                    }
+                }
+            }
             val bitmap = decodeStickerBitmap(source) ?: return false
             try {
                 encodeStickerBitmap(bitmap, target)
@@ -1006,6 +1015,11 @@ object StickerSupport {
             return false
         }
     }
+
+    fun isMp4(source: File): Boolean = AnimatedStickerConverter.isMp4(source)
+
+    fun extractVideoFirstFrame(source: File, maxDim: Int = MAX_DIMENSION): Bitmap? =
+        AnimatedStickerConverter.extractVideoFirstFrame(source, maxDim)
 
     fun replaceStickerBitmap(
         context: Context,
@@ -1268,6 +1282,9 @@ object StickerSupport {
     }
 
     fun decodeStickerBitmap(source: File): Bitmap? {
+        if (isMp4(source)) {
+            return extractVideoFirstFrame(source, MAX_DIMENSION)
+        }
         val decoded = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             ImageDecoder.decodeBitmap(ImageDecoder.createSource(source)) { decoder, info, _ ->
                 val width = info.size.width.coerceAtLeast(1)
@@ -1567,12 +1584,12 @@ object StickerSupport {
                     if (frameDuration <= 0) return false
                     frameCount += 1
                     durationMs += frameDuration
-                    if (frameCount > 90 || durationMs > 3_000L) return false
+                    if (frameCount > MAX_FRAME_COUNT || durationMs > MAX_ANIMATION_DURATION_MS) return false
                 }
             }
             offset = payloadOffset + paddedSize
         }
-        return offset == bytes.size && hasAnimationHeader && frameCount in 1..90
+        return offset == bytes.size && hasAnimationHeader && frameCount in 1..MAX_FRAME_COUNT
     }
 }
 
