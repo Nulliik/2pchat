@@ -73,7 +73,8 @@ internal fun ConnectionRouteSummary(
     val haptic = LocalHapticFeedback.current
     val fingerprint = P2PPreferences.getPeerFingerprint(context, peerName) ?: canonicalEndpointFingerprint(peerName)
     val isOnline = com.example.twopchat.presence.PresenceRepository.isOnline(peerName)
-    val activeEndpoint = P2PMessageRelay.peerEndpoints[peerName].orEmpty()
+    val liveEndpoint = P2PMessageRelay.getPeerLiveEndpoint(peerName).orEmpty()
+    val activeEndpoint = if (liveEndpoint.isNotBlank()) liveEndpoint else P2PMessageRelay.peerEndpoints[peerName].orEmpty()
     val activeTransport = P2PMessageRelay.peerConnectionTransports[peerName]
     val rttMs = P2PMessageRelay.peerRttMs[peerName]
     val coroutineScope = rememberCoroutineScope()
@@ -218,7 +219,7 @@ internal fun ConnectionRouteSummary(
                 dotColor = activeColor,
                 title = onlineLabel,
                 detail = activeDetail,
-                endpoint = activeEndpoint.takeIf { isOnline && it.isNotBlank() && !torInboundLoopback },
+                endpoint = activeEndpoint.takeIf { isOnline && it.isNotBlank() && !isLocalShimEndpoint(it) },
                 onSurfaceColor = onSurfaceColor,
                 onSurfaceVariant = onSurfaceVariant,
                 primaryColor = primaryColor,
@@ -250,12 +251,29 @@ internal fun ConnectionRouteSummary(
                     color = onSurfaceVariant,
                 )
                 else -> {
-                    val displayedHistory = if (showFullHistory) history else history.take(3)
+                    val activeRecordEndpoint = remember(history, activeEndpoint) {
+                        if (activeEndpoint.isBlank()) null
+                        else when {
+                            history.any { it.endpoint == activeEndpoint } -> activeEndpoint
+                            isTorLoopbackSocket(activeEndpoint) ->
+                                history.firstOrNull { EndpointRetention.kind(it.endpoint) == EndpointKind.TOR }?.endpoint
+                            activeEndpoint.trim().lowercase().startsWith("127.0.0.2:") ->
+                                history.firstOrNull { EndpointRetention.kind(it.endpoint) == EndpointKind.YGGDRASIL }?.endpoint
+                            else -> null
+                        }
+                    }
+                    val orderedHistory = if (activeRecordEndpoint != null) {
+                        val activeRecord = history.first { it.endpoint == activeRecordEndpoint }
+                        listOf(activeRecord) + history.filter { it.endpoint != activeRecordEndpoint }
+                    } else {
+                        history
+                    }
+                    val displayedHistory = if (showFullHistory) orderedHistory else orderedHistory.take(3)
                     displayedHistory.forEachIndexed { index, record ->
                         val isConnectingThis = connectingEndpoint == record.endpoint
                         EndpointHistoryRow(
                             record = record,
-                            activeEndpoint = activeEndpoint,
+                            activeEndpoint = activeRecordEndpoint.orEmpty(),
                             isOnline = isOnline,
                             isConnecting = isConnectingThis,
                             appLanguage = appLanguage,
@@ -461,6 +479,11 @@ private fun connectionRouteTime(value: Long): String =
 private fun isTorLoopbackSocket(endpoint: String): Boolean {
     val value = endpoint.trim().lowercase()
     return value.startsWith("127.0.0.1:") || value.startsWith("[::1]:")
+}
+
+private fun isLocalShimEndpoint(endpoint: String): Boolean {
+    val value = endpoint.trim().lowercase()
+    return isTorLoopbackSocket(endpoint) || value.startsWith("127.0.0.2:")
 }
 
 private fun endpointNetworkLabel(endpoint: String, appLanguage: String): String {

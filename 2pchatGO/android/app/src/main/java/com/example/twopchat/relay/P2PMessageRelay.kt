@@ -516,6 +516,7 @@ object P2PMessageRelay {
     private val _peerEndpoints = mutableStateMapOf<String, String>()
     val peerEndpoints: Map<String, String> get() = _peerEndpoints
     val peerConnectionTransports = mutableStateMapOf<String, String>()
+    val peerLiveEndpoints = mutableStateMapOf<String, String>()
     val peerRttMs = mutableStateMapOf<String, Long>()
     private const val YGG_SESSION_SETTLE_MS = 1_500L
     private val fingerprintToPeerName = ConcurrentHashMap<String, String>()
@@ -548,6 +549,18 @@ object P2PMessageRelay {
         val ep = peerEndpoints[peerName]
             ?: (fingerprintToPeerName.entries.firstOrNull { it.value == peerName }?.key?.let { peerEndpoints[it] })
         return resolveTransportType(raw, ep, true)
+    }
+
+    /**
+     * Single live endpoint reported by the Go core for the active session
+     * (the route that actually carried the handshake), as opposed to the
+     * comma-joined candidate list in [peerEndpoints]. Null when the peer is
+     * offline or the session route is unknown.
+     */
+    fun getPeerLiveEndpoint(peerName: String): String? {
+        if (!com.example.twopchat.presence.PresenceRepository.isOnline(peerName)) return null
+        return peerLiveEndpoints[peerName]
+            ?: (fingerprintToPeerName.entries.firstOrNull { it.value == peerName }?.key?.let { peerLiveEndpoints[it] })
     }
 
     /**
@@ -637,8 +650,9 @@ object P2PMessageRelay {
             seq,
             fingerprint.ifBlank { null },
         )
-        if (transport != null) runOnMain {
-            peerConnectionTransports[peerName] = transport
+        if (transport != null || endpoint.isNotBlank()) runOnMain {
+            if (transport != null) peerConnectionTransports[peerName] = transport
+            if (endpoint.isNotBlank()) peerLiveEndpoints[peerName] = endpoint
         }
     }
 
@@ -1216,6 +1230,10 @@ object P2PMessageRelay {
                 peerConnectionTransports[cleanNewName] = ct
                 peerConnectionTransports.remove(oldName)
                 if (fp != null) peerConnectionTransports.remove(fp)
+                val ce = peerLiveEndpoints[oldName] ?: (if (fp != null) peerLiveEndpoints[fp] else null)
+                if (ce != null) peerLiveEndpoints[cleanNewName] = ce
+                peerLiveEndpoints.remove(oldName)
+                if (fp != null) peerLiveEndpoints.remove(fp)
 
                 val av = peerAvatars[cleanNewName] ?: peerAvatars[oldName] ?: (if (fp != null) peerAvatars[fp] else null)
                 if (av != null) {
@@ -1443,6 +1461,7 @@ object P2PMessageRelay {
                             _peerEndpoints.remove(peerName)
                             com.example.twopchat.presence.PresenceRepository.forget(peerName)
                             peerConnectionTransports.remove(peerName)
+                            peerLiveEndpoints.remove(peerName)
                         }
                     }
                     persistedName
@@ -3504,6 +3523,7 @@ object P2PMessageRelay {
         aliases.forEach { alias ->
             peerTypingStates.remove(alias)
             peerConnectionTransports.remove(alias)
+            peerLiveEndpoints.remove(alias)
             _peerEndpoints.remove(alias)
             ChatHistoryCache.remove(alias)
         }
