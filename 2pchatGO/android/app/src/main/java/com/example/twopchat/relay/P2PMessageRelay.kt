@@ -505,11 +505,6 @@ object P2PMessageRelay {
     fun clearAvatarShareCooldown(peerKey: String) {
         lastAvatarShareAt.remove(peerKey)
         avatarSharesInFlight.remove(peerKey)
-        // Also reset the onion-share cooldown so that a new .onion address
-        // (e.g. after Tor restart) is sent to the peer on the very next
-        // session establishment, even if the 30-second window has not elapsed.
-        lastOnionShareAt.remove(peerKey)
-        onionSharesInFlight.remove(peerKey)
     }
 
     private const val MAX_TRACKED_PEER_ENDPOINTS = 512
@@ -521,6 +516,11 @@ object P2PMessageRelay {
     private const val YGG_SESSION_SETTLE_MS = 1_500L
     private val fingerprintToPeerName = ConcurrentHashMap<String, String>()
     private val avatarSharesInFlight = ConcurrentHashMap.newKeySet<String>()
+
+    // Onion host last successfully delivered to each peer (by share key). Session
+    // establishment re-shares are suppressed while this still matches the local
+    // onion, so reconnects stop re-flooding the peer with an address it knows.
+    private val lastSharedOnionHost = ConcurrentHashMap<String, String>()
     private val lastAvatarShareAt = ConcurrentHashMap<String, Long>()
     private val lastProfileRequestAt = ConcurrentHashMap<String, Long>()
     private val onionSharesInFlight = ConcurrentHashMap.newKeySet<String>()
@@ -1988,6 +1988,9 @@ object P2PMessageRelay {
                                             .getString("peer_fingerprint_$resolvedSender", null)
                                             ?: (if (isRawFingerprint(sender)) sender else null)
 
+                                        val knownOnion = P2PPreferences.getPeerOnionAddress(appContext, resolvedSender)
+                                        val onionChanged = !formattedOnion.equals(knownOnion, ignoreCase = true)
+
                                         if (sig.isNotBlank() && expectedFp != null) {
                                             val canonicalData = "onion_update:$fp:$rawOnion:$port:$timestamp"
                                             val valid = NativeBridge.verifyGroupPayload(expectedFp, canonicalData, sig)
@@ -1995,10 +1998,14 @@ object P2PMessageRelay {
                                                 log(appContext, "Rejected unverified or forged onion address update from $resolvedSender", "ERROR")
                                                 return
                                             }
-                                            log(appContext, "Verified signed onion address update from $resolvedSender")
+                                            if (onionChanged) {
+                                                log(appContext, "Verified signed onion address update from $resolvedSender")
+                                            }
                                         }
 
-                                        log(appContext, "Received authenticated onion address from $resolvedSender: $formattedOnion")
+                                        // Routine re-shares of a known address are DEBUG; an
+                                        // actual address change stays visible at INFO.
+                                        log(appContext, "Received authenticated onion address from $resolvedSender: $formattedOnion", if (onionChanged) "INFO" else "DEBUG")
                                         P2PPreferences.setPeerOnionAddress(appContext, resolvedSender, formattedOnion)
                                         ChatDatabaseHelper.getInstance(appContext).savePeerOnionAddress(
                                             peerName = resolvedSender,
@@ -2008,8 +2015,11 @@ object P2PMessageRelay {
                                         )
                                         rememberAuthenticatedPeerEndpoint(resolvedSender, formattedOnion)
 
-                                        // Reciprocal exchange if we haven't shared our onion address yet
-                                        if (json.optString("type") == "onion_address_share" && lastOnionShareAt[resolvedSender] == null) {
+                                        // Reciprocal exchange if we haven't shared our onion address yet.
+                                        // The map is keyed by fingerprint (as written by shareOnionAddress);
+                                        // keying the check by name re-fired the share on every reception.
+                                        val shareKey = expectedFp ?: resolvedSender
+                                        if (json.optString("type") == "onion_address_share" && lastOnionShareAt[shareKey] == null) {
                                             shareOnionAddress(appContext, resolvedSender)
                                         }
                                     }
@@ -3296,17 +3306,23 @@ object P2PMessageRelay {
                 val onionHost = TorManager.onionAddress.value?.takeIf { it.isNotBlank() }
                     ?: prefs.getString(P2PPreferences.TOR_ONION_HOSTNAME, null)?.takeIf { it.isNotBlank() }
                 if (onionHost.isNullOrBlank()) {
-                    log(context, "Local Tor onion address is not available; skipping onion share")
+                    log(context, "Local Tor onion address is not available; skipping onion share", "DEBUG")
                     return@launch
                 }
-                // If the onion address has not changed, apply the 30-second cooldown to
-                // avoid redundant traffic. If it *has* changed (e.g. Tor restarted and
-                // produced a new hidden service key) always send immediately so the peer
-                // learns the new address without waiting for the cooldown to expire.
-                val peerKnownOnion = P2PPreferences.getPeerOnionAddress(context, peerName)
-                val onionChanged = !onionHost.equals(peerKnownOnion?.substringBefore(':'), ignoreCase = true)
-                if (!onionChanged && now - (lastOnionShareAt[shareKey] ?: 0L) < 30_000L) {
-                    log(context, "Onion share suppressed (cooldown active, address unchanged)")
+                // Re-share only when the local onion differs from what was last
+                // successfully delivered to this peer (e.g. after a Tor restart, which
+                // produces a new hidden service key). Once the address is delivered and
+                // unchanged the peer already has it, so session-establishment re-shares
+                // are skipped entirely — this stops reconnect loops from re-flooding
+                // both sides. The 30-second cooldown only paces retries of an address
+                // that has not been delivered yet.
+                val previousShared = lastSharedOnionHost[shareKey]
+                if (previousShared != null && onionHost.equals(previousShared, ignoreCase = true)) {
+                    log(context, "Onion share suppressed (already delivered, address unchanged)", "DEBUG")
+                    return@launch
+                }
+                if (now - (lastOnionShareAt[shareKey] ?: 0L) < 30_000L) {
+                    log(context, "Onion share suppressed (retry cooldown active)", "DEBUG")
                     return@launch
                 }
                 val json = JSONObject().apply {
@@ -3340,7 +3356,10 @@ object P2PMessageRelay {
 
                 log(context, "Sharing Tor .onion address with $peerName", "DEBUG")
                 val success = bridge.sendP2pMessage(peerName, resolvedEndpoint, payload, expectedFingerprint)
-                if (success) lastOnionShareAt[shareKey] = System.currentTimeMillis()
+                if (success) {
+                    lastOnionShareAt[shareKey] = System.currentTimeMillis()
+                    lastSharedOnionHost[shareKey] = onionHost
+                }
                 log(context, "Onion address share status: $success", "DEBUG")
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
@@ -3526,6 +3545,10 @@ object P2PMessageRelay {
             peerLiveEndpoints.remove(alias)
             _peerEndpoints.remove(alias)
             ChatHistoryCache.remove(alias)
+            // Forget must reset the onion-delivery record so a re-added peer receives
+            // our address again instead of hitting the "already delivered" dedup.
+            lastSharedOnionHost.remove(alias)
+            lastOnionShareAt.remove(alias)
         }
 
         // Clear messages database, pending controls, and peer table for this peer and all aliases
