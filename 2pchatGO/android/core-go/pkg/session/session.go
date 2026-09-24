@@ -20,7 +20,13 @@ import (
 const (
 	DefaultAckTimeout       = 5 * time.Second
 	TorAckTimeout           = 12 * time.Second
+	// Yggdrasil runs over an overlay and the Android user-space TCP shim. A
+	// transient route rebuild can delay a valid ACK well beyond a direct TCP
+	// RTT, so treating it as direct TCP tears down authenticated sessions
+	// while the mesh is still recovering.
+	YggdrasilAckTimeout = 8 * time.Second
 	DefaultMaxRetries       = 2
+	YggdrasilMaxRetries     = 3
 	DefaultHandshakeTimeout = 30 * time.Second
 	MessageQueueCapacity    = 256
 	MaxReceivedIDsHistory   = 4096
@@ -95,6 +101,19 @@ func WithTorTransport(isTor bool) SessionOption {
 		s.isTorTransport = isTor
 		if isTor {
 			s.ackTimeout = TorAckTimeout
+		}
+	}
+}
+
+// WithYggdrasilTransport applies the loss-tolerant acknowledgement budget to
+// a session whose endpoint was classified as Yggdrasil. It changes only
+// liveness timing; the X3DH/Double-Ratchet and endpoint-policy checks remain
+// identical to direct transport.
+func WithYggdrasilTransport(isYggdrasil bool) SessionOption {
+	return func(s *Session) {
+		if isYggdrasil {
+			s.ackTimeout = YggdrasilAckTimeout
+			s.maxRetries = YggdrasilMaxRetries
 		}
 	}
 }

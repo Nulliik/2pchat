@@ -849,13 +849,13 @@ class NativeBridgeImpl(
         }
 
         val rawCandidates = retainedCandidates(peerName, fingerprint, endpoint, includeReserve)
-        val candidateList = rawCandidates.filter { candidate ->
-            if (pref == P2PPreferences.PeerTransportPreference.TOR_ONLY) {
-                candidate.contains(".onion", ignoreCase = true)
-            } else {
+        // Apply the contact policy before candidates reach Go. Passing a LAN
+        // discovery endpoint alongside a Yggdrasil-only route causes repeated
+        // rejected handshakes and can race the authenticated mesh reconnect.
+        val candidateList = P2PPreferences.filterEndpointsByPreference(rawCandidates, pref)
+            .filter { candidate ->
                 !candidate.contains(".onion", ignoreCase = true) || torReady
             }
-        }
         if (candidateList.isEmpty()) {
             if (pref == P2PPreferences.PeerTransportPreference.TOR_ONLY) {
                 com.example.twopchat.tor.TransportEventManager.emit(

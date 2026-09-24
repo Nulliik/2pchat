@@ -402,6 +402,26 @@ func TestAdaptiveAckTimeoutForTor(t *testing.T) {
 	}
 }
 
+func TestYggdrasilTransportUsesLossTolerantAckBudget(t *testing.T) {
+	s := &Session{
+		ackTimeout: DefaultAckTimeout,
+		maxRetries: DefaultMaxRetries,
+	}
+	WithYggdrasilTransport(true)(s)
+	if s.AckTimeout() != YggdrasilAckTimeout {
+		t.Fatalf("Yggdrasil ACK timeout = %v, want %v", s.AckTimeout(), YggdrasilAckTimeout)
+	}
+	if s.maxRetries != YggdrasilMaxRetries {
+		t.Fatalf("Yggdrasil max retries = %d, want %d", s.maxRetries, YggdrasilMaxRetries)
+	}
+
+	direct := &Session{ackTimeout: DefaultAckTimeout, maxRetries: DefaultMaxRetries}
+	WithYggdrasilTransport(false)(direct)
+	if direct.AckTimeout() != DefaultAckTimeout || direct.maxRetries != DefaultMaxRetries {
+		t.Fatal("non-Yggdrasil session must retain direct transport ACK budget")
+	}
+}
+
 func TestManagerNicknameMappingAndCallbackDeadlockFreedom(t *testing.T) {
 	aliceId, _ := crypto.GenerateIdentityKeyPair()
 	bobId, _ := crypto.GenerateIdentityKeyPair()

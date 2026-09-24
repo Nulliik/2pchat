@@ -393,6 +393,7 @@ func (m *Manager) handleIncomingConnection(conn net.Conn) {
 
 	endpoint := conn.RemoteAddr().String()
 	inboundClass, isTor := classifyInboundTransport(endpoint, onion)
+	isYggdrasil := inboundClass == transport.TransportYggdrasil
 
 	// 4. Pre-handshake global transport policy guard (SEC-03)
 	// If global policy rejects this transport class (e.g. Tor Strict mode rejects clearnet connections),
@@ -435,6 +436,7 @@ func (m *Manager) handleIncomingConnection(conn net.Conn) {
 		30*time.Second,
 		WithPeerValidator(peerValidator),
 		WithTorTransport(isTor),
+		WithYggdrasilTransport(isYggdrasil),
 		WithCapabilities(m.capabilities),
 	)
 	if err != nil {
@@ -667,6 +669,7 @@ func (m *Manager) connectPeerInternal(endpoint, expectedFingerprint string, cont
 	}
 	observationOutcome = diagnostics.HandshakeFailed
 
+	endpointClass, _ := transport.ClassifyEndpoint(winEndpoint)
 	sess, err := NewSession(
 		conn,
 		true, // initiator
@@ -675,6 +678,7 @@ func (m *Manager) connectPeerInternal(endpoint, expectedFingerprint string, cont
 		m.prekeyPub,
 		expectedFingerprint,
 		30*time.Second,
+		WithYggdrasilTransport(endpointClass == transport.TransportYggdrasil),
 		WithCapabilities(m.capabilities),
 	)
 	if err != nil {

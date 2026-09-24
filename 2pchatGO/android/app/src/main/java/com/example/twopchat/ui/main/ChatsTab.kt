@@ -458,21 +458,28 @@ fun ChatsTab(
                                                 val prefs = com.example.twopchat.config.P2PPreferences.prefs(context)
                                                 val yggEnabled = prefs.getBoolean("settings_yggdrasil", false)
                                                 if (yggEnabled) {
-                                                    com.example.twopchat.yggdrasil.YggdrasilCoordinator.stop(context)
-                                                    delay(500)
-                                                    com.example.twopchat.yggdrasil.YggdrasilCoordinator.start(context)
-                                                    var yggReady = false
-                                                    var attempts = 0
-                                                    while (!yggReady && attempts < 24) {
-                                                        delay(500)
-                                                        yggReady = prefs.getString("yggdrasil_runtime_state", "")
-                                                            .equals("CONNECTED", ignoreCase = true) &&
-                                                            prefs.getInt("yggdrasil_runtime_routes", 0) > 0
-                                                        attempts += 1
+                                                    // Refresh is a discovery/reconnect operation, not a mesh
+                                                    // restart. Stopping Yggdrasil here destroys the TCP streams
+                                                    // carrying active Double Ratchet sessions on both devices.
+                                                    // Starting a stopped mesh is still safe; its connected-state
+                                                    // callback will trigger a reconnect once a route is available.
+                                                    if (!com.example.twopchat.yggdrasil.YggdrasilCoordinator.isRunning(context)) {
+                                                        com.example.twopchat.yggdrasil.YggdrasilCoordinator.start(context)
+                                                        val runtime = context.getSharedPreferences(
+                                                            com.example.twopchat.yggdrasil.YggdrasilLivenessProbe.RUNTIME_PREFS_FILE,
+                                                            android.content.Context.MODE_PRIVATE,
+                                                        )
+                                                        var yggReady = false
+                                                        var attempts = 0
+                                                        while (!yggReady && attempts < 24) {
+                                                            delay(500)
+                                                            yggReady = runtime.getString("yggdrasil_runtime_state", "")
+                                                                .equals("CONNECTED", ignoreCase = true) &&
+                                                                runtime.getInt("yggdrasil_runtime_routes", 0) > 0
+                                                            attempts += 1
+                                                        }
+                                                        refreshSucceeded = yggReady
                                                     }
-                                                    refreshSucceeded = yggReady
-                                                } else if (yggEnabled) {
-                                                    refreshSucceeded = false
                                                 }
                                                 P2PMessageRelay.triggerImmediateReconnect(context).join()
                                             } catch (error: Exception) {
