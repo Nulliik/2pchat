@@ -128,7 +128,7 @@ class YggdrasilLivenessProbeTest {
             ).verdict
         )
         assertEquals(
-            Verdict.DEAD,
+            Verdict.PARTIAL,
             YggdrasilLivenessProbe.evaluate(
                 MeshResult(MeshState.DEAD, "t", null, "timeout"), 3, 6
             ).verdict
@@ -156,6 +156,11 @@ class YggdrasilLivenessProbeTest {
         assertTrue(deadLine.contains("[LIVENESS] DEAD"))
         assertTrue(deadLine.contains("mesh=DEAD(timeout)"))
         assertFalse(deadLine.contains("clearnet"))
+
+        val partial = YggdrasilLivenessProbe.evaluate(
+            MeshResult(MeshState.DEAD, "[200:aaaa::1]:50001", null, "timeout"), 3, 6,
+        )
+        assertTrue(partial.summaryLine().contains("mesh=DEGRADED(timeout)"))
     }
 
     @Test
@@ -200,21 +205,19 @@ class YggdrasilLivenessProbeTest {
     }
 
     @Test
-    fun deadVerdictNeedsTwoConsecutiveSamplesWhileLinksAreUp() {
+    fun externalLinksKeepServiceTimeoutPartial() {
         val meshDead = MeshResult(MeshState.DEAD, "[200:aaaa::1]:50001", null, "timeout")
         fun deadReport(up: Int) = YggdrasilLivenessProbe.evaluate(meshDead, up, 6)
         val liveReport = YggdrasilLivenessProbe.evaluate(
             MeshResult(MeshState.LIVE, "t", 10L, "connected"), 3, 6
         )
-        // Deterministic start: a live sample resets the streak.
+        // A successful sample stays live.
         assertEquals(Verdict.LIVE, YggdrasilLivenessProbe.withDeadHysteresis(liveReport).verdict)
-        // First failed sample with Up links: downgraded to PARTIAL.
+        // A service timeout with Up peers remains PARTIAL on every cycle;
+        // it cannot prove that independent peer-to-peer routes are dead.
         assertEquals(Verdict.PARTIAL, YggdrasilLivenessProbe.withDeadHysteresis(deadReport(3)).verdict)
-        // Second consecutive failure confirms DEAD.
-        assertEquals(Verdict.DEAD, YggdrasilLivenessProbe.withDeadHysteresis(deadReport(3)).verdict)
-        // Reset, then a no-links failure is DEAD immediately (control plane
-        // itself reports nothing up — nothing to be hysteresis about).
-        assertEquals(Verdict.LIVE, YggdrasilLivenessProbe.withDeadHysteresis(liveReport).verdict)
+        assertEquals(Verdict.PARTIAL, YggdrasilLivenessProbe.withDeadHysteresis(deadReport(3)).verdict)
+        // No links is a real DEAD state.
         assertEquals(Verdict.DEAD, YggdrasilLivenessProbe.withDeadHysteresis(deadReport(0)).verdict)
     }
 }

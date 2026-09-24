@@ -36,22 +36,15 @@ import java.net.SocketTimeoutException
  * Verdicts:
  *  - LIVE     — the mesh data plane carried a TCP connect (and, for the web
  *               directory, an HTTP status over the mesh).
- *  - PARTIAL  — the mesh has Up links but the data plane is UNVERIFIED
- *               (a target completed TCP but returned no bytes, or the first
- *               failed sample while control-plane links are still Up).
- *  - DEAD     — the mesh data plane is unreachable or has no Up links.
- *               A single failed sample with live Up links is surfaced as
- *               PARTIAL; DEAD requires two consecutive failed probe cycles,
- *               because one transient target timeout must not call a working
- *               mesh dead.
+ *  - PARTIAL  — the control plane has live links but the independently probed
+ *               service did not answer. A service timeout does not prove that
+ *               independent peer-to-peer routes are unavailable.
+ *  - DEAD     — the mesh has no Up links, so it cannot have a usable route.
  */
 object YggdrasilLivenessProbe {
 
     const val RUNTIME_PREFS_FILE = "yggdrasil_runtime_ephemeral"
     const val PREF_LIVENESS = "yggdrasil_liveness"
-
-    /** Consecutive failed data-plane samples; see [withDeadHysteresis]. */
-    private val deadStreak = java.util.concurrent.atomic.AtomicInteger()
 
     /** Direct-connect budget for VPN mode: 200::/7 is routed through the TUN. */
     const val VPN_PROBE_TIMEOUT_MS = 6_000
@@ -103,7 +96,10 @@ object YggdrasilLivenessProbe {
                 MeshState.LIVE ->
                     "mesh=OK target=${mesh.target.orEmpty()}${mesh.rttMs?.let { " rtt=${it}ms" } ?: ""}"
                 MeshState.LIVE_PORT_CLOSED -> "mesh=ALIVE(rst) target=${mesh.target.orEmpty()}"
-                MeshState.DEAD -> "mesh=DEAD(${mesh.detail})${mesh.target?.let { " target=$it" } ?: ""}"
+                MeshState.DEAD -> {
+                    val state = if (verdict == Verdict.DEAD) "DEAD" else "DEGRADED"
+                    "mesh=$state(${mesh.detail})${mesh.target?.let { " target=$it" } ?: ""}"
+                }
                 MeshState.UNVERIFIED -> "mesh=UNVERIFIED(${mesh.detail})"
             }
             return "[LIVENESS] $verdict $meshPart up=$upPeers/$configuredPeers"
@@ -216,9 +212,9 @@ object YggdrasilLivenessProbe {
     }
 
     /**
-     * Combines the mesh plane result and link counts into the final verdict.
-     * The mesh is a standalone 200::/7 overlay that cannot reach the
-     * clearnet, so only the mesh plane decides liveness.
+     * Combines the independent service probe and link counts into the final
+     * verdict. A timeout to one service is insufficient evidence to call the
+     * mesh dead while authenticated public peers are still Up.
      */
     fun evaluate(
         mesh: MeshResult,
@@ -227,7 +223,7 @@ object YggdrasilLivenessProbe {
     ): Report {
         val verdict = when {
             mesh.state == MeshState.LIVE || mesh.state == MeshState.LIVE_PORT_CLOSED -> Verdict.LIVE
-            mesh.state == MeshState.UNVERIFIED && upPeers > 0 -> Verdict.PARTIAL
+            upPeers > 0 -> Verdict.PARTIAL
             else -> Verdict.DEAD
         }
         return Report(verdict, mesh, upPeers, configuredPeers)
@@ -261,26 +257,8 @@ object YggdrasilLivenessProbe {
         return report
     }
 
-    /**
-     * A failed data-plane sample while the control plane still reports Up links
-     * is surfaced as PARTIAL until a second consecutive cycle confirms it as
-     * DEAD. One target timeout (sleeping phone, dead public service, mesh
-     * re-key) must not paint a working mesh as dead in the UI.
-     */
-    internal fun withDeadHysteresis(base: Report): Report {
-        if (base.verdict == Verdict.LIVE) {
-            deadStreak.set(0)
-            return base
-        }
-        if (base.verdict == Verdict.DEAD && base.upPeers > 0) {
-            if (deadStreak.incrementAndGet() < 2) {
-                return base.copy(verdict = Verdict.PARTIAL)
-            }
-        } else {
-            deadStreak.set(0)
-        }
-        return base
-    }
+    /** Kept as the run-path normalization hook for compatibility. */
+    internal fun withDeadHysteresis(base: Report): Report = base
 
     private fun runMeshProbe(
         context: Context,

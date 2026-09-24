@@ -99,9 +99,13 @@ object P2PPreferences : com.example.twopchat.security.SensitiveMemoryHolder {
         prefs(context).edit().putBoolean(YGGDRASIL_EVER_ENABLED, enabled).apply()
     }
 
-    /** Multicast beacon (advertising) toggle; defaults to on for local discovery. */
+    /**
+     * Multicast beacon (advertising) toggle. Keep the default off: enabling it
+     * makes co-located nodes form a direct link and can mask a broken public
+     * Yggdrasil route during normal operation or diagnostics.
+     */
     fun isYggdrasilMulticastBeaconEnabled(context: Context): Boolean =
-        prefs(context).getBoolean(YGGDRASIL_MULTICAST_BEACON, true)
+        prefs(context).getBoolean(YGGDRASIL_MULTICAST_BEACON, false)
 
     fun setYggdrasilMulticastBeaconEnabled(context: Context, enabled: Boolean) {
         prefs(context).edit().putBoolean(YGGDRASIL_MULTICAST_BEACON, enabled).apply()

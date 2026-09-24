@@ -85,18 +85,29 @@ class ConfigurationProxy(applicationContext: Context) {
         private const val PREF_POOL_MIGRATED_V4 = "yggdrasil_public_pool_migrated_v4"
         private const val PREF_POOL_MIGRATED_V5 = "yggdrasil_public_pool_migrated_v5"
         private const val PREF_POOL_MIGRATED_V6 = "yggdrasil_public_pool_migrated_v6"
+        private const val PREF_POOL_MIGRATED_V7 = "yggdrasil_public_pool_migrated_v7"
+        private const val PREF_POOL_MIGRATED_V8 = "yggdrasil_public_pool_migrated_v8"
+        private const val PREF_POOL_MIGRATED_V9 = "yggdrasil_public_pool_migrated_v9"
         private const val MAX_RETAINED_PUBLIC_PEERS = YggdrasilPeerPreferences.MAX_PUBLIC_PEERS
         internal const val MIN_RETAINED_PUBLIC_PEERS = 3
-        // Bootstrap peers taken from the official public-peers repository on
-        // 2026-07-09.  They are intentionally nearby (Russia/Finland) and use
-        // TCP/TLS, which are supported by the bundled Android library.
+        // Bootstrap peers are maintained from the official public-peers
+        // repository. The active subset is ranked from observed Yggdrasil
+        // metrics, while the remaining entries stay as future fallbacks.
         val DEFAULT_PUBLIC_PEERS = YggdrasilPeerPreferences.DEFAULT_PUBLIC_PEERS
 
         internal fun stableLivePeerUris(peersJson: String, customUris: Set<String>): List<String> =
             try {
                 JSONArray(peersJson)
                     .let { array -> (0 until array.length()).mapNotNull(array::optJSONObject) }
-                    .filter { peer -> peer.optBoolean("Up", false) && peer.optString("URI").isNotBlank() }
+                    // A socket reported as Up without a Yggdrasil key/IP has
+                    // not completed a usable overlay handshake. Do not let it
+                    // displace a verified peer in the next-start priority.
+                    .filter { peer ->
+                        peer.optBoolean("Up", false) &&
+                            peer.optString("URI").isNotBlank() &&
+                            peer.optString("Key").isNotBlank() &&
+                            peer.optString("IP").startsWith("2")
+                    }
                     .sortedWith(compareBy<JSONObject> { it.optLong("Cost", Long.MAX_VALUE) }
                         .thenBy { it.optLong("Latency", Long.MAX_VALUE) })
                     .map { it.getString("URI") }
@@ -265,6 +276,33 @@ class ConfigurationProxy(applicationContext: Context) {
                 preferences.edit().putBoolean(PREF_POOL_MIGRATED_V6, true).apply()
             }
 
+            // The previous embedded set had several stale or duplicate
+            // neighbours. Refresh only the managed public pool; user-created
+            // peers remain separate and untouched.
+            if (!preferences.getBoolean(PREF_POOL_MIGRATED_V7, false)) {
+                YggdrasilPeerPreferences.replacePublicPeers(
+                    appContext,
+                    YggdrasilPeerPreferences.DEFAULT_PUBLIC_PEERS.take(MAX_RETAINED_PUBLIC_PEERS),
+                )
+                preferences.edit().putBoolean(PREF_POOL_MIGRATED_V7, true).apply()
+            }
+
+            if (!preferences.getBoolean(PREF_POOL_MIGRATED_V8, false)) {
+                YggdrasilPeerPreferences.replacePublicPeers(
+                    appContext,
+                    YggdrasilPeerPreferences.DEFAULT_PUBLIC_PEERS.take(MAX_RETAINED_PUBLIC_PEERS),
+                )
+                preferences.edit().putBoolean(PREF_POOL_MIGRATED_V8, true).apply()
+            }
+
+            if (!preferences.getBoolean(PREF_POOL_MIGRATED_V9, false)) {
+                YggdrasilPeerPreferences.replacePublicPeers(
+                    appContext,
+                    YggdrasilPeerPreferences.DEFAULT_PUBLIC_PEERS,
+                )
+                preferences.edit().putBoolean(PREF_POOL_MIGRATED_V9, true).apply()
+            }
+
             val configuredAfterSeed = peerUris(json)
             val customUris = YggdrasilPeerPreferences.customPeers(appContext)
                 .mapTo(mutableSetOf()) { it.uri.lowercase() }
@@ -312,18 +350,27 @@ class ConfigurationProxy(applicationContext: Context) {
         }
     }
 
-    /** Persist the lowest-cost live public links only when they retain redundancy. */
+    /**
+     * Rank proven live links first, while retaining the untried and failed
+     * entries behind them as a cold reserve. This never promotes an endpoint
+     * outside the managed public pool and never removes user-created peers.
+     */
     fun retainBestLivePeers(peersJson: String): Boolean {
         return try {
             val customUris = YggdrasilPeerPreferences.customPeers(appContext)
                 .mapTo(mutableSetOf()) { it.uri.lowercase() }
             val live = stableLivePeerUris(peersJson, customUris)
             if (live.size < MIN_RETAINED_PUBLIC_PEERS) return false
-            YggdrasilPeerPreferences.replacePublicPeers(appContext, live)
+            val existing = YggdrasilPeerPreferences.publicPeers(appContext)
+            val ranked = (live + existing + YggdrasilPeerPreferences.DEFAULT_PUBLIC_PEERS)
+                .mapNotNull(YggdrasilPeerPreferences::normalizedPeerUri)
+                .distinctBy(String::lowercase)
+                .take(MAX_RETAINED_PUBLIC_PEERS)
+            YggdrasilPeerPreferences.replacePublicPeers(appContext, ranked)
             updateJSON {
                 it.put(
                     "Peers",
-                    JSONArray(YggdrasilPeerPreferences.effectivePeerUris(appContext, live)),
+                    JSONArray(YggdrasilPeerPreferences.effectivePeerUris(appContext, ranked)),
                 )
             }
             true

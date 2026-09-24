@@ -28,13 +28,18 @@ enum class YggdrasilPeerSort(val storedValue: String) {
 object YggdrasilPeerPreferences {
     const val PUBLIC_PEERS_ENABLED = "yggdrasil_public_peers_enabled"
     const val KNOWN_PUBLIC_PEERS = "yggdrasil_known_public_peers"
+    // SharedPreferences StringSet has deliberately undefined iteration order.
+    // Keep the ordered representation separately because connection priority is
+    // part of the bootstrap policy, not merely a UI preference.
+    const val KNOWN_PUBLIC_PEER_ORDER = "yggdrasil_known_public_peers_order_v1"
     const val DISABLED_PUBLIC_PEERS = "yggdrasil_disabled_public_peers"
     const val CUSTOM_PEERS_JSON = "yggdrasil_custom_peers_json"
     const val PEER_SORT = "yggdrasil_peer_sort"
     const val MAX_CUSTOM_PEERS = 32
-    // A mobile Yggdrasil node needs a small, stable neighbour set.  Hundreds
-    // of public TCP/TLS peers cause connection churn and route flapping.
-    const val MAX_PUBLIC_PEERS = 6
+    // Keep enough geographically diverse fallbacks without making the daemon
+    // continually dial a large number of public nodes.
+    const val MAX_PUBLIC_PEERS = 32
+    const val MAX_ACTIVE_PUBLIC_PEERS = 12
     private val supportedProtocols = setOf("tcp", "tls")
 
     val TLS_BYPASS_PEERS = listOf(
@@ -59,26 +64,53 @@ object YggdrasilPeerPreferences {
     }
 
     val DEFAULT_PUBLIC_PEERS = listOf(
+        // TCP/TLS entries from the official public-peers repository, checked
+        // 2026-09-25. The first entries are closer to Russia; the rest are
+        // independent geographic and operator fallbacks. Only the best 12 are
+        // active at once (see effectivePeerUris).
         "tls://95.217.35.92:1337",
-        "tls://78.27.153.163:3784",
-        "tls://78.27.153.163:3785",
-        "tcp://188.225.9.167:18226",
-        "tcp://45.95.202.21:12403",
-        "tcp://51.15.204.214:12345",
-        // Reserve bootstrap routes. They are not opened together: publicPeers()
-        // applies MAX_PUBLIC_PEERS before the configuration is written.
-        "tls://62.210.85.80:39575",
-        "tcp://89.44.86.85:65535",
-        "tls://78.27.153.163:33166",
+        "tls://ygg-msk-1.averyan.ru:8362",
+        "tls://yggno.de:18227",
+        "tls://45.147.200.202:443",
+        "tls://45.95.202.21:443",
+        "tls://ru2.cert.dev:7041",
+        "tls://ygg-ru.lskd.pw:30042",
+        "tls://ygg.med-dev-systems.ru:6221",
+        "tls://box.paulll.cc:13338",
+        "tls://srv.itrus.su:7992",
+        "tls://37.192.232.33:442",
+        "tls://ekb.itrus.su:7992",
+        "tls://vix.duckdns.org:36014",
+        "tls://kursk.cleverfox.org:15015",
+        "tls://yg-vvo.magicum.net:29331",
+        "tls://204.168.147.93:1337",
+        "tls://ygg-hel-1.wgos.org:45171",
+        "tls://ygg.mkg20001.io:443",
+        "tls://ygg1.mk16.de:1338?key=0000000087ee9949eeab56bd430ee8f324cad55abf3993ed9b9be63ce693e18a",
+        "tls://ygg2.mk16.de:1338?key=000000d80a2d7b3126ea65c8c08fc751088c491a5cdd47eff11c86fa1e4644ae",
+        "tls://159.195.4.143:9001",
+        "tls://helium.avevad.com:1337",
+        "tls://ygg-oracle.axxa.dev:18080",
+        "tls://64.226.122.118:10000",
+        "tls://yggdrasil.neilalexander.dev:64648?key=ecbbcb3298e7d3b4196103333c3e839cfe47a6ca47602b94a6d596683f6bb358",
+        "tls://n.ygg.yt:443",
+        "tls://b.ygg.yt:443",
+        "tls://g.ygg.yt:443",
+        "tls://des.8px.sk:4321",
+        "tls://reticulum.me:12393?key=a3d411280dfc350a4484aa3da5feb0407518c5820cbb011d5620347769b26665",
     )
 
     fun publicPeers(context: Context): List<String> {
-        val stored = P2PPreferences.prefs(context)
-            .getStringSet(KNOWN_PUBLIC_PEERS, emptySet())
+        val preferences = P2PPreferences.prefs(context)
+        val ordered = preferences.getString(KNOWN_PUBLIC_PEER_ORDER, null)
+            ?.let(::decodePeerOrder)
+            .orEmpty()
+        val legacy = preferences.getStringSet(KNOWN_PUBLIC_PEERS, emptySet())
             .orEmpty()
             .mapNotNull(::normalizedPeerUri)
             .distinctBy(String::lowercase)
-        return (stored.ifEmpty { DEFAULT_PUBLIC_PEERS })
+            .sortedBy(String::lowercase)
+        return (ordered.ifEmpty { legacy }.ifEmpty { DEFAULT_PUBLIC_PEERS })
             .take(MAX_PUBLIC_PEERS)
     }
 
@@ -90,9 +122,10 @@ object YggdrasilPeerPreferences {
             .mapNotNull(::normalizedPeerUri)
             .distinctBy(String::lowercase)
             .take(MAX_PUBLIC_PEERS)
-            .toSet()
+            .toList()
         P2PPreferences.prefs(context).edit()
-            .putStringSet(KNOWN_PUBLIC_PEERS, normalized)
+            .putStringSet(KNOWN_PUBLIC_PEERS, normalized.toSet())
+            .putString(KNOWN_PUBLIC_PEER_ORDER, JSONArray(normalized).toString())
             .apply()
     }
 
@@ -210,7 +243,8 @@ object YggdrasilPeerPreferences {
         } else {
             emptySequence()
         }
-        return (public + customPeers.asSequence().filter { it.enabled }.map { it.uri })
+        val activePublic = public.take(MAX_ACTIVE_PUBLIC_PEERS)
+        return (activePublic + customPeers.asSequence().filter { it.enabled }.map { it.uri })
             .distinctBy(String::lowercase)
             .toList()
     }
@@ -280,5 +314,14 @@ object YggdrasilPeerPreferences {
             }
         }
         P2PPreferences.prefs(context).edit().putString(CUSTOM_PEERS_JSON, payload.toString()).apply()
+    }
+
+    private fun decodePeerOrder(value: String): List<String> = try {
+        val array = JSONArray(value)
+        (0 until array.length())
+            .mapNotNull { array.optString(it).let(::normalizedPeerUri) }
+            .distinctBy(String::lowercase)
+    } catch (_: Exception) {
+        emptyList()
     }
 }

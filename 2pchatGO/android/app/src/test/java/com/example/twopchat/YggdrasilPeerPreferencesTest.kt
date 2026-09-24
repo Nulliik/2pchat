@@ -104,6 +104,23 @@ class YggdrasilPeerPreferencesTest {
     }
 
     @Test
+    fun effectivePeersUseOnlyTheActivePrefixAndLeaveCustomPeersUntouched() {
+        val public = (1..(YggdrasilPeerPreferences.MAX_ACTIVE_PUBLIC_PEERS + 3)).map {
+            "tls://peer-$it.example:443"
+        }
+        val result = YggdrasilPeerPreferences.selectEffectivePeerUris(
+            publicCandidates = public,
+            publicEnabled = true,
+            disabledPublicPeers = emptySet(),
+            customPeers = listOf(CustomYggdrasilPeer("1", "Custom", "tls://custom.example:443")),
+        )
+
+        assertEquals(YggdrasilPeerPreferences.MAX_ACTIVE_PUBLIC_PEERS + 1, result.size)
+        assertEquals(public.take(YggdrasilPeerPreferences.MAX_ACTIVE_PUBLIC_PEERS), result.dropLast(1))
+        assertEquals("tls://custom.example:443", result.last())
+    }
+
+    @Test
     fun tlsBypassPeersListContainsValidTlsEndpoints() {
         val peers = YggdrasilPeerPreferences.TLS_BYPASS_PEERS
         assert(peers.isNotEmpty())
