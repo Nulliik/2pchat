@@ -104,8 +104,11 @@ internal fun StickerPackBottomSheet(
         packLoading = true
         val resolved = withContext(Dispatchers.IO) {
             val installed = StickerSupport.findPack(context, packId)
-            (installed ?: StickerSupport.findPeerPackPreview(context, packId)) to
-                (installed != null)
+            // A cached preview is the freshest content the peer sent, so it
+            // wins over a stale installed copy: the install button then
+            // updates the installed pack with the sender's new version.
+            val preview = StickerSupport.findPeerPackPreview(context, packId)
+            (preview ?: installed) to (preview == null && installed != null)
         }
         pack = resolved.first
         isInstalled = resolved.second

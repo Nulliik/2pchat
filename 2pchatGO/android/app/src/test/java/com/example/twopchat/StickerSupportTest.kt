@@ -220,12 +220,73 @@ class StickerSupportTest {
             )
             assertTrue(File(installed, ".owned").isFile)
             assertTrue(preview.listFiles().orEmpty().isNotEmpty())
+            val leftovers = root.listFiles().orEmpty()
+                .filter { it.name != "peerpack" }
+            assertTrue(leftovers.isEmpty())
             assertFalse(
                 StickerSupport.replaceInstalledPackWithPeerUpdate(root, "ghost", preview)
             )
         } finally {
             root.deleteRecursively()
             preview.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun crashedPackSwapRestoresInstalledPackFromMarker() {
+        val root = createTempDirectory("2pchat_pack_crash_").toFile()
+        try {
+            val installed = File(root, "peerpack").apply { mkdirs() }
+            File(installed, "pack.json").writeText("""{"format":1}""")
+            File(installed, "2psticker_peerpack--old.webp").writeBytes(ByteArray(40))
+
+            // Simulate a process death between the two renames of a swap:
+            // the installed directory is parked as the backup, the new
+            // content is staged, and the journal marker records both.
+            val backup = File(root, "peerpack_old_1")
+            assertTrue(installed.renameTo(backup))
+            val replacement = File(root, "peerpack_new_1").apply { mkdirs() }
+            File(replacement, "pack.json").writeText("""{"format":1}""")
+            File(root, "peerpack._pending_swap")
+                .writeText("${backup.name}\n${replacement.name}")
+
+            assertTrue(StickerSupport.recoverPendingPackSwaps(root))
+
+            val restored = File(root, "peerpack")
+            assertTrue(restored.isDirectory)
+            assertEquals(
+                40L,
+                File(restored, "2psticker_peerpack--old.webp").length()
+            )
+            val leftovers = root.listFiles().orEmpty()
+                .filter { it.name != "peerpack" }
+            assertTrue(leftovers.isEmpty())
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun completedPackSwapCleansLeftoverMarker() {
+        val root = createTempDirectory("2pchat_pack_marker_").toFile()
+        try {
+            val installed = File(root, "peerpack").apply { mkdirs() }
+            File(installed, "pack.json").writeText("""{"format":1}""")
+            File(installed, "2psticker_peerpack--new.webp").writeBytes(ByteArray(60))
+
+            // Swap completed but the process died before the marker was
+            // removed: target exists, marker and leftovers remain.
+            File(root, "peerpack._pending_swap")
+                .writeText("peerpack_old_1\npeerpack_new_1")
+
+            assertTrue(StickerSupport.recoverPendingPackSwaps(root))
+
+            assertTrue(File(installed, "2psticker_peerpack--new.webp").isFile)
+            val leftovers = root.listFiles().orEmpty()
+                .filter { it.name != "peerpack" }
+            assertTrue(leftovers.isEmpty())
+        } finally {
+            root.deleteRecursively()
         }
     }
 

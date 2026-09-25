@@ -90,6 +90,7 @@ object StickerSupport {
     @Volatile
     private var installedPacksSnapshot: InstalledPacksSnapshot? = null
     private const val OWNED_MARKER = ".owned"
+    private const val PENDING_SWAP_MARKER_SUFFIX = "._pending_swap"
     private const val ORDER_FILE = "sticker_pack_order.json"
     private const val MAX_SOURCE_BYTES = 100L * 1024L * 1024L
 
@@ -202,6 +203,7 @@ object StickerSupport {
             ?.takeIf { it.rootPath == rootPath }
             ?.let { return it.packs }
         return synchronized(installedPacksLock) {
+            if (recoverPendingPackSwaps(directory)) installedPacksSnapshot = null
             installedPacksSnapshot
                 ?.takeIf { it.rootPath == rootPath }
                 ?.packs
@@ -242,13 +244,24 @@ object StickerSupport {
     fun findPeerPackPreview(context: Context, packId: String): BuiltinStickerPack? =
         readInstalledPack(File(peerPackPreviewDirectory(context), safeId(packId)))
 
+    /**
+     * Explicit user action ("Add pack" from the peer pack preview):
+     * install the cached preview into the collection. When a pack with the
+     * same id is already installed, it is replaced with the preview content
+     * (the sender's update); the `.owned` marker is preserved.
+     */
     fun installPeerPackPreview(context: Context, packId: String): BuiltinStickerPack? =
         synchronized(installedPacksLock) {
             val normalizedPackId = safeId(packId)
-            findPack(context, normalizedPackId)?.let { return@synchronized it }
             val previewDirectory = File(peerPackPreviewDirectory(context), normalizedPackId)
             val preview = readInstalledPack(previewDirectory) ?: return@synchronized null
             val root = installedPacksDirectory(context)
+            if (replaceInstalledPackWithPeerUpdate(root, normalizedPackId, previewDirectory)) {
+                appendPackOrder(context, normalizedPackId)
+                invalidatePackCaches(context, normalizedPackId)
+                previewDirectory.deleteRecursively()
+                return@synchronized readInstalledPack(File(root, normalizedPackId))
+            }
             val target = File(root, normalizedPackId)
             val staging = File(root, "${normalizedPackId}_new_${System.nanoTime()}")
             if (staging.exists()) staging.deleteRecursively()
@@ -262,7 +275,6 @@ object StickerSupport {
                     source.copyTo(copied)
                     if (validateWebP(copied) == null) return@synchronized null
                 }
-                if (target.exists()) return@synchronized readInstalledPack(target)
                 if (!staging.renameTo(target)) return@synchronized null
                 appendPackOrder(context, normalizedPackId)
                 invalidatePackCaches(context, normalizedPackId)
@@ -752,17 +764,20 @@ object StickerSupport {
     }
 
     /**
-     * A peer resending a pack whose id matches an installed pack is an update:
-     * replace the installed copy in place so the sender's changes reach the
-     * recipient's collection. The `.owned` marker is preserved so the
-     * recipient keeps management rights over the updated pack. Returns true
-     * when an installed pack was replaced.
+     * Replaces an installed pack with the same id in place with the given
+     * content. Only the explicit peer-preview install calls this, so an
+     * incoming pack never silently overwrites the user's collection. The
+     * `.owned` marker is preserved so the recipient keeps management
+     * rights. The two-rename swap is journaled in a marker file so a crash
+     * between the renames is repaired by [recoverPendingPackSwaps].
+     * Returns true when an installed pack was replaced.
      */
     internal fun replaceInstalledPackWithPeerUpdate(
         installedRoot: File,
         packId: String,
         source: File,
     ): Boolean {
+        recoverPendingPackSwaps(installedRoot)
         val installedDirectory = File(installedRoot, packId)
         if (!installedDirectory.isDirectory) return false
         val wasOwned = File(installedDirectory, OWNED_MARKER).isFile
@@ -774,17 +789,58 @@ object StickerSupport {
         }
         if (wasOwned) File(replacement, OWNED_MARKER).writeText("local", Charsets.UTF_8)
         val backup = File(installedRoot, "${packId}_old_${System.nanoTime()}")
-        if (!installedDirectory.renameTo(backup)) {
+        val marker = File(installedRoot, "$packId$PENDING_SWAP_MARKER_SUFFIX")
+        try {
+            marker.writeText("${backup.name}\n${replacement.name}", Charsets.UTF_8)
+            if (!installedDirectory.renameTo(backup)) {
+                marker.delete()
+                replacement.deleteRecursively()
+                return false
+            }
+            if (!replacement.renameTo(installedDirectory)) {
+                backup.renameTo(installedDirectory)
+                marker.delete()
+                replacement.deleteRecursively()
+                return false
+            }
+            marker.delete()
+            backup.deleteRecursively()
+            return true
+        } catch (_: Exception) {
+            if (!installedDirectory.exists()) backup.renameTo(installedDirectory)
             replacement.deleteRecursively()
             return false
         }
-        if (!replacement.renameTo(installedDirectory)) {
-            backup.renameTo(installedDirectory)
-            replacement.deleteRecursively()
-            return false
-        }
-        backup.deleteRecursively()
-        return true
+    }
+
+    /**
+     * Completes pack swaps interrupted by a process crash: each marker
+     * records the backup and replacement names, and the backup is restored
+     * when the target directory is missing. Returns true when anything was
+     * repaired or cleaned up.
+     */
+    internal fun recoverPendingPackSwaps(installedRoot: File): Boolean {
+        var repaired = false
+        installedRoot.listFiles()
+            ?.filter { it.isFile && it.name.endsWith(PENDING_SWAP_MARKER_SUFFIX) }
+            ?.forEach { marker ->
+                val packId = marker.name.removeSuffix(PENDING_SWAP_MARKER_SUFFIX)
+                val target = File(installedRoot, packId)
+                val lines = try {
+                    marker.readText().trim().lines().filter { it.isNotBlank() }
+                } catch (_: Exception) {
+                    emptyList()
+                }
+                if (!target.exists()) {
+                    lines.firstOrNull()?.let { backupName ->
+                        if (File(installedRoot, backupName).renameTo(target)) repaired = true
+                    }
+                }
+                lines.getOrNull(1)?.let { File(installedRoot, it).deleteRecursively() }
+                marker.delete()
+                repaired = true
+            }
+        return repaired
     }
 
     private fun unpackPackArchive(
@@ -898,9 +954,6 @@ object StickerSupport {
             } else {
                 packDirectory.setLastModified(System.currentTimeMillis())
                 trimPeerPackPreviews(destinationRoot, keepPackId = effectivePackId)
-                if (replaceInstalledPackWithPeerUpdate(installedPacksDirectory(context), effectivePackId, packDirectory)) {
-                    invalidatePackCaches(context, effectivePackId)
-                }
             }
             return readInstalledPack(packDirectory)
         } catch (_: Exception) {
