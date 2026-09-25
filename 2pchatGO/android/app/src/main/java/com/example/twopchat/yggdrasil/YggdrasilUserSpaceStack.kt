@@ -92,6 +92,13 @@ internal class YggdrasilUserSpaceStack(
     private var socksServer: ServerSocket? = null
     private var udpRelaySocket: DatagramSocket? = null
     private var workerThreads = mutableListOf<Thread>()
+
+    // Serializes "check running -> bind listeners" in start() with the
+    // teardown in stop(): a stopped stack must never end up with an
+    // orphaned listener. A running check alone leaves a TOCTOU window
+    // between the check and the bind.
+    private val lifecycleLock = Any()
+    internal val isRunning: Boolean get() = running.get()
     // TCP data, ACKs and retransmissions originate on different threads. The
     // gomobile buffer boundary does not provide a packet-atomic multi-writer
     // contract, so serialize every outbound mesh packet here.
@@ -196,37 +203,48 @@ internal class YggdrasilUserSpaceStack(
             )
         }
 
-        // 1. Start SOCKS5 Listener on 127.0.0.1:socksPort
-        try {
-            socksServer = ServerSocket().apply {
-                reuseAddress = true
-                bind(java.net.InetSocketAddress(InetAddress.getByName("127.0.0.1"), socksPort))
+        val listenersBound = synchronized(lifecycleLock) {
+            if (!running.get()) {
+                // stop() won the race: the stack is being torn down, so no
+                // listener may be opened.
+                false
+            } else {
+                // 1. Start SOCKS5 Listener on 127.0.0.1:socksPort
+                try {
+                    socksServer = ServerSocket().apply {
+                        reuseAddress = true
+                        bind(java.net.InetSocketAddress(InetAddress.getByName("127.0.0.1"), socksPort))
+                    }
+                    SafeLog.i(TAG, "SOCKS5 proxy server successfully bound on 127.0.0.1:$socksPort")
+                    val tSocks = thread(name = "Ygg-SOCKS5-Acceptor") {
+                        acceptSocksLoop()
+                    }
+                    workerThreads.add(tSocks)
+                } catch (e: Throwable) {
+                    SafeLog.e(TAG, "Failed to bind SOCKS5 server on port $socksPort", e)
+                }
+
+                try {
+                    udpRelaySocket = DatagramSocket(InetSocketAddress("127.0.0.1", socksPort + 1))
+                    workerThreads.add(thread(name = "Ygg-UDP-Relay") { udpRelayLoop() })
+                    SafeLog.i(TAG, "Yggdrasil UDP relay bound on 127.0.0.1:${socksPort + 1}")
+                } catch (e: Throwable) {
+                    SafeLog.e(TAG, "Failed to bind Yggdrasil UDP relay", e)
+                }
+
+                // 2. Start Mesh Packet Receiver
+                val tRecv = thread(name = "Ygg-Mesh-Receiver") {
+                    meshReceiveLoop()
+                }
+                workerThreads.add(tRecv)
+                workerThreads.add(thread(name = "Ygg-TCP-Retransmit") { retransmitLoop() })
+                true
             }
-            SafeLog.i(TAG, "SOCKS5 proxy server successfully bound on 127.0.0.1:$socksPort")
-            val tSocks = thread(name = "Ygg-SOCKS5-Acceptor") {
-                acceptSocksLoop()
-            }
-            workerThreads.add(tSocks)
-        } catch (e: Throwable) {
-            SafeLog.e(TAG, "Failed to bind SOCKS5 server on port $socksPort", e)
         }
-
-        try {
-            udpRelaySocket = DatagramSocket(InetSocketAddress("127.0.0.1", socksPort + 1))
-            workerThreads.add(thread(name = "Ygg-UDP-Relay") { udpRelayLoop() })
-            SafeLog.i(TAG, "Yggdrasil UDP relay bound on 127.0.0.1:${socksPort + 1}")
-        } catch (e: Throwable) {
-            SafeLog.e(TAG, "Failed to bind Yggdrasil UDP relay", e)
+        if (!listenersBound) {
+            SafeLog.i(TAG, "Stack stopped while starting; listeners were not opened")
+            return
         }
-
-        // 2. Start Mesh Packet Receiver
-        val tRecv = thread(name = "Ygg-Mesh-Receiver") {
-            meshReceiveLoop()
-        }
-        workerThreads.add(tRecv)
-        workerThreads.add(thread(name = "Ygg-TCP-Retransmit") { retransmitLoop() })
-
-        SafeLog.i(TAG, "Yggdrasil User-Space Proxy Stack started on 127.0.0.1:$socksPort")
         runCatching {
             com.example.twopchat.AppLog.append(
                 GlobalApplication.getContext(),
@@ -238,26 +256,28 @@ internal class YggdrasilUserSpaceStack(
     fun stop() {
         if (!running.compareAndSet(true, false)) return
 
-        runCatching {
-            com.example.twopchat.AppLog.append(
-                GlobalApplication.getContext(),
-                "[YGGDRASIL] [YggUserStack] Stopping user-space stack\n"
-            )
-        }
-        runCatching { socksServer?.close() }
-        runCatching { udpRelaySocket?.close() }
-        activeSessions.values.forEach { sess ->
-            runCatching { sess.clientSocket?.close() }
-        }
-        activeSessions.clear()
-        pendingHandshakes.values.forEach { it.complete(false) }
-        pendingHandshakes.clear()
-        pendingInboundSessions.clear()
-        udpSessions.clear()
-        udpClientPorts.clear()
+        synchronized(lifecycleLock) {
+            runCatching {
+                com.example.twopchat.AppLog.append(
+                    GlobalApplication.getContext(),
+                    "[YGGDRASIL] [YggUserStack] Stopping user-space stack\n"
+                )
+            }
+            runCatching { socksServer?.close() }
+            runCatching { udpRelaySocket?.close() }
+            activeSessions.values.forEach { sess ->
+                runCatching { sess.clientSocket?.close() }
+            }
+            activeSessions.clear()
+            pendingHandshakes.values.forEach { it.complete(false) }
+            pendingHandshakes.clear()
+            pendingInboundSessions.clear()
+            udpSessions.clear()
+            udpClientPorts.clear()
 
-        workerThreads.forEach { it.interrupt() }
-        workerThreads.clear()
+            workerThreads.forEach { it.interrupt() }
+            workerThreads.clear()
+        }
         SafeLog.i(TAG, "Yggdrasil User-Space Proxy Stack stopped")
     }
 

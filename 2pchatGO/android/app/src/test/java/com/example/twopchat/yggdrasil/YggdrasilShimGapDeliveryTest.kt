@@ -374,4 +374,38 @@ class YggdrasilShimGapDeliveryTest {
             portOpen
         )
     }
+
+    @Test
+    fun stoppedStackNeverKeepsListenerBound() {
+        // start()/stop() race at the bind: whichever thread wins, a stopped
+        // stack must never keep the SOCKS listener open. Without the
+        // lifecycle lock, stop() could tear down while socksServer is still
+        // null and start() would then bind an orphaned listener.
+        repeat(100) { i ->
+            val mesh = FakeMesh(address = "200:1000:cccc::7")
+            val socksPort = freePort()
+            val stack = YggdrasilUserSpaceStack(
+                mesh = mesh,
+                socksPort = socksPort,
+                localTargetPort = 1
+            )
+            val startThread = Thread { stack.start() }
+            startThread.isDaemon = true
+            startThread.start()
+            stack.stop()
+            startThread.join(2_000)
+            if (stack.isRunning) {
+                // start() won the whole race: clean it up.
+                stack.stop()
+            } else {
+                val portOpen = runCatching {
+                    Socket().use { s -> s.connect(InetSocketAddress("127.0.0.1", socksPort), 200) }
+                }.isSuccess
+                org.junit.Assert.assertFalse(
+                    "iteration $i: stopped stack must not keep the SOCKS listener bound",
+                    portOpen
+                )
+            }
+        }
+    }
 }
