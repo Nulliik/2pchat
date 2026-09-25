@@ -153,6 +153,10 @@ internal class YggdrasilUserSpaceStack(
     private fun waitForLocalAddress(timeoutMs: Long): ByteArray {
         val deadline = System.currentTimeMillis() + timeoutMs
         while (true) {
+            // stop() during the wait invalidates the start: bail out
+            // immediately instead of holding the starting thread until the
+            // deadline; the caller must not open the listener afterwards.
+            if (!running.get()) return ByteArray(16)
             val ip = localIp
             if (isYggdrasilAddress(ip)) return ip
             if (System.currentTimeMillis() >= deadline) return ip
@@ -175,6 +179,12 @@ internal class YggdrasilUserSpaceStack(
         // node before this stack, so a valid address is expected promptly,
         // and a timeout means the node is broken - never open the SOCKS port.
         val readyAddress = waitForLocalAddress(addressDiscoveryTimeoutMs)
+        if (!running.get()) {
+            // stop() raced with the address wait: the stack is being torn
+            // down, so the starting thread must not open the listener.
+            SafeLog.i(TAG, "Stack stopped while waiting for the node address; start aborted")
+            return
+        }
         if (!isYggdrasilAddress(readyAddress)) {
             running.set(false)
             SafeLog.e(

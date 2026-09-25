@@ -331,4 +331,47 @@ class YggdrasilShimGapDeliveryTest {
             portOpenAfter
         )
     }
+
+    @Test
+    fun stopDuringAddressWaitDoesNotOpenListener() {
+        // Lifecycle race: stop() while start() is still blocked in the
+        // address gate. The address may appear afterwards, but the starting
+        // thread must not proceed to bind the SOCKS port.
+        val mesh = FakeMesh(address = null)
+        this.meshA = mesh
+        val socksPort = freePort()
+        val stack = YggdrasilUserSpaceStack(
+            mesh = mesh,
+            socksPort = socksPort,
+            localTargetPort = 1,
+            addressDiscoveryTimeoutMs = 5_000
+        )
+        this.stackA = stack
+
+        val started = AtomicBoolean(false)
+        val startThread = Thread {
+            stack.start()
+            started.set(true)
+        }
+        startThread.isDaemon = true
+        startThread.start()
+
+        // start() is blocked in the address gate; stop the stack.
+        Thread.sleep(300)
+        stack.stop()
+
+        // The address appears only after stop(): start() must return
+        // without binding the listener.
+        mesh.address = "200:1000:cccc::5"
+        startThread.join(YggdrasilUserSpaceStack.ADDRESS_DISCOVERY_TIMEOUT_MS + 2_000)
+        org.junit.Assert.assertTrue("start() must return after stop()", started.get())
+
+        val portOpen = runCatching {
+            Socket().use { s -> s.connect(InetSocketAddress("127.0.0.1", socksPort), 500) }
+        }.isSuccess
+        org.junit.Assert.assertFalse(
+            "SOCKS port must not be bound when stop() races the address wait",
+            portOpen
+        )
+    }
 }
