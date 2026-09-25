@@ -776,6 +776,7 @@ object StickerSupport {
         installedRoot: File,
         packId: String,
         source: File,
+        moveDirectory: (File, File) -> Boolean = { from, to -> from.renameTo(to) },
     ): Boolean {
         recoverPendingPackSwaps(installedRoot)
         val installedDirectory = File(installedRoot, packId)
@@ -792,13 +793,22 @@ object StickerSupport {
         val marker = File(installedRoot, "$packId$PENDING_SWAP_MARKER_SUFFIX")
         try {
             marker.writeText("${backup.name}\n${replacement.name}", Charsets.UTF_8)
-            if (!installedDirectory.renameTo(backup)) {
+            if (!moveDirectory(installedDirectory, backup)) {
                 marker.delete()
                 replacement.deleteRecursively()
                 return false
             }
-            if (!replacement.renameTo(installedDirectory)) {
-                backup.renameTo(installedDirectory)
+            if (!moveDirectory(replacement, installedDirectory)) {
+                if (!installedDirectory.exists()) {
+                    moveDirectory(backup, installedDirectory)
+                }
+                if (!installedDirectory.exists()) {
+                    // Rollback did not land and the target is missing: keep
+                    // the journal so the next recovery restores the parked
+                    // backup.
+                    replacement.deleteRecursively()
+                    return false
+                }
                 marker.delete()
                 replacement.deleteRecursively()
                 return false
@@ -807,7 +817,7 @@ object StickerSupport {
             backup.deleteRecursively()
             return true
         } catch (_: Exception) {
-            if (!installedDirectory.exists()) backup.renameTo(installedDirectory)
+            if (!installedDirectory.exists()) moveDirectory(backup, installedDirectory)
             replacement.deleteRecursively()
             return false
         }
@@ -831,7 +841,11 @@ object StickerSupport {
                 } catch (_: Exception) {
                     emptyList()
                 }
-                if (!target.exists()) {
+                if (target.exists()) {
+                    // Swap completed before the crash: the target holds the
+                    // new content, drop the parked backup with the leftovers.
+                    lines.firstOrNull()?.let { File(installedRoot, it).deleteRecursively() }
+                } else {
                     lines.firstOrNull()?.let { backupName ->
                         if (File(installedRoot, backupName).renameTo(target)) repaired = true
                     }
