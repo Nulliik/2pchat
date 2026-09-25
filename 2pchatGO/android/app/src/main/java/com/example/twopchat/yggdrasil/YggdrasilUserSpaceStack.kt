@@ -1,7 +1,6 @@
 package com.example.twopchat.yggdrasil
 
 import com.example.twopchat.logging.SafeLog
-import mobile.Yggdrasil
 import java.io.InputStream
 import java.io.EOFException
 import java.io.OutputStream
@@ -80,10 +79,11 @@ internal class TcpReceiveWindow(initialSequence: Long) {
  * Pure Kotlin User-Space TCP/IP Stack & SOCKS5 Server for Yggdrasil Proxy Mode.
  * Translates SOCKS5 connections to raw IPv6/TCP packets on the mesh without requiring VPN permissions.
  */
-class YggdrasilUserSpaceStack(
-    private val ygg: Yggdrasil,
+internal class YggdrasilUserSpaceStack(
+    private val mesh: MeshTransport,
     private val socksPort: Int = 9053,
-    private val localTargetPort: Int = 50001
+    private val localTargetPort: Int = 50001,
+    private val inboundSourceAddress: String = "127.0.0.2"
 ) {
     private val running = AtomicBoolean(false)
     private var socksServer: ServerSocket? = null
@@ -105,7 +105,7 @@ class YggdrasilUserSpaceStack(
     private var cachedLocalIp: ByteArray? = null
 
     private val localIp: ByteArray
-        get() = resolveLocalAddress(runCatching { ygg.addressString }.getOrNull(), cachedLocalIp)
+        get() = resolveLocalAddress(mesh.addressString(), cachedLocalIp)
             .also { if (isYggdrasilAddress(it)) cachedLocalIp = it }
 
     private class StreamSession(
@@ -147,8 +147,36 @@ class YggdrasilUserSpaceStack(
     // stable mesh-side port for every native client socket across its requests.
     private val udpClientPorts = ConcurrentHashMap<String, Int>()
 
+    private fun waitForLocalAddress(timeoutMs: Long): ByteArray {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (true) {
+            val ip = localIp
+            if (isYggdrasilAddress(ip)) return ip
+            if (System.currentTimeMillis() >= deadline) return ip
+            try {
+                Thread.sleep(ADDRESS_POLL_INTERVAL_MS)
+            } catch (_: InterruptedException) {
+                return ip
+            }
+        }
+    }
+
     fun start() {
         if (!running.compareAndSet(false, true)) return
+
+        // 0. Wait for a valid node address before accepting traffic. A packet
+        // sent from an all-zero source address is keyed by the peer's shim
+        // under "::" and dropped with its ACKs, so the first handshake would
+        // fail even on a healthy route. The node is started by the owner
+        // before this stack, so a valid address is expected promptly.
+        val readyAddress = waitForLocalAddress(ADDRESS_DISCOVERY_TIMEOUT_MS)
+        if (!isYggdrasilAddress(readyAddress)) {
+            SafeLog.w(
+                TAG,
+                "No valid Yggdrasil node address after ${ADDRESS_DISCOVERY_TIMEOUT_MS}ms; " +
+                    "packets may be dropped until one is resolved"
+            )
+        }
 
         // 1. Start SOCKS5 Listener on 127.0.0.1:socksPort
         try {
@@ -431,14 +459,14 @@ class YggdrasilUserSpaceStack(
         val buf = ByteArray(65535)
         while (running.get()) {
             try {
-                val len = ygg.recvBuffer(buf)
+                val len = mesh.receivePacket(buf)
                 if (len <= 0) {
                     Thread.sleep(10)
                     continue
                 }
                 if (len < 40) continue // Minimum IPv6 header size
 
-                handleInboundPacket(buf, len.toInt())
+                handleInboundPacket(buf, len)
             } catch (_: Throwable) {
                 if (!running.get()) break
             }
@@ -628,7 +656,7 @@ class YggdrasilUserSpaceStack(
             // address; the native listener otherwise sees only loopback and
             // reports a false Direct P2P route to the UI.
             val localSocket = Socket().apply {
-                bind(InetSocketAddress(InetAddress.getByName("127.0.0.2"), 0))
+                bind(InetSocketAddress(InetAddress.getByName(inboundSourceAddress), 0))
                 connect(InetSocketAddress("127.0.0.1", localTargetPort), LOCAL_CORE_CONNECT_TIMEOUT_MS)
             }
             val session = StreamSession(
@@ -766,7 +794,7 @@ class YggdrasilUserSpaceStack(
 
         try {
             synchronized(yggSendLock) {
-                ygg.sendBuffer(raw, totalLen.toLong())
+                mesh.sendPacket(raw, totalLen.toLong())
             }
         } catch (e: Exception) {
             SafeLog.w(TAG, "Failed sending TCP packet buffer to mesh: ${e.javaClass.simpleName}")
@@ -859,7 +887,7 @@ class YggdrasilUserSpaceStack(
         raw[46] = ((csum ushr 8) and 0xFF).toByte(); raw[47] = (csum and 0xFF).toByte()
         runCatching {
             synchronized(yggSendLock) {
-                ygg.sendBuffer(raw, raw.size.toLong())
+                mesh.sendPacket(raw, raw.size.toLong())
             }
         }
     }
@@ -963,6 +991,10 @@ class YggdrasilUserSpaceStack(
         private const val INITIAL_RTO_MS = 600L
         private const val MAX_RTO_MS = 8_000L
         internal const val MAX_SEGMENT_RETRIES = 12
+
+        /** How long start() waits for a valid node address before accepting traffic. */
+        internal const val ADDRESS_DISCOVERY_TIMEOUT_MS = 5_000L
+        private const val ADDRESS_POLL_INTERVAL_MS = 50L
 
         fun segmentPayload(data: ByteArray, maxSegSize: Int = MAX_TCP_PAYLOAD): List<ByteArray> {
             if (data.isEmpty()) return emptyList()

@@ -301,7 +301,7 @@ class YggdrasilProxyService : Service() {
         }
 
         try {
-            val stack = YggdrasilUserSpaceStack(ygg, socksPort = 9053, localTargetPort = 50001)
+            val stack = YggdrasilUserSpaceStack(GomobileMeshTransport(ygg), socksPort = 9053, localTargetPort = 50001)
             userStack = stack
             stack.start()
         } catch (e: Throwable) {
