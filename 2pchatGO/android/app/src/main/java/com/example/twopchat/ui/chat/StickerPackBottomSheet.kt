@@ -8,6 +8,7 @@ import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -71,6 +72,7 @@ internal fun StickerPackBottomSheet(
     appLanguage: String,
     primaryColor: Color,
     requestError: StickerPackRequestError = StickerPackRequestError.NONE,
+    targetStickerId: String? = null,
     onDismiss: () -> Unit,
     onRequestPack: () -> Unit,
     onStickerSelected: (BuiltinSticker) -> Unit,
@@ -114,8 +116,14 @@ internal fun StickerPackBottomSheet(
         isInstalled = resolved.second
         packLoading = false
     }
-    LaunchedEffect(packId, packLoading, pack, canRequestFromPeer) {
-        if (!packLoading && pack == null && canRequestFromPeer && !requestAttempted) {
+    LaunchedEffect(packId, packLoading, pack, canRequestFromPeer, targetStickerId) {
+        val currentPack = pack
+        val needsMissingStickerUpdate = currentPack != null &&
+            !currentPack.isOwned &&
+            !targetStickerId.isNullOrBlank() &&
+            currentPack.stickers.none { it.stickerId == targetStickerId }
+
+        if (!packLoading && (currentPack == null || needsMissingStickerUpdate) && canRequestFromPeer && !requestAttempted) {
             requestAttempted = true
             onRequestPack()
         }
@@ -214,12 +222,34 @@ internal fun StickerPackBottomSheet(
                         )
                     }
                 } else if (pack != null) {
-                    Text(
-                        text = if (appLanguage == "Русский") "✓ В коллекции" else "✓ In collection",
-                        color = primaryColor,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold,
-                    )
+                    val currentPack = pack
+                    if (canRequestFromPeer && currentPack != null && !currentPack.isOwned) {
+                        Button(
+                            onClick = {
+                                requestAttempted = true
+                                onRequestPack()
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = primaryColor.copy(alpha = 0.16f),
+                                contentColor = primaryColor,
+                            ),
+                            shape = RoundedCornerShape(12.dp),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                        ) {
+                            Text(
+                                text = if (appLanguage == "Русский") "Обновить" else "Update",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp,
+                            )
+                        }
+                    } else {
+                        Text(
+                            text = if (appLanguage == "Русский") "✓ В коллекции" else "✓ In collection",
+                            color = primaryColor,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
                 }
             }
             Spacer(Modifier.height(16.dp))

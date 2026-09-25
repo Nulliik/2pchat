@@ -1146,6 +1146,22 @@ private fun PackEditor(
                                 modifier = Modifier.size(16.dp),
                             )
                         }
+
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.error.copy(alpha = 0.14f))
+                                .clickable { onDelete() },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Delete,
+                                contentDescription = if (appLanguage == "Русский") "Удалить пак" else "Delete pack",
+                                tint = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(16.dp),
+                            )
+                        }
                     }
                 }
             }

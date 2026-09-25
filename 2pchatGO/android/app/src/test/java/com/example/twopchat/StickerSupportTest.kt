@@ -342,6 +342,15 @@ class StickerSupportTest {
         }
     }
 
+    @Test
+    fun testParseStickerIdFromFileName() {
+        assertEquals("s_1", StickerSupport.stickerIdFromStickerFileName("2psticker_mypack--s_1.webp"))
+        assertEquals("dog_smile", StickerSupport.stickerIdFromStickerFileName("2psticker_animals--dog_smile.webp"))
+        assertEquals("legacy_1", StickerSupport.stickerIdFromStickerFileName("2psticker_pack_legacy_1.webp"))
+        assertNull(StickerSupport.stickerIdFromStickerFileName("regular_photo.jpg"))
+        assertNull(StickerSupport.stickerIdFromStickerFileName("2psticker_malformed.webp"))
+    }
+
     private fun extendedWebP(width: Int, height: Int, animated: Boolean = false): ByteArray =
         ByteArray(30).apply {
             putAscii(0, "RIFF")
