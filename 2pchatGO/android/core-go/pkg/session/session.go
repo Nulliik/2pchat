@@ -20,13 +20,20 @@ import (
 const (
 	DefaultAckTimeout       = 5 * time.Second
 	TorAckTimeout           = 12 * time.Second
-	// Yggdrasil runs over an overlay and the Android user-space TCP shim. A
-	// transient route rebuild can delay a valid ACK well beyond a direct TCP
-	// RTT, so treating it as direct TCP tears down authenticated sessions
-	// while the mesh is still recovering.
-	YggdrasilAckTimeout = 8 * time.Second
+	// Yggdrasil runs over a mesh overlay plus the Android user-space TCP shim.
+	// A transient mesh route gap (peer device sleep, Android Doze, route
+	// flap, large-packet black-holing) stops ACKs for minutes on both
+	// directions. The user-space shim retransmits unacknowledged segments
+	// indefinitely at a capped RTO, so a frame written into the stream is
+	// delivered as soon as the route recovers; the Go ACK budget must
+	// outlast the gap or the session is torn down while the mesh is still
+	// recovering. Total budget: 15s * (1 + 1.5 + 2.25 + 3.375 + 5.0625 +
+	// 7.59375) = ~312s (~5.2 minutes). A genuinely unreachable peer still
+	// closes after this budget and the outbox re-sends queued messages on
+	// the next successful dial.
+	YggdrasilAckTimeout = 15 * time.Second
 	DefaultMaxRetries       = 2
-	YggdrasilMaxRetries     = 3
+	YggdrasilMaxRetries     = 5
 	DefaultHandshakeTimeout = 30 * time.Second
 	MessageQueueCapacity    = 256
 	MaxReceivedIDsHistory   = 4096

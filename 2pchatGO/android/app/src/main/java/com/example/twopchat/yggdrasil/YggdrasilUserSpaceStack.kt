@@ -23,6 +23,21 @@ import kotlin.concurrent.thread
 
 private const val TAG = "YggUserStack"
 
+/** Retransmit-loop outcome for one stream scan. */
+internal enum class RetransmitAction { SKIP, RETRY }
+
+/**
+ * Retransmit decision for one stream. A stream is retransmitted
+ * indefinitely once its oldest segment is unacknowledged past
+ * MAX_SEGMENT_RETRIES: the peer side retransmits symmetrically, and
+ * cumulative ACKs recover the stream when the mesh route returns. Only an
+ * explicitly closed stream (RST, FIN, local stop) is skipped. Closing on
+ * retry exhaustion used to tear down the authenticated session on every
+ * transient mesh route gap.
+ */
+internal fun retransmitDecision(isClosed: Boolean): RetransmitAction =
+    if (isClosed) RetransmitAction.SKIP else RetransmitAction.RETRY
+
 /**
  * Bounded receive window for the user-space TCP shim. Yggdrasil transports IP
  * packets, not an ordered byte stream, so payload must never be handed to the
@@ -79,17 +94,19 @@ class YggdrasilUserSpaceStack(
     // contract, so serialize every outbound mesh packet here.
     private val yggSendLock = Any()
 
+    // The node address is stable for the lifetime of the key (it only
+    // changes on key regeneration, which stops the whole stack). If the
+    // gomobile bridge transiently returns an empty/invalid address, the
+    // last known-good address must keep being used: an all-zero source
+    // address makes the peer's shim key every packet under "::" and drop
+    // data + ACKs, which used to kill the session after one retransmit
+    // budget (~65s) with no mesh problem at all.
+    @Volatile
+    private var cachedLocalIp: ByteArray? = null
+
     private val localIp: ByteArray
-        get() {
-            val addr = runCatching { ygg.addressString }.getOrNull()
-            if (!addr.isNullOrBlank()) {
-                try {
-                    val parsed = InetAddress.getByName(addr.trim().removeSurrounding("[", "]")).address
-                    if (parsed.size == 16) return parsed
-                } catch (_: Throwable) {}
-            }
-            return ByteArray(16)
-        }
+        get() = resolveLocalAddress(runCatching { ygg.addressString }.getOrNull(), cachedLocalIp)
+            .also { if (isYggdrasilAddress(it)) cachedLocalIp = it }
 
     private class StreamSession(
         val streamKey: String,
@@ -401,9 +418,11 @@ class YggdrasilUserSpaceStack(
             val s = session
             s?.isClosed?.set(true)
             runCatching { client.close() }
-            val key = sessionKey
-            if (key != null && (s == null || s.unacknowledged.isEmpty())) {
-                activeSessions.remove(key)
+            // Always evict, mirroring the inbound path: the stream is
+            // finished (FIN), a closed session is no longer retransmitted,
+            // and a lingering entry would block future reconnects.
+            if (sessionKey != null) {
+                activeSessions.remove(sessionKey)
             }
         }
     }
@@ -794,8 +813,14 @@ class YggdrasilUserSpaceStack(
                 Thread.sleep(RETRANSMIT_SCAN_MS)
                 val now = System.currentTimeMillis()
                 for (session in activeSessions.values) {
-                    if (session.isClosed.get() && session.unacknowledged.isEmpty()) {
-                        activeSessions.remove(session.streamKey, session)
+                    // Decision is extracted into retransmitDecision so the
+                    // no-close-on-exhaustion contract is unit-testable without
+                    // a live mesh. A closed stream is never retransmitted:
+                    // RST/FIN/stop are the only teardown triggers.
+                    if (retransmitDecision(session.isClosed.get()) == RetransmitAction.SKIP) {
+                        if (session.unacknowledged.isEmpty()) {
+                            activeSessions.remove(session.streamKey, session)
+                        }
                         continue
                     }
                     val oldestEntry = session.unacknowledged.firstEntry() ?: continue
@@ -803,13 +828,14 @@ class YggdrasilUserSpaceStack(
                     val backoffFactor = 1L shl minOf(segment.retries, 5)
                     val rtoMs = minOf(INITIAL_RTO_MS * backoffFactor, MAX_RTO_MS)
                     if (now - segment.lastSentAtMs < rtoMs) continue
-                    if (segment.retries >= MAX_SEGMENT_RETRIES) {
-                        SafeLog.w(TAG, "Closing Ygg stream after unacknowledged segment seq=${segment.sequence}, bytes=${segment.payload.size}, retries=${segment.retries}")
-                        session.isClosed.set(true)
-                        runCatching { session.clientSocket?.close() }
-                        session.unacknowledged.clear()
-                        activeSessions.remove(session.streamKey, session)
-                        continue
+                    if (segment.retries == MAX_SEGMENT_RETRIES) {
+                        // First exhaustion: the segment has survived 12 RTOs
+                        // (~65s). This is a mesh route gap, not a dead
+                        // session: the peer side retransmits symmetrically
+                        // and cumulative ACKs recover the stream as soon as
+                        // the route returns. Closing here used to tear down
+                        // the authenticated session on every transient flap.
+                        SafeLog.w(TAG, "Ygg stream segment seq=${segment.sequence} unacknowledged after $MAX_SEGMENT_RETRIES retries; continuing at capped RTO (mesh route gap)")
                     }
                     segment.retries += 1
                     segment.lastSentAtMs = now
@@ -902,6 +928,24 @@ class YggdrasilUserSpaceStack(
         internal fun consumeSynSequence(sequence: AtomicLong): Long = sequence.getAndIncrement()
 
         /**
+         * Resolves the local Yggdrasil node address (16-byte IPv6, 200::/7).
+         * Falls back to the last known-good address when the live lookup is
+         * transiently empty/invalid, and to an all-zero address only when
+         * nothing has ever been resolved.
+         */
+        internal fun resolveLocalAddress(raw: String?, lastGood: ByteArray?): ByteArray {
+            if (!raw.isNullOrBlank()) {
+                try {
+                    val parsed = InetAddress.getByName(raw.trim().removeSurrounding("[", "]")).address
+                    if (parsed.size == 16) return parsed
+                } catch (_: Throwable) {
+                    // Fall through to the cached address.
+                }
+            }
+            return lastGood ?: ByteArray(16)
+        }
+
+        /**
          * Maximum TCP segment payload size for Yggdrasil mesh link.
          * The raw IPv6 packet is further encapsulated by Yggdrasil. Keep 320
          * bytes of headroom below the IPv6 minimum MTU; 1200-byte payloads
@@ -918,7 +962,7 @@ class YggdrasilUserSpaceStack(
         private const val RETRANSMIT_SCAN_MS = 150L
         private const val INITIAL_RTO_MS = 600L
         private const val MAX_RTO_MS = 8_000L
-        private const val MAX_SEGMENT_RETRIES = 12
+        internal const val MAX_SEGMENT_RETRIES = 12
 
         fun segmentPayload(data: ByteArray, maxSegSize: Int = MAX_TCP_PAYLOAD): List<ByteArray> {
             if (data.isEmpty()) return emptyList()
