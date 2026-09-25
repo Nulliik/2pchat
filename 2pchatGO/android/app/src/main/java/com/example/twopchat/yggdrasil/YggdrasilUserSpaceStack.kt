@@ -98,6 +98,10 @@ internal class YggdrasilUserSpaceStack(
     // orphaned listener. A running check alone leaves a TOCTOU window
     // between the check and the bind.
     private val lifecycleLock = Any()
+    // A stop is terminal for this stack instance. The service creates a fresh
+    // stack for its next start, while an address-discovery failure remains
+    // retryable because it does not set this flag.
+    private val stopRequested = AtomicBoolean(false)
     internal val isRunning: Boolean get() = running.get()
     // TCP data, ACKs and retransmissions originate on different threads. The
     // gomobile buffer boundary does not provide a packet-atomic multi-writer
@@ -176,7 +180,13 @@ internal class YggdrasilUserSpaceStack(
     }
 
     fun start() {
-        if (!running.compareAndSet(false, true)) return
+        // Coordinate the initial transition with stop(). Without this lock,
+        // stop() can observe the pre-start false value and return just before
+        // this thread marks the stack running and binds its listeners.
+        val mayStart = synchronized(lifecycleLock) {
+            !stopRequested.get() && running.compareAndSet(false, true)
+        }
+        if (!mayStart) return
 
         // 0. Fail closed without a valid node address. A packet sent from an
         // all-zero source address is keyed by the peer's shim under "::" and
@@ -254,7 +264,13 @@ internal class YggdrasilUserSpaceStack(
     }
 
     fun stop() {
-        if (!running.compareAndSet(true, false)) return
+        // Record cancellation even when a just-created start thread has not
+        // reached its initial state transition yet.
+        val needsTeardown = synchronized(lifecycleLock) {
+            stopRequested.set(true)
+            running.compareAndSet(true, false)
+        }
+        if (!needsTeardown) return
 
         synchronized(lifecycleLock) {
             runCatching {

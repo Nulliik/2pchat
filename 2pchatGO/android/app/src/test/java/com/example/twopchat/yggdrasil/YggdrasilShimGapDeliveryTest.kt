@@ -397,15 +397,14 @@ class YggdrasilShimGapDeliveryTest {
             if (stack.isRunning) {
                 // start() won the whole race: clean it up.
                 stack.stop()
-            } else {
-                val portOpen = runCatching {
-                    Socket().use { s -> s.connect(InetSocketAddress("127.0.0.1", socksPort), 200) }
-                }.isSuccess
-                org.junit.Assert.assertFalse(
-                    "iteration $i: stopped stack must not keep the SOCKS listener bound",
-                    portOpen
-                )
             }
+            val portOpen = runCatching {
+                Socket().use { s -> s.connect(InetSocketAddress("127.0.0.1", socksPort), 200) }
+            }.isSuccess
+            org.junit.Assert.assertFalse(
+                "iteration $i: stopped stack must not keep the SOCKS listener bound",
+                portOpen
+            )
         }
     }
 }
