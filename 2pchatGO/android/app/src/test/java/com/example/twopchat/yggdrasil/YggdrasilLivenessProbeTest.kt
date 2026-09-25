@@ -220,4 +220,19 @@ class YggdrasilLivenessProbeTest {
         // No links is a real DEAD state.
         assertEquals(Verdict.DEAD, YggdrasilLivenessProbe.withDeadHysteresis(deadReport(0)).verdict)
     }
+
+    @Test
+    fun onlyConfirmedDeadVerdictRequestsCooldownLimitedPeerRedial() {
+        val dead = YggdrasilLivenessProbe.evaluate(
+            MeshResult(MeshState.DEAD, null, null, "no links"), 0, 4,
+        )
+        val partial = YggdrasilLivenessProbe.evaluate(
+            MeshResult(MeshState.DEAD, null, null, "timeout"), 1, 4,
+        )
+
+        assertTrue(YggdrasilLivenessProbe.shouldRetryPeers(dead, 60_000L, 0L))
+        assertFalse(YggdrasilLivenessProbe.shouldRetryPeers(dead, 119_999L, 60_000L))
+        assertTrue(YggdrasilLivenessProbe.shouldRetryPeers(dead, 120_000L, 60_000L))
+        assertFalse(YggdrasilLivenessProbe.shouldRetryPeers(partial, 120_000L, 0L))
+    }
 }

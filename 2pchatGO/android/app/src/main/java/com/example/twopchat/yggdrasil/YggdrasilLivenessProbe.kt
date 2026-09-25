@@ -46,6 +46,13 @@ object YggdrasilLivenessProbe {
     const val RUNTIME_PREFS_FILE = "yggdrasil_runtime_ephemeral"
     const val PREF_LIVENESS = "yggdrasil_liveness"
 
+    /**
+     * A DEAD verdict may request an engine peer-redial, but probes must not
+     * turn a persistent outage into a tight reconnect loop. One minute also
+     * matches the regular probe cadence.
+     */
+    const val PEER_RETRY_COOLDOWN_MS = 60_000L
+
     /** Direct-connect budget for VPN mode: 200::/7 is routed through the TUN. */
     const val VPN_PROBE_TIMEOUT_MS = 6_000
     /** SOCKS budget must cover the user-space stack's 12 s mesh TCP handshake deadline. */
@@ -228,6 +235,15 @@ object YggdrasilLivenessProbe {
         }
         return Report(verdict, mesh, upPeers, configuredPeers)
     }
+
+    /** True only when a confirmed mesh outage is eligible for a peer redial. */
+    internal fun shouldRetryPeers(
+        report: Report,
+        nowMs: Long,
+        lastRetryMs: Long,
+    ): Boolean =
+        report.verdict == Verdict.DEAD &&
+            (lastRetryMs <= 0L || nowMs < lastRetryMs || nowMs - lastRetryMs >= PEER_RETRY_COOLDOWN_MS)
 
     // ------------------------------------------------------------------
     // Device-side execution (called from both mesh services' updater loops)

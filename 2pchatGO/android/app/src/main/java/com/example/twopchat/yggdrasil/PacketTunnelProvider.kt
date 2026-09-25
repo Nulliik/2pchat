@@ -533,6 +533,7 @@ open class PacketTunnelProvider: VpnService() {
         var lastLogTime = 0L
         val probeStartedAt = System.currentTimeMillis()
         var lastLiveness = 0L
+        var lastPeerRetry = 0L
         updates@ while (currentCoroutineContext().isActive && started.get()) {
             if (readerThread?.isAlive != true || writerThread?.isAlive != true) {
                 SafeLog.w(TAG, "Tunnel packet worker stopped unexpectedly; rebuilding it")
@@ -606,6 +607,11 @@ open class PacketTunnelProvider: VpnService() {
                         report.summaryLine(),
                         if (report.verdict == YggdrasilLivenessProbe.Verdict.DEAD) "WARN" else "INFO",
                     )
+                    if (YggdrasilLivenessProbe.shouldRetryPeers(report, curTime, lastPeerRetry)) {
+                        lastPeerRetry = curTime
+                        ygg.retryPeersNow()
+                        yggLog(applicationContext, "Mesh is dead; requested peer redial", "WARN")
+                    }
                 } catch (e: Throwable) {
                     yggLog(applicationContext, "Liveness probe failed: ${e.message}", "DEBUG")
                 }
