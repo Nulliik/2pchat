@@ -166,7 +166,7 @@ internal fun ChatMessageList(
             Unit
         }
     }
-    val activeAnimatedGifMessageIds by remember(listState, displayMessages) {
+    val activeAnimatedMediaMessageIds by remember(listState, displayMessages) {
         derivedStateOf {
             if (listState.isScrollInProgress) {
                 emptySet()
@@ -178,13 +178,13 @@ internal fun ChatMessageList(
                     .asSequence()
                     .filter { it.index in displayMessages.indices }
                     .filter {
-                        displayMessages[it.index].attachmentType ==
-                            GifStorageManager.ATTACHMENT_TYPE
+                        displayMessages[it.index].attachmentType in
+                            ANIMATED_ATTACHMENT_TYPES
                     }
                     .sortedBy {
                         kotlin.math.abs(it.offset + it.size / 2 - viewportCenter)
                     }
-                    .take(MAX_ACTIVE_CHAT_GIFS)
+                    .take(MAX_ACTIVE_CHAT_ANIMATED_MEDIA)
                     .map { displayMessages[it.index].id }
                     .toSet()
             }
@@ -315,7 +315,7 @@ internal fun ChatMessageList(
                     ChatMessageBubble(
                         index = index,
                         msg = msg,
-                        isAnimatedMediaEnabled = msg.id in activeAnimatedGifMessageIds,
+                        isAnimatedMediaEnabled = msg.id in activeAnimatedMediaMessageIds,
                         isSelected = isSelected,
                         onSelectionChange = onSelectionChange,
                         isSelectMode = isSelectMode,
@@ -347,7 +347,7 @@ internal fun ChatMessageList(
                 ChatMessageBubble(
                     index = index,
                     msg = msg,
-                    isAnimatedMediaEnabled = msg.id in activeAnimatedGifMessageIds,
+                    isAnimatedMediaEnabled = msg.id in activeAnimatedMediaMessageIds,
                     isSelected = isSelected,
                     onSelectionChange = onSelectionChange,
                     isSelectMode = isSelectMode,
@@ -464,7 +464,9 @@ internal fun ChatMessageList(
 }
 }
 
-private const val MAX_ACTIVE_CHAT_GIFS = 2
+private const val MAX_ACTIVE_CHAT_ANIMATED_MEDIA = 2
+private val ANIMATED_ATTACHMENT_TYPES =
+    setOf(GifStorageManager.ATTACHMENT_TYPE, StickerSupport.ATTACHMENT_TYPE)
 
 @Composable
 internal fun EmptyChatHeroCard(

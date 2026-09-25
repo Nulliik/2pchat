@@ -134,6 +134,7 @@ internal fun ChatModalsOverlay(
             primaryColor = primaryColor,
             onDismiss = onDismissStickerPicker,
             onStickerSelected = onSelectSticker,
+            packListRevision = stickerPackPreviewRevision,
         )
     }
 

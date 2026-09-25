@@ -60,6 +60,7 @@ internal fun StickerPickerBottomSheet(
     primaryColor: Color,
     onDismiss: () -> Unit,
     onStickerSelected: (BuiltinSticker) -> Unit,
+    packListRevision: Int = 0,
 ) {
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
@@ -69,6 +70,7 @@ internal fun StickerPickerBottomSheet(
     val packs by produceState(
         initialValue = StickerSupport.builtinPacks,
         context,
+        packListRevision,
     ) {
         value = withContext(Dispatchers.IO) {
             StickerSupport.availablePacks(context)

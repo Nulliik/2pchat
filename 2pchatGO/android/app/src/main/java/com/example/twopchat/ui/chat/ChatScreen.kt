@@ -110,27 +110,7 @@ fun ChatScreen(
     var showProfileOverlay by remember { mutableStateOf(false) }
     var showConnectionModeSheet by remember { mutableStateOf(false) }
 
-    BackHandler {
-        if (activeFullscreenImages.isNotEmpty()) {
-            activeFullscreenImages = emptyList()
-            activeFullscreenBitmapOverrides = emptyMap()
-            activeFullscreenCaption = null
-            activeFullscreenTimestamp = null
-            activeFullscreenMessageId = null
-        } else if (activeFullscreenVideo != null) {
-            activeFullscreenVideo = null
-            activeFullscreenCaption = null
-            activeFullscreenTimestamp = null
-            activeFullscreenMessageId = null
-        } else if (showProfileOverlay) {
-            showProfileOverlay = false
-        } else if (showConnectionModeSheet) {
-            showConnectionModeSheet = false
-        } else {
-            onBack()
-        }
-    }
-    
+
     val coroutineScope = rememberCoroutineScope()
     fun persistDatabase(operation: () -> Unit) {
         coroutineScope.launch(Dispatchers.IO) {
@@ -960,6 +940,7 @@ fun ChatScreen(
     val availableStickerPacks by produceState(
         initialValue = StickerSupport.builtinPacks,
         context,
+        stickerPackPreviewRevision,
     ) {
         value = withContext(Dispatchers.IO) {
             StickerSupport.availablePacks(context)
@@ -1312,6 +1293,43 @@ fun ChatScreen(
     val selectedMessages = chatViewModel.selectedMessages
     var showForwardDialog by remember { mutableStateOf(false) }
     var messageToForward by remember { mutableStateOf<Message?>(null) }
+
+    // Chat-level modals are dialog windows whose own back callbacks only
+    // receive presses routed to that window (API 36+). On older systems the
+    // press reaches this dispatcher instead, so it must close the topmost
+    // modal itself to make the first press work everywhere.
+    BackHandler {
+        if (activeFullscreenImages.isNotEmpty()) {
+            activeFullscreenImages = emptyList()
+            activeFullscreenBitmapOverrides = emptyMap()
+            activeFullscreenCaption = null
+            activeFullscreenTimestamp = null
+            activeFullscreenMessageId = null
+        } else if (activeFullscreenVideo != null) {
+            activeFullscreenVideo = null
+            activeFullscreenCaption = null
+            activeFullscreenTimestamp = null
+            activeFullscreenMessageId = null
+        } else if (showProfileOverlay) {
+            showProfileOverlay = false
+        } else if (showConnectionModeSheet) {
+            showConnectionModeSheet = false
+        } else if (showWallpaperModal) {
+            showWallpaperModal = false
+        } else if (showPinnedSheet) {
+            showPinnedSheet = false
+        } else if (showGifLibrary) {
+            showGifLibrary = false
+        } else if (viewedStickerMessage != null) {
+            viewedStickerMessage = null
+            stickerPackRequestInProgress = false
+            stickerPackRequestError = StickerPackRequestError.NONE
+        } else if (showStickerPicker) {
+            showStickerPicker = false
+        } else {
+            onBack()
+        }
+    }
 
     fun sendSticker(sticker: BuiltinSticker) {
         showStickerPicker = false

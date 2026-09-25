@@ -751,6 +751,42 @@ object StickerSupport {
         return !directory.exists() || directory.deleteRecursively()
     }
 
+    /**
+     * A peer resending a pack whose id matches an installed pack is an update:
+     * replace the installed copy in place so the sender's changes reach the
+     * recipient's collection. The `.owned` marker is preserved so the
+     * recipient keeps management rights over the updated pack. Returns true
+     * when an installed pack was replaced.
+     */
+    internal fun replaceInstalledPackWithPeerUpdate(
+        installedRoot: File,
+        packId: String,
+        source: File,
+    ): Boolean {
+        val installedDirectory = File(installedRoot, packId)
+        if (!installedDirectory.isDirectory) return false
+        val wasOwned = File(installedDirectory, OWNED_MARKER).isFile
+        val replacement = File(installedRoot, "${packId}_new_${System.nanoTime()}")
+        if (replacement.exists()) replacement.deleteRecursively()
+        if (!source.copyRecursively(replacement, overwrite = true)) {
+            replacement.deleteRecursively()
+            return false
+        }
+        if (wasOwned) File(replacement, OWNED_MARKER).writeText("local", Charsets.UTF_8)
+        val backup = File(installedRoot, "${packId}_old_${System.nanoTime()}")
+        if (!installedDirectory.renameTo(backup)) {
+            replacement.deleteRecursively()
+            return false
+        }
+        if (!replacement.renameTo(installedDirectory)) {
+            backup.renameTo(installedDirectory)
+            replacement.deleteRecursively()
+            return false
+        }
+        backup.deleteRecursively()
+        return true
+    }
+
     private fun unpackPackArchive(
         context: Context,
         archive: File,
@@ -862,6 +898,9 @@ object StickerSupport {
             } else {
                 packDirectory.setLastModified(System.currentTimeMillis())
                 trimPeerPackPreviews(destinationRoot, keepPackId = effectivePackId)
+                if (replaceInstalledPackWithPeerUpdate(installedPacksDirectory(context), effectivePackId, packDirectory)) {
+                    invalidatePackCaches(context, effectivePackId)
+                }
             }
             return readInstalledPack(packDirectory)
         } catch (_: Exception) {

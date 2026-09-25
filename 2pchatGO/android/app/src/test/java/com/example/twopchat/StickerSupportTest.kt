@@ -194,6 +194,41 @@ class StickerSupportTest {
         }
     }
 
+    @Test
+    fun peerPackUpdateReplacesInstalledPackInPlace() {
+        val root = createTempDirectory("2pchat_pack_update_").toFile()
+        val preview = createTempDirectory("2pchat_pack_update_preview_").toFile()
+        try {
+            val installed = File(root, "peerpack").apply { mkdirs() }
+            File(installed, "pack.json").writeText("""{"format":1}""")
+            File(installed, "2psticker_peerpack--old.webp").writeBytes(ByteArray(40))
+            File(installed, ".owned").writeText("local")
+
+            File(preview, "pack.json").writeText("""{"format":1}""")
+            File(preview, "2psticker_peerpack--old.webp").writeBytes(ByteArray(60))
+            File(preview, "2psticker_peerpack--new.webp").writeBytes(ByteArray(60))
+
+            assertTrue(
+                StickerSupport.replaceInstalledPackWithPeerUpdate(root, "peerpack", preview)
+            )
+
+            val installedFiles = installed.listFiles().orEmpty()
+            assertTrue(installedFiles.any { it.name.endsWith("--new.webp") })
+            assertEquals(
+                60L,
+                installedFiles.first { it.name.endsWith("--old.webp") }.length()
+            )
+            assertTrue(File(installed, ".owned").isFile)
+            assertTrue(preview.listFiles().orEmpty().isNotEmpty())
+            assertFalse(
+                StickerSupport.replaceInstalledPackWithPeerUpdate(root, "ghost", preview)
+            )
+        } finally {
+            root.deleteRecursively()
+            preview.deleteRecursively()
+        }
+    }
+
     private fun extendedWebP(width: Int, height: Int, animated: Boolean = false): ByteArray =
         ByteArray(30).apply {
             putAscii(0, "RIFF")
