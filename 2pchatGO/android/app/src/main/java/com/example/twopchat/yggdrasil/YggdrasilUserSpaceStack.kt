@@ -83,7 +83,10 @@ internal class YggdrasilUserSpaceStack(
     private val mesh: MeshTransport,
     private val socksPort: Int = 9053,
     private val localTargetPort: Int = 50001,
-    private val inboundSourceAddress: String = "127.0.0.2"
+    private val inboundSourceAddress: String = "127.0.0.2",
+    private val addressDiscoveryTimeoutMs: Long = ADDRESS_DISCOVERY_TIMEOUT_MS,
+    private val retransmitBaseRtoMs: Long = INITIAL_RTO_MS,
+    private val retransmitMaxRtoMs: Long = MAX_RTO_MS
 ) {
     private val running = AtomicBoolean(false)
     private var socksServer: ServerSocket? = null
@@ -164,17 +167,22 @@ internal class YggdrasilUserSpaceStack(
     fun start() {
         if (!running.compareAndSet(false, true)) return
 
-        // 0. Wait for a valid node address before accepting traffic. A packet
-        // sent from an all-zero source address is keyed by the peer's shim
-        // under "::" and dropped with its ACKs, so the first handshake would
-        // fail even on a healthy route. The node is started by the owner
-        // before this stack, so a valid address is expected promptly.
-        val readyAddress = waitForLocalAddress(ADDRESS_DISCOVERY_TIMEOUT_MS)
+        // 0. Fail closed without a valid node address. A packet sent from an
+        // all-zero source address is keyed by the peer's shim under "::" and
+        // dropped with its ACKs, so the first handshake would fail even on a
+        // healthy route. Serving traffic before an address exists was the
+        // "online, messages don't flow, offline" bug: the owner starts the
+        // node before this stack, so a valid address is expected promptly,
+        // and a timeout means the node is broken - never open the SOCKS port.
+        val readyAddress = waitForLocalAddress(addressDiscoveryTimeoutMs)
         if (!isYggdrasilAddress(readyAddress)) {
-            SafeLog.w(
+            running.set(false)
+            SafeLog.e(
                 TAG,
-                "No valid Yggdrasil node address after ${ADDRESS_DISCOVERY_TIMEOUT_MS}ms; " +
-                    "packets may be dropped until one is resolved"
+                "No valid Yggdrasil node address after ${addressDiscoveryTimeoutMs}ms; refusing to accept traffic from an empty source address"
+            )
+            throw IllegalStateException(
+                "Yggdrasil node address not available within ${addressDiscoveryTimeoutMs}ms"
             )
         }
 
@@ -854,7 +862,7 @@ internal class YggdrasilUserSpaceStack(
                     val oldestEntry = session.unacknowledged.firstEntry() ?: continue
                     val segment = oldestEntry.value
                     val backoffFactor = 1L shl minOf(segment.retries, 5)
-                    val rtoMs = minOf(INITIAL_RTO_MS * backoffFactor, MAX_RTO_MS)
+                    val rtoMs = minOf(retransmitBaseRtoMs * backoffFactor, retransmitMaxRtoMs)
                     if (now - segment.lastSentAtMs < rtoMs) continue
                     if (segment.retries == MAX_SEGMENT_RETRIES) {
                         // First exhaustion: the segment has survived 12 RTOs

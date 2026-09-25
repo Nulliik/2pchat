@@ -2,6 +2,7 @@ package com.example.twopchat.yggdrasil
 
 import java.io.ByteArrayOutputStream
 import java.net.InetAddress
+import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
 import java.util.concurrent.LinkedBlockingQueue
@@ -16,15 +17,17 @@ import org.junit.Test
  * Integration test: two [YggdrasilUserSpaceStack] instances over an
  * in-memory mesh. Establishes a real virtual TCP stream (SOCKS5 -> shim A
  * -> mesh -> shim B -> local listener), cuts the mesh route after the
- * handshake while data is in flight, restores it, and verifies that the
- * pending segment is delivered and the stream stays usable. This is the
- * regression test for "session goes offline ~60 s after the first
- * message": before the fix, retransmit exhaustion closed the stream
+ * handshake while data is in flight, holds the cut past the pre-fix
+ * retransmit-exhaustion close threshold (12 retries), restores the route,
+ * and verifies that the pending segment is delivered and the stream stays
+ * usable. Regression test for "session goes offline ~60 s after the first
+ * message": before the fix, retransmit-exhaustion closed the stream
  * (~65 s) and the ACK budget tore down the Go session (~62 s).
  *
- * The cut is held only ~1.5 s (a few RTO cycles), which is enough to prove
- * the no-close-on-exhaustion contract end to end without waiting for the
- * old 65 s teardown.
+ * The RTO is scaled down via the test-only constructor seams
+ * (retransmitBaseRtoMs/retransmitMaxRtoMs) so 12 exhaustion retries take
+ * seconds instead of ~73 s; the test asserts the segment was actually
+ * retransmitted 12+ times (the old close threshold) before recovery.
  */
 class YggdrasilShimGapDeliveryTest {
 
@@ -154,7 +157,13 @@ class YggdrasilShimGapDeliveryTest {
         this.meshB = meshB
 
         val socksPort = freePort()
-        val stackA = YggdrasilUserSpaceStack(mesh = meshA, socksPort = socksPort, localTargetPort = 1)
+        val stackA = YggdrasilUserSpaceStack(
+            mesh = meshA,
+            socksPort = socksPort,
+            localTargetPort = 1,
+            retransmitBaseRtoMs = 50,
+            retransmitMaxRtoMs = 400
+        )
         val stackB = YggdrasilUserSpaceStack(
             mesh = meshB,
             socksPort = freePort(),
@@ -164,7 +173,9 @@ class YggdrasilShimGapDeliveryTest {
             // so the inbound marker address is injected as loopback here.
             // The production default (127.0.0.2 marker for the Go core's
             // transport classification) is unchanged.
-            inboundSourceAddress = "127.0.0.1"
+            inboundSourceAddress = "127.0.0.1",
+            retransmitBaseRtoMs = 50,
+            retransmitMaxRtoMs = 400
         )
         this.stackA = stackA
         this.stackB = stackB
@@ -212,14 +223,24 @@ class YggdrasilShimGapDeliveryTest {
         out.flush()
         assertEventuallyEquals("hello", received, 10_000)
 
-        // 5. Cut the route in both directions while data is in flight.
+        // 5. Cut the route in both directions while data is in flight, and
+        //    hold the cut past the pre-fix close threshold. With the scaled
+        //    RTO (50/100/200/400ms) 12 exhaustion retries take ~4 s; the
+        //    pre-fix code closed the stream at exactly that point.
+        val sentBeforeCut = meshA.packetsSent
         meshA.cutRoute()
         meshB.cutRoute()
         out.write("second".toByteArray())
         out.flush()
-        // A few retransmit cycles (RTO 600ms, 1200ms, ...) are lost on the
-        // cut route. Pre-fix, this window also ended in a closed stream.
-        Thread.sleep(1_500)
+        Thread.sleep(6_000)
+        // The old code's close condition fired at 12 retransmissions of the
+        // oldest segment. Prove this test crossed it: initial send + 12
+        // retransmits = 13 mesh send attempts for the pending data.
+        org.junit.Assert.assertTrue(
+            "gap must outlast the pre-fix close threshold (12 retransmissions); " +
+                "mesh A made ${meshA.packetsSent - sentBeforeCut} send attempts during the cut",
+            meshA.packetsSent - sentBeforeCut >= 13
+        )
 
         // 6. Restore: the pending segment must be delivered, stream alive.
         meshA.restoreRoute()
@@ -262,5 +283,52 @@ class YggdrasilShimGapDeliveryTest {
         org.junit.Assert.assertTrue("start() must return once the address is valid", started.get())
 
         stack.stop()
+    }
+
+    @Test
+    fun startFailsClosedWhenNodeAddressNeverAppears() {
+        // The timeout path of the address gate: if no valid node address
+        // appears within the budget, start() must fail and the SOCKS port
+        // must stay closed - never accept traffic from an empty source
+        // address. Once an address exists, the same stack starts normally.
+        val mesh = FakeMesh(address = null)
+        this.meshA = mesh
+        val socksPort = freePort()
+        val stack = YggdrasilUserSpaceStack(
+            mesh = mesh,
+            socksPort = socksPort,
+            localTargetPort = 1,
+            addressDiscoveryTimeoutMs = 500
+        )
+        this.stackA = stack
+
+        var failure: Throwable? = null
+        try {
+            stack.start()
+        } catch (t: Throwable) {
+            failure = t
+        }
+        org.junit.Assert.assertNotNull(
+            "start() must fail when no valid node address appears within the timeout",
+            failure
+        )
+
+        val portOpen = runCatching {
+            Socket().use { s -> s.connect(InetSocketAddress("127.0.0.1", socksPort), 500) }
+        }.isSuccess
+        org.junit.Assert.assertFalse(
+            "SOCKS port must not be bound after a failed start",
+            portOpen
+        )
+
+        mesh.address = "200:1000:cccc::4"
+        stack.start()
+        val portOpenAfter = runCatching {
+            Socket().use { s -> s.connect(InetSocketAddress("127.0.0.1", socksPort), 500) }
+        }.isSuccess
+        org.junit.Assert.assertTrue(
+            "SOCKS port must be bound after a successful start",
+            portOpenAfter
+        )
     }
 }
