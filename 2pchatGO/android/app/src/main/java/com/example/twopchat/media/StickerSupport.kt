@@ -178,6 +178,20 @@ object StickerSupport {
         }.take(40).takeIf { it.matches(Regex("[a-z0-9_-]+")) }
     }
 
+    fun stickerIdFromStickerFileName(fileName: String): String? {
+        val safeName = File(fileName).name
+        if (!isStickerFileName(safeName)) return null
+        val payload = safeName
+            .removePrefix(FILE_PREFIX)
+            .substringBeforeLast(".webp", "")
+        val id = when {
+            payload.contains("--") -> payload.substringAfter("--")
+            payload.contains("_") -> payload.substringAfter("_")
+            else -> null
+        }
+        return id?.take(40)?.takeIf { it.isNotBlank() && it.matches(Regex("[a-z0-9_-]+")) }
+    }
+
     fun packIdFromArchiveFileName(fileName: String): String? {
         val safeName = File(fileName).name
         if (!isStickerPackFileName(safeName)) return null

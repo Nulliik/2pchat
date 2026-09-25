@@ -139,9 +139,9 @@ internal fun ChatModalsOverlay(
     }
 
     viewedStickerMessage?.let { stickerMessage ->
-        val packId = StickerSupport.packIdFromStickerFileName(
-            stickerMessage.attachmentName.orEmpty(),
-        )
+        val rawFileName = stickerMessage.attachmentName.orEmpty()
+        val packId = StickerSupport.packIdFromStickerFileName(rawFileName)
+        val targetStickerId = StickerSupport.stickerIdFromStickerFileName(rawFileName)
         if (packId != null) {
             LaunchedEffect(stickerPackRequestInProgress) {
                 if (stickerPackRequestInProgress) {
@@ -163,6 +163,7 @@ internal fun ChatModalsOverlay(
                 appLanguage = appLanguage,
                 primaryColor = primaryColor,
                 requestError = stickerPackRequestError,
+                targetStickerId = targetStickerId,
                 onDismiss = onDismissViewedSticker,
                 onRequestPack = {
                     if (peerName !in P2PMessageRelay.peerEndpoints) {

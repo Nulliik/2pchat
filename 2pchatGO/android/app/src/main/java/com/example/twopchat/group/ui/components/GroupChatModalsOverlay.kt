@@ -119,7 +119,9 @@ internal fun GroupChatModalsOverlay(
 
     viewedStickerMessage?.let { stickerMessage ->
         val att = stickerMessage.attachment
-        val packId = att?.let { StickerSupport.packIdFromStickerFileName(it.fileName) }
+        val rawFileName = att?.fileName.orEmpty()
+        val packId = StickerSupport.packIdFromStickerFileName(rawFileName)
+        val targetStickerId = StickerSupport.stickerIdFromStickerFileName(rawFileName)
         if (packId != null) {
             val peerName = stickerMessage.authorName
             val canRequest = !stickerMessage.isMine && peerName.isNotBlank() && peerName != "SYSTEM" && peerName != "System"
@@ -145,6 +147,7 @@ internal fun GroupChatModalsOverlay(
                 appLanguage = appLanguage,
                 primaryColor = primaryColor,
                 requestError = stickerPackRequestError,
+                targetStickerId = targetStickerId,
                 onDismiss = onDismissViewedSticker,
                 onRequestPack = {
                     if (peerName.isBlank() || !P2PMessageRelay.peerEndpoints.containsKey(peerName)) {
