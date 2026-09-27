@@ -625,7 +625,9 @@ object P2PMessageRelay {
         context?.let { ctx ->
             try {
                 val appContext = ctx.applicationContext
-                if (isRunning && P2PPreferences.isWifiDiscoveryEnabled(appContext)) {
+                if (isRunning && P2PPreferences.isWifiDiscoveryEnabled(appContext) &&
+                    !P2PPreferences.prefs(appContext).getBoolean("settings_yggdrasil", false) &&
+                    !com.example.twopchat.yggdrasil.YggdrasilCoordinator.isRunning(appContext)) {
                     startLocalDiscovery(appContext, listenerPort(appContext))
                 }
             } catch (e: Exception) {
@@ -913,7 +915,9 @@ object P2PMessageRelay {
 
     fun setLocalDiscoveryEnabled(context: Context, enabled: Boolean) {
         val appContext = context.applicationContext
-        if (!enabled || P2PPreferences.isTorEnabled(appContext)) {
+        if (!enabled || P2PPreferences.isTorEnabled(appContext) ||
+            P2PPreferences.prefs(appContext).getBoolean("settings_yggdrasil", false) ||
+            com.example.twopchat.yggdrasil.YggdrasilCoordinator.isRunning(appContext)) {
             localPeerDiscovery?.stop()
             localPeerCandidates.clear()
             return
@@ -923,7 +927,9 @@ object P2PMessageRelay {
     }
 
     private fun startLocalDiscovery(context: Context, port: Int) {
-        if (P2PPreferences.isTorEnabled(context)) {
+        if (P2PPreferences.isTorEnabled(context) ||
+            P2PPreferences.prefs(context).getBoolean("settings_yggdrasil", false) ||
+            com.example.twopchat.yggdrasil.YggdrasilCoordinator.isRunning(context)) {
             localPeerDiscovery?.stop()
             return
         }

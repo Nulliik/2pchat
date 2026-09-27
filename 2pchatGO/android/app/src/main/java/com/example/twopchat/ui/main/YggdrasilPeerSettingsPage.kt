@@ -235,6 +235,9 @@ fun YggdrasilPeerSettingsPage(
                                             YggdrasilCoordinator.stop(context)
                                             yggdrasilRouting = false
                                             sharedPrefs.edit().putBoolean("settings_yggdrasil", false).apply()
+                                            com.example.twopchat.config.ProxyConfig.updateNetworkProxy(context)
+                                            com.example.twopchat.relay.P2PMessageRelay.setLocalDiscoveryEnabled(
+                                                context, P2PPreferences.isWifiDiscoveryEnabled(context))
                                         }
                                     },
                                     colors = SwitchDefaults.colors(

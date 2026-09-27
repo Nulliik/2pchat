@@ -7,6 +7,7 @@ import androidx.core.content.ContextCompat
 import com.example.twopchat.NativeBridge
 import com.example.twopchat.config.P2PPreferences
 import com.example.twopchat.config.P2PPreferences.YggdrasilMode
+import com.example.twopchat.config.ProxyConfig
 import com.example.twopchat.logging.SafeLog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -23,6 +24,9 @@ object YggdrasilCoordinator {
 
     fun start(context: Context, requestedMode: YggdrasilMode? = null) {
         pendingStartJob?.cancel()
+        P2PPreferences.prefs(context).edit().putBoolean("settings_yggdrasil", true).apply()
+        com.example.twopchat.relay.P2PMessageRelay.setLocalDiscoveryEnabled(context, false)
+        ProxyConfig.updateNetworkProxy(context)
         // Keep the boot-autostart eligibility adjacent to the single service
         // start entry point so every explicit enable path is covered.
         P2PPreferences.setYggdrasilEverEnabled(context, true)

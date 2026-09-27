@@ -5,6 +5,12 @@ import com.example.twopchat.NativeBridge
 import com.example.twopchat.tor.*
 
 object ProxyConfig {
+    internal fun transportPolicyFlags(torStrict: Boolean, yggdrasilEnabled: Boolean): Int = when {
+        torStrict -> 8
+        yggdrasilEnabled -> 12 // AllowYggdrasil | AllowOnion; LAN and clearnet discovery are disabled.
+        else -> 31
+    }
+
     fun isValidHost(host: String): Boolean {
         val trimmed = host.trim()
         return trimmed.isNotEmpty() && trimmed.length <= 256 && !trimmed.contains(' ')
@@ -80,13 +86,11 @@ object ProxyConfig {
             ""
         }
         NativeBridge.setTorProxy(effective.enabled, proxyAddr)
-        val policyFlags = if (effective.enabled && P2PPreferences.isTorStrictMode(context)) {
-            8 // PolicyFlagAllowOnion = 1 << 3
-        } else {
-            31 // PolicySpeed (LAN | WAN | Yggdrasil | Onion | LocalDNS)
-        }
-        NativeBridge.applyPolicy(policyFlags)
-        return true
+        val policyFlags = transportPolicyFlags(
+            effective.enabled && P2PPreferences.isTorStrictMode(context),
+            P2PPreferences.prefs(context).getBoolean("settings_yggdrasil", false),
+        )
+        return NativeBridge.applyPolicy(policyFlags)
     }
 }
 

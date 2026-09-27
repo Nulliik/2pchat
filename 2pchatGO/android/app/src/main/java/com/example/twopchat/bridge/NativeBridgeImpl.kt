@@ -149,6 +149,7 @@ class NativeBridgeImpl(
             val appContext = com.example.twopchat.yggdrasil.GlobalApplication.appContext
             val yggMode = P2PPreferences.getYggdrasilMode(appContext)
             NativeBridge.setYggdrasilConfig(yggMode.id, "127.0.0.1:${P2PPreferences.DEFAULT_YGGDRASIL_PROXY_PORT}")
+            com.example.twopchat.config.ProxyConfig.updateNetworkProxy(appContext)
         } catch (e: Exception) {
             SafeLog.d(TAG, "Yggdrasil config setup deferred: ${e.javaClass.simpleName}")
         } catch (_: Throwable) {
@@ -482,6 +483,7 @@ class NativeBridgeImpl(
                 val mode = P2PPreferences.getDiscoverySecurityMode(appContext)
                 NativeBridge.setDiscoveryStrictSignatures(mode == P2PPreferences.DiscoverySecurityMode.STRICT)
                 syncStoredPeerPolicies(appContext)
+                com.example.twopchat.config.ProxyConfig.updateNetworkProxy(appContext)
             } catch (_: Exception) {
                 // intentionally ignored: appContext uninitialized in pure JVM unit tests
             }

@@ -26,13 +26,8 @@ private const val TAG = "YggUserStack"
 internal enum class RetransmitAction { SKIP, RETRY }
 
 /**
- * Retransmit decision for one stream. A stream is retransmitted
- * indefinitely once its oldest segment is unacknowledged past
- * MAX_SEGMENT_RETRIES: the peer side retransmits symmetrically, and
- * cumulative ACKs recover the stream when the mesh route returns. Only an
- * explicitly closed stream (RST, FIN, local stop) is skipped. Closing on
- * retry exhaustion used to tear down the authenticated session on every
- * transient mesh route gap.
+ * Retransmit decision for one stream. Retry exhaustion alone does not close a
+ * stream; a separate no-progress deadline handles a persistent route outage.
  */
 internal fun retransmitDecision(isClosed: Boolean): RetransmitAction =
     if (isClosed) RetransmitAction.SKIP else RetransmitAction.RETRY
@@ -86,7 +81,8 @@ internal class YggdrasilUserSpaceStack(
     private val inboundSourceAddress: String = "127.0.0.2",
     private val addressDiscoveryTimeoutMs: Long = ADDRESS_DISCOVERY_TIMEOUT_MS,
     private val retransmitBaseRtoMs: Long = INITIAL_RTO_MS,
-    private val retransmitMaxRtoMs: Long = MAX_RTO_MS
+    private val retransmitMaxRtoMs: Long = MAX_RTO_MS,
+    private val streamStallTimeoutMs: Long = MAX_STALLED_STREAM_MS,
 ) {
     private val running = AtomicBoolean(false)
     private var socksServer: ServerSocket? = null
@@ -145,6 +141,7 @@ internal class YggdrasilUserSpaceStack(
         val dstPort: Int,
         val sequence: Long,
         val payload: ByteArray,
+        val firstSentAtMs: Long = System.currentTimeMillis(),
         @Volatile var lastSentAtMs: Long = System.currentTimeMillis(),
         @Volatile var retries: Int = 0,
     ) {
@@ -248,6 +245,7 @@ internal class YggdrasilUserSpaceStack(
                 }
                 workerThreads.add(tRecv)
                 workerThreads.add(thread(name = "Ygg-TCP-Retransmit") { retransmitLoop() })
+                workerThreads.add(thread(name = "Ygg-TCP-Stall-Watchdog") { streamStallWatchdogLoop() })
                 true
             }
         }
@@ -886,7 +884,9 @@ internal class YggdrasilUserSpaceStack(
 
     private fun acknowledgeOutbound(session: StreamSession, acknowledgedSequence: Long) {
         if (acknowledgedSequence <= 0L) return
-        session.unacknowledged.entries.removeIf { (_, segment) -> segment.endExclusive <= acknowledgedSequence }
+        synchronized(session) {
+            session.unacknowledged.entries.removeIf { (_, segment) -> segment.endExclusive <= acknowledgedSequence }
+        }
     }
 
     private fun retransmitLoop() {
@@ -923,6 +923,29 @@ internal class YggdrasilUserSpaceStack(
                     segment.lastSentAtMs = now
                     SafeLog.d(TAG, "Retransmitting Ygg segment seq=${segment.sequence}, retry=${segment.retries}, rtoMs=$rtoMs")
                     sendTcpPacket(localIp, segment.dstIp, segment.srcPort, segment.dstPort, segment.sequence, session.seqRecv.get(), 0x18, segment.payload)
+                }
+            } catch (_: InterruptedException) {
+                if (!running.get()) return
+            }
+        }
+    }
+
+    /** Runs independently of mesh.sendPacket, which may block during a route outage. */
+    private fun streamStallWatchdogLoop() {
+        while (running.get()) {
+            try {
+                Thread.sleep(RETRANSMIT_SCAN_MS)
+                val now = System.currentTimeMillis()
+                for (session in activeSessions.values) {
+                    val expired = synchronized(session) {
+                        val oldest = session.unacknowledged.firstEntry()
+                        oldest != null && now - oldest.value.firstSentAtMs >= streamStallTimeoutMs &&
+                            session.isClosed.compareAndSet(false, true)
+                    }
+                    if (!expired) continue
+                    SafeLog.w(TAG, "Closing Ygg stream after prolonged ACK stall")
+                    runCatching { session.clientSocket?.close() }
+                    activeSessions.remove(session.streamKey, session)
                 }
             } catch (_: InterruptedException) {
                 if (!running.get()) return
@@ -1044,6 +1067,7 @@ internal class YggdrasilUserSpaceStack(
         private const val RETRANSMIT_SCAN_MS = 150L
         private const val INITIAL_RTO_MS = 600L
         private const val MAX_RTO_MS = 8_000L
+        private const val MAX_STALLED_STREAM_MS = 180_000L
         internal const val MAX_SEGMENT_RETRIES = 12
 
         /** How long start() waits for a valid node address before accepting traffic. */
