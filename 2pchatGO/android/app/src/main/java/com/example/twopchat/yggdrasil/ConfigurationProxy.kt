@@ -16,32 +16,6 @@ import com.example.twopchat.security.*
 // Теперь это обычный класс — каждый экземпляр владеет своим файлом/json и не конкурирует с другими.
 class ConfigurationProxy(applicationContext: Context) {
     internal companion object {
-        internal fun setLocalPeeringEnabled(config: JSONObject, enabled: Boolean) {
-            if (enabled) {
-                val listenArr = JSONArray()
-                listenArr.put("tcp://0.0.0.0:18227")
-                config.put("Listen", listenArr)
-
-                val ar = JSONArray()
-                ar.put(0, JSONObject("""
-                    {
-                        "Regex": ".*",
-                        "Beacon": true,
-                        "Listen": true,
-                        "Password": ""
-                    }
-                """.trimIndent()))
-                config.put("MulticastInterfaces", ar)
-            } else {
-                config.put("Listen", JSONArray())
-                config.put("MulticastInterfaces", JSONArray())
-            }
-        }
-
-        internal fun disableLocalPeering(config: JSONObject) {
-            setLocalPeeringEnabled(config, false)
-        }
-
         internal fun readStoredConfig(file: File, decrypt: (String) -> String? = SecureStorage::decrypt): String {
             val stored = file.readText(Charsets.UTF_8)
             val plain = if (SecureStorage.isEncrypted(stored)) {
@@ -200,8 +174,34 @@ class ConfigurationProxy(applicationContext: Context) {
             json.put("IfName", "none")
             json.put("IfMTU", 65535)
 
+            val listenArr = JSONArray()
+            listenArr.put("tcp://0.0.0.0:18227")
+            json.put("Listen", listenArr)
+
+            // Multicast config. Beacon (advertising) is off by default to save
+            // battery/radio wakeups; Listen stays on so local peer discovery keeps
+            // working. The user can re-enable the beacon from Settings.
             val beaconEnabled = P2PPreferences.isYggdrasilMulticastBeaconEnabled(appContext)
-            setLocalPeeringEnabled(json, beaconEnabled)
+            val multicastInterfaces = json.optJSONArray("MulticastInterfaces")
+            if (multicastInterfaces == null || multicastInterfaces.length() == 0 || multicastInterfaces.get(0) is String) {
+                val ar = JSONArray()
+                ar.put(0, JSONObject("""
+                    {
+                        "Regex": ".*",
+                        "Beacon": $beaconEnabled,
+                        "Listen": true,
+                        "Password": ""
+                    }
+                """.trimIndent()))
+                json.put("MulticastInterfaces", ar)
+            } else {
+                // A configuration can contain more than one interface rule.
+                // Apply the privacy default to each rule rather than leaving a
+                // later rule advertising merely because it was already present.
+                for (index in 0 until multicastInterfaces.length()) {
+                    multicastInterfaces.optJSONObject(index)?.put("Beacon", beaconEnabled)
+                }
+            }
 
             // Seed once from the embedded, offline public-peer snapshot. On
             // later starts the tested/pruned list is left untouched.
@@ -341,7 +341,12 @@ class ConfigurationProxy(applicationContext: Context) {
     fun applyMulticastBeacon() {
         val beaconEnabled = P2PPreferences.isYggdrasilMulticastBeaconEnabled(appContext)
         updateJSON { config ->
-            setLocalPeeringEnabled(config, beaconEnabled)
+            val multicastInterfaces = config.optJSONArray("MulticastInterfaces")
+            if (multicastInterfaces != null) {
+                for (index in 0 until multicastInterfaces.length()) {
+                    multicastInterfaces.optJSONObject(index)?.put("Beacon", beaconEnabled)
+                }
+            }
         }
     }
 
@@ -396,40 +401,35 @@ class ConfigurationProxy(applicationContext: Context) {
     fun getJSONByteArray(): ByteArray = json.toString().toByteArray(Charsets.UTF_8)
 
     var multicastListen: Boolean
-        get() = (json.optJSONArray("MulticastInterfaces")?.optJSONObject(0))?.optBoolean("Listen", false) ?: false
+        get() = (json.getJSONArray("MulticastInterfaces").get(0) as JSONObject).getBoolean("Listen")
         set(value) {
             updateJSON { json ->
-                val ifaces = json.optJSONArray("MulticastInterfaces")
-                if (ifaces != null && ifaces.length() > 0) {
-                    ifaces.optJSONObject(0)?.put("Listen", value)
-                }
+                (json.getJSONArray("MulticastInterfaces").get(0) as JSONObject).put("Listen", value)
             }
         }
 
     var multicastBeacon: Boolean
-        get() = (json.optJSONArray("MulticastInterfaces")?.optJSONObject(0))?.optBoolean("Beacon", false) ?: false
+        get() = (json.getJSONArray("MulticastInterfaces").get(0) as JSONObject).getBoolean("Beacon")
         set(value) {
             updateJSON { json ->
-                val ifaces = json.optJSONArray("MulticastInterfaces")
-                if (ifaces != null && ifaces.length() > 0) {
-                    ifaces.optJSONObject(0)?.put("Beacon", value)
-                }
+                (json.getJSONArray("MulticastInterfaces").get(0) as JSONObject).put("Beacon", value)
             }
         }
 
+    /**
+     * Persist the multicast-beacon setting as a user preference and apply it to
+     * the on-disk config so the change survives restarts and a fresh file.
+     */
     fun setMulticastBeaconEnabled(enabled: Boolean) {
         P2PPreferences.setYggdrasilMulticastBeaconEnabled(appContext, enabled)
         applyMulticastBeacon()
     }
 
     var multicastPassword: String
-        get() = (json.optJSONArray("MulticastInterfaces")?.optJSONObject(0))?.optString("Password", "") ?: ""
+        get() = (json.getJSONArray("MulticastInterfaces").get(0) as JSONObject).optString("Password")
         set(value) {
             updateJSON { json ->
-                val ifaces = json.optJSONArray("MulticastInterfaces")
-                if (ifaces != null && ifaces.length() > 0) {
-                    ifaces.optJSONObject(0)?.put("Password", value)
-                }
+                (json.getJSONArray("MulticastInterfaces").get(0) as JSONObject).put("Password", value)
             }
         }
 }

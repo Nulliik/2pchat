@@ -34,16 +34,6 @@ class YggdrasilPeerPreferencesTest {
         assertNull(YggdrasilPeerPreferences.normalizedPeerUri("tls://user:pass@peer.example:443"))
         assertNull(YggdrasilPeerPreferences.normalizedPeerUri("tls://peer.example:443#fragment"))
         assertNull(YggdrasilPeerPreferences.normalizedPeerUri("not a peer"))
-        assertNull(YggdrasilPeerPreferences.normalizedPeerUri("tls://[fe80::1%25wlan0]:45837"))
-        assertNull(YggdrasilPeerPreferences.normalizedPeerUri("tls://192.168.1.8:443"))
-        assertNull(YggdrasilPeerPreferences.normalizedPeerUri("tls://10.0.2.2:443"))
-        assertNull(YggdrasilPeerPreferences.normalizedPeerUri("tls://localhost:443"))
-        assertNull(YggdrasilPeerPreferences.normalizedPeerUri("tls://peer.local:443"))
-    }
-
-    @Test
-    fun peerUriAcceptsLocalEndpointsWhenExplicitlyAllowed() {
-        assertEquals("tls://192.168.1.8:443", YggdrasilPeerPreferences.normalizedPeerUri("tls://192.168.1.8:443", allowLocal = true))
     }
 
     @Test

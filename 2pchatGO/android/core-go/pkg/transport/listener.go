@@ -72,7 +72,7 @@ func (l *AsyncListener) StartWithPolicy(port int, policy NetworkPolicy, handler 
 	atomic.StoreInt32(&l.running, 1)
 
 	l.wg.Add(1)
-	go l.acceptLoop(listener, policy, handler)
+	go l.acceptLoop(listener, handler)
 
 	return nil
 }
@@ -114,21 +114,7 @@ func (l *AsyncListener) IsRunning() bool {
 	return atomic.LoadInt32(&l.running) == 1
 }
 
-func allowInboundRemote(policy NetworkPolicy, addr net.Addr) bool {
-	remote, ok := addr.(*net.TCPAddr)
-	if !ok || remote.IP == nil {
-		return false
-	}
-	if remote.IP.IsLoopback() {
-		return true // local Tor and Yggdrasil proxy handoff
-	}
-	if remote.IP.IsPrivate() || remote.IP.IsLinkLocalUnicast() {
-		return policy.AllowLAN
-	}
-	return policy.AllowWAN
-}
-
-func (l *AsyncListener) acceptLoop(listener net.Listener, policy NetworkPolicy, handler ConnectionHandler) {
+func (l *AsyncListener) acceptLoop(listener net.Listener, handler ConnectionHandler) {
 	defer l.wg.Done()
 
 	for {
@@ -139,10 +125,6 @@ func (l *AsyncListener) acceptLoop(listener net.Listener, policy NetworkPolicy, 
 			}
 			// Transient accept error (network switch, socket abort, or temporary OS error)
 			time.Sleep(50 * time.Millisecond)
-			continue
-		}
-		if !allowInboundRemote(policy, conn.RemoteAddr()) {
-			_ = conn.Close()
 			continue
 		}
 

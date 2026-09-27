@@ -273,7 +273,7 @@ fun YggdrasilPeerSettingsPage(
                                         }
                                     },
                                     label = {
-                                        Text(if (isRussian) "Proxy (экспериментальный)" else "Proxy (Experimental)")
+                                        Text(if (isRussian) "Proxy (Рекомендуется)" else "Proxy (Recommended)")
                                     }
                                 )
                                 FilterChip(
@@ -296,7 +296,7 @@ fun YggdrasilPeerSettingsPage(
                                         }
                                     },
                                     label = {
-                                        Text(if (isRussian) "Системный VPN (рекомендуется)" else "System VPN (Recommended)")
+                                        Text(if (isRussian) "Системный VPN" else "System VPN")
                                     }
                                 )
                             }

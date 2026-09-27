@@ -536,45 +536,8 @@ func (d *AdaptiveDialer) DialContext(ctx context.Context, network, address strin
 		return d.directDialer.DialContext(ctx, network, address)
 	}
 
-	// A hostname classified as WAN can resolve to a private address later.
-	// Resolve explicitly when LAN is denied, and check every answer before
-	// handing it to the OS dialer (which would otherwise bypass the policy).
-	if class == TransportWAN && !p.AllowLAN && !isIPAddress(address) {
-		host, port, splitErr := net.SplitHostPort(address)
-		if splitErr != nil {
-			return nil, splitErr
-		}
-		answers, lookupErr := net.DefaultResolver.LookupIPAddr(ctx, host)
-		if lookupErr != nil {
-			return nil, lookupErr
-		}
-		var lastErr error
-		for _, answer := range answers {
-			if !allowedResolvedWAN(p, answer.IP) {
-				continue
-			}
-			conn, dialErr := d.directDialer.DialContext(ctx, network, net.JoinHostPort(answer.IP.String(), port))
-			if dialErr == nil {
-				return conn, nil
-			}
-			lastErr = dialErr
-		}
-		if lastErr != nil {
-			return nil, lastErr
-		}
-		return nil, fmt.Errorf("%w: hostname %q has no permitted WAN address", ErrPolicyDenied, host)
-	}
-
 	// TransportLAN or TransportWAN: Direct TCP connection
 	return d.directDialer.DialContext(ctx, network, address)
-}
-
-func allowedResolvedWAN(policy NetworkPolicy, ip net.IP) bool {
-	if ip == nil {
-		return false
-	}
-	class, err := ClassifyEndpoint(net.JoinHostPort(ip.String(), "1"))
-	return err == nil && class == TransportWAN && policy.AllowWAN
 }
 
 // Dial is a convenience wrapper around DialContext.

@@ -190,11 +190,6 @@ func (m *SessionManager) SetStorageDir(dir string) {
 func (m *SessionManager) Init() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	// Standalone zero-value managers retain the library's default policy
-	// (PolicySpeed, allowing LAN, WAN, Yggdrasil, Tor, and local DNS).
-	if m.policy == (transport.NetworkPolicy{}) {
-		m.policy = transport.PolicySpeed
-	}
 
 	effectiveDir := m.storageDir
 	if effectiveDir == "" {
@@ -299,13 +294,6 @@ func (m *SessionManager) Init() error {
 		}
 		if m.onionAddress != "" {
 			m.netManager.SetOnionAddress(m.onionAddress)
-		}
-		// The Android bridge must apply its fail-closed startup policy before
-		// creating any listener or discovery activity. In particular, this
-		// prevents a transient LAN beacon before Kotlin restores preferences.
-		m.netManager.ApplyPolicy(m.policy)
-		if m.dialer != nil {
-			m.dialer.SetPolicy(m.policy)
 		}
 	}
 

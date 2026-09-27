@@ -227,7 +227,6 @@ object YggdrasilPeerPreferences {
             publicEnabled = publicPeersEnabled(context),
             disabledPublicPeers = disabledPublicPeers(context),
             customPeers = customPeers(context),
-            allowLocal = P2PPreferences.isYggdrasilMulticastBeaconEnabled(context),
         )
     }
 
@@ -236,17 +235,16 @@ object YggdrasilPeerPreferences {
         publicEnabled: Boolean,
         disabledPublicPeers: Set<String>,
         customPeers: List<CustomYggdrasilPeer>,
-        allowLocal: Boolean = false,
     ): List<String> {
         val public = if (publicEnabled) {
             publicCandidates.asSequence()
-                .mapNotNull { normalizedPeerUri(it, allowLocal) }
+                .mapNotNull(::normalizedPeerUri)
                 .filterNot { uri -> disabledPublicPeers.any { it.equals(uri, ignoreCase = true) } }
         } else {
             emptySequence()
         }
         val activePublic = public.take(MAX_ACTIVE_PUBLIC_PEERS)
-        return (activePublic + customPeers.asSequence().filter { it.enabled }.mapNotNull { normalizedPeerUri(it.uri, allowLocal) })
+        return (activePublic + customPeers.asSequence().filter { it.enabled }.map { it.uri })
             .distinctBy(String::lowercase)
             .toList()
     }
@@ -266,13 +264,13 @@ object YggdrasilPeerPreferences {
         null
     }
 
-    internal fun normalizedPeerUri(value: String, allowLocal: Boolean = false): String? {
+    internal fun normalizedPeerUri(value: String): String? {
         val clean = value.trim()
         if (clean.isEmpty() || clean.length > 512 || clean.any(Char::isISOControl)) return null
         return try {
             val uri = URI(clean)
             val protocol = uri.scheme?.lowercase()
-            if (protocol !in supportedProtocols || uri.host.isNullOrBlank() || (!allowLocal && isLocalPeerHost(uri.host)) || uri.port !in 1..65535 ||
+            if (protocol !in supportedProtocols || uri.host.isNullOrBlank() || uri.port !in 1..65535 ||
                 uri.userInfo != null || uri.fragment != null
             ) {
                 null
@@ -282,18 +280,6 @@ object YggdrasilPeerPreferences {
         } catch (_: Exception) {
             null
         }
-    }
-
-    internal fun isLocalPeerHost(value: String): Boolean {
-        val host = value.trim('[', ']').substringBefore('%').lowercase()
-        if (host == "localhost" || host.endsWith(".local")) return true
-        if (!host.contains(':') && !host.matches(Regex("[0-9.]+"))) return false
-        val address = runCatching { java.net.InetAddress.getByName(host) }.getOrNull() ?: return true
-        return address.isAnyLocalAddress || address.isLoopbackAddress ||
-            address.isLinkLocalAddress || address.isSiteLocalAddress ||
-            address.isMulticastAddress ||
-            (address is java.net.Inet4Address && host.startsWith("100.") &&
-                host.split('.').getOrNull(1)?.toIntOrNull()?.let { it in 64..127 } == true)
     }
 
     private fun peerComparator(

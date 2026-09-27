@@ -10,44 +10,13 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.net.ConnectException
-import java.net.InetAddress
-import java.net.ServerSocket
 import java.net.SocketException
-import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Unit tests for the Yggdrasil mesh liveness probe: peersJSON parsing,
  * probe-target extraction from stored peer endpoints, and verdict logic.
  */
 class YggdrasilLivenessProbeTest {
-
-    @Test
-    fun proxyProbeCompletesSocksReplyWithoutFetchingPage() {
-        ServerSocket(0, 1, InetAddress.getByName("127.0.0.1")).use { server ->
-            val nextByte = AtomicInteger(Int.MIN_VALUE)
-            val worker = Thread {
-                server.accept().use { socket ->
-                    socket.soTimeout = 2_000
-                    val input = java.io.DataInputStream(socket.getInputStream())
-                    val greeting = ByteArray(3)
-                    input.readFully(greeting)
-                    socket.getOutputStream().write(byteArrayOf(5, 0))
-                    val request = ByteArray(22)
-                    input.readFully(request)
-                    socket.getOutputStream().write(byteArrayOf(5, 0, 0, 1, 0, 0, 0, 0, 0, 0))
-                    nextByte.set(input.read())
-                }
-            }
-            worker.start()
-            val result = YggdrasilLivenessProbe.probeSocks(
-                YggdrasilLivenessProbe.ProbeTarget("200:1234::1", 80, "test"),
-                "127.0.0.1", server.localPort, "test",
-            )
-            worker.join(3_000)
-            assertEquals(MeshState.LIVE, result.state)
-            assertEquals(-1, nextByte.get())
-        }
-    }
 
     private val peersJsonMixed = """
         [

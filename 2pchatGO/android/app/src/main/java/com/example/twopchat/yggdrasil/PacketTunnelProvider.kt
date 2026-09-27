@@ -319,19 +319,16 @@ open class PacketTunnelProvider: VpnService() {
             return
         }
 
-        // Acquire multicast lock if local peering/beacon is enabled
-        val beaconEnabled = P2PPreferences.isYggdrasilMulticastBeaconEnabled(applicationContext)
-        if (beaconEnabled) {
-            multicastLock = try {
-                val wifi = applicationContext.getSystemService(WIFI_SERVICE) as WifiManager
-                wifi.createMulticastLock("Yggdrasil").apply {
-                    setReferenceCounted(false)
-                    acquire()
-                }
-            } catch (e: Throwable) {
-                SafeLog.w(TAG, "Could not acquire MulticastLock", e)
-                null
+        // Acquire multicast lock
+        multicastLock = try {
+            val wifi = applicationContext.getSystemService(WIFI_SERVICE) as WifiManager
+            wifi.createMulticastLock("Yggdrasil").apply {
+                setReferenceCounted(false)
+                acquire()
             }
+        } catch (e: Throwable) {
+            SafeLog.w(TAG, "Could not acquire MulticastLock", e)
+            null
         }
 
         val ygg = yggdrasil ?: Yggdrasil().also { yggdrasil = it }
