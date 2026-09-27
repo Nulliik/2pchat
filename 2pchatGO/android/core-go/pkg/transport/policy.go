@@ -53,6 +53,17 @@ var (
 		AllowLocalDNS:  true,
 	}
 
+	// PolicyNoLAN is the process-start default. It allows non-LAN transports
+	// while preventing local peer discovery or direct private-address dialing
+	// before Android has supplied its persisted policy.
+	PolicyNoLAN = NetworkPolicy{
+		AllowLAN:       false,
+		AllowWAN:       true,
+		AllowYggdrasil: true,
+		AllowOnion:     true,
+		AllowLocalDNS:  true,
+	}
+
 	PolicyTorStrict = NetworkPolicy{
 		AllowLAN:       false,
 		AllowWAN:       false,
@@ -154,9 +165,6 @@ func ValidateFlags(flags int) error {
 	}
 	if p.AllowLocalDNS && !p.AllowWAN && !p.AllowLAN {
 		return fmt.Errorf("%w: AllowLocalDNS requires at least one clearnet transport (LAN or WAN)", ErrInvalidPolicyFlags)
-	}
-	if p.AllowWAN && !p.AllowLAN {
-		return fmt.Errorf("%w: AllowWAN without AllowLAN is invalid", ErrInvalidPolicyFlags)
 	}
 	return nil
 }

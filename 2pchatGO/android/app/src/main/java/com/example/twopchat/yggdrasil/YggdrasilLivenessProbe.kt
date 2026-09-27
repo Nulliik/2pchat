@@ -356,7 +356,7 @@ object YggdrasilLivenessProbe {
      * Reply 05 00 means the stack completed a mesh TCP handshake with the
      * peer; 05 04 means the handshake failed within its 12 s deadline.
      */
-    private fun probeSocks(
+    internal fun probeSocks(
         target: ProbeTarget,
         socksHost: String,
         socksPort: Int,
@@ -394,17 +394,22 @@ object YggdrasilLivenessProbe {
             if (replyCode != 0) {
                 return MeshResult(MeshState.DEAD, label, null, "socks code=$replyCode")
             }
+            repeat(8) {
+                if (input.read() < 0) return MeshResult(MeshState.DEAD, label, null, "short socks reply")
+            }
             val rttMs = (System.nanoTime() - start) / 1_000_000L
-            socket.soTimeout = HTTP_CHECK_TIMEOUT_MS
-            val http = httpCheck(socket, target.host)
-            return connectedTargetResult(target, label, rttMs, http, " via socks")
+            // The SOCKS success reply already proves an end-to-end mesh TCP
+            // handshake. Fetching a web page here races live chat streams
+            // through the bounded user-space TCP shim and can leave the probe
+            // peer retransmitting a response after this short-lived socket
+            // closes. Keep the proxy health check connection-only.
+            return MeshResult(MeshState.LIVE, label, rttMs, "connected via socks")
         }
     }
 
     /**
-     * Minimal HTTP GET over an already-connected socket: the plain TUN socket
-     * in VPN mode, the SOCKS data pipe in PROXY mode. Proves the mesh carried
-     * real page bytes, not just a TCP handshake. Never throws.
+     * Minimal HTTP GET over an already-connected VPN-mode TUN socket.
+     * Never throws.
      */
     private fun httpCheck(socket: Socket, host: String): HttpResult {
         return try {

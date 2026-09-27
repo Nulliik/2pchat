@@ -157,8 +157,8 @@ object P2PPreferences : com.example.twopchat.security.SensitiveMemoryHolder {
     }
 
     fun getYggdrasilMode(context: Context): YggdrasilMode {
-        val raw = prefs(context).getString(YGGDRASIL_MODE, YggdrasilMode.PROXY.id)
-        return YggdrasilMode.entries.find { it.id == raw } ?: YggdrasilMode.PROXY
+        val raw = prefs(context).getString(YGGDRASIL_MODE, YggdrasilMode.VPN.id)
+        return YggdrasilMode.entries.find { it.id == raw } ?: YggdrasilMode.VPN
     }
 
     fun setYggdrasilMode(context: Context, mode: YggdrasilMode) {

@@ -87,8 +87,24 @@ func TestPolicyFlags_UnknownOrInvalidComboRejected(t *testing.T) {
 		t.Fatalf("Expected AllowOnion + AllowLocalDNS without clearnet to be rejected")
 	}
 
-	// AllowWAN without AllowLAN (e.g. AllowWAN=2 alone) must be rejected
-	if err := ValidateFlags(PolicyFlagAllowWAN); err == nil {
-		t.Fatalf("Expected AllowWAN without AllowLAN to be rejected")
+	// WAN may be enabled without LAN. This permits an explicit no-LAN policy
+	// while retaining WAN/Yggdrasil connectivity.
+	if err := ValidateFlags(PolicyFlagAllowWAN); err != nil {
+		t.Fatalf("Expected AllowWAN without AllowLAN to be valid, got: %v", err)
+	}
+	if err := ValidateFlags(PolicyFlagAllowWAN | PolicyFlagAllowYggdrasil | PolicyFlagAllowOnion | PolicyFlagAllowLocalDNS); err != nil {
+		t.Fatalf("Expected no-LAN default policy to be valid, got: %v", err)
+	}
+}
+
+func TestPolicyNoLAN_DeniesLANButRetainsNonLANTransports(t *testing.T) {
+	if PolicyNoLAN.AllowLAN {
+		t.Fatal("process-start policy must deny LAN")
+	}
+	if !PolicyNoLAN.AllowWAN || !PolicyNoLAN.AllowYggdrasil || !PolicyNoLAN.AllowOnion || !PolicyNoLAN.AllowLocalDNS {
+		t.Fatalf("process-start no-LAN policy unexpectedly disables non-LAN transports: %+v", PolicyNoLAN)
+	}
+	if err := ValidateFlags(PolicyNoLAN.ToFlags()); err != nil {
+		t.Fatalf("process-start no-LAN policy must be valid: %v", err)
 	}
 }

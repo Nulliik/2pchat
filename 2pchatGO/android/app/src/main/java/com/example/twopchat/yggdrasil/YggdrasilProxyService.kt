@@ -81,8 +81,8 @@ class YggdrasilProxyService : Service() {
     private val serviceScope = CoroutineScope(SupervisorJob() + yggdrasilServiceDispatcher)
     private var startJob: Job? = null
     private var updateJob: Job? = null
-    private var multicastLock: WifiManager.MulticastLock? = null
     private var userStack: YggdrasilUserSpaceStack? = null
+    private var multicastLock: WifiManager.MulticastLock? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -265,16 +265,19 @@ class YggdrasilProxyService : Service() {
             return
         }
 
-        // Acquire multicast lock
-        multicastLock = try {
-            val wifi = applicationContext.getSystemService(WIFI_SERVICE) as WifiManager
-            wifi.createMulticastLock("YggdrasilProxy").apply {
-                setReferenceCounted(false)
-                acquire()
+        // Acquire multicast lock if local peering/beacon is enabled
+        val beaconEnabled = P2PPreferences.isYggdrasilMulticastBeaconEnabled(applicationContext)
+        if (beaconEnabled) {
+            multicastLock = try {
+                val wifi = applicationContext.getSystemService(WIFI_SERVICE) as WifiManager
+                wifi.createMulticastLock("YggdrasilProxy").apply {
+                    setReferenceCounted(false)
+                    acquire()
+                }
+            } catch (e: Throwable) {
+                SafeLog.w(TAG, "Could not acquire MulticastLock", e)
+                null
             }
-        } catch (e: Throwable) {
-            SafeLog.w(TAG, "Could not acquire MulticastLock", e)
-            null
         }
 
         val ygg = yggdrasil ?: Yggdrasil().also { yggdrasil = it }
