@@ -1056,6 +1056,17 @@ object P2PPreferences : com.example.twopchat.security.SensitiveMemoryHolder {
             editor.putString(peerTransportPref(fp), pref.key)
         }
         editor.apply()
+
+        val policyFlags = when (pref) {
+            PeerTransportPreference.TOR_ONLY -> 8
+            PeerTransportPreference.DIRECT_ONLY -> 3
+            PeerTransportPreference.YGGDRASIL_ONLY -> 4
+            PeerTransportPreference.AUTO -> 0
+        }
+        val targetFp = fp?.takeIf { it.isNotBlank() } ?: peerName
+        if (targetFp.isNotBlank()) {
+            com.example.twopchat.NativeBridge.setPeerPolicy(targetFp, policyFlags)
+        }
     }
 
     fun getEffectiveEndpointsForPeer(context: Context, peerName: String, rawEndpoints: String? = null): String {

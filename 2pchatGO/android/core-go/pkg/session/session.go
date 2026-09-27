@@ -69,9 +69,10 @@ type Session struct {
 	receivedIDs   map[string]bool
 	receivedOrder []string
 
-	sendMu         sync.RWMutex
-	isTorTransport bool
-	closeOnce      sync.Once
+	sendMu               sync.RWMutex
+	isTorTransport       bool
+	isYggdrasilTransport bool
+	closeOnce            sync.Once
 	closeChan      chan struct{}
 	online         int32
 	counter               uint64
@@ -118,6 +119,7 @@ func WithTorTransport(isTor bool) SessionOption {
 // identical to direct transport.
 func WithYggdrasilTransport(isYggdrasil bool) SessionOption {
 	return func(s *Session) {
+		s.isYggdrasilTransport = isYggdrasil
 		if isYggdrasil {
 			s.ackTimeout = YggdrasilAckTimeout
 			s.maxRetries = YggdrasilMaxRetries
@@ -932,5 +934,26 @@ func (s *Session) SetTorTransport(isTor bool) {
 		s.ackTimeout = TorAckTimeout
 	} else {
 		s.ackTimeout = DefaultAckTimeout
+	}
+}
+
+// IsYggdrasilTransport returns true if the session is configured for Yggdrasil transport.
+func (s *Session) IsYggdrasilTransport() bool {
+	s.sendMu.RLock()
+	defer s.sendMu.RUnlock()
+	return s.isYggdrasilTransport
+}
+
+// SetYggdrasilTransport configures the session to use Yggdrasil-optimized timeouts.
+func (s *Session) SetYggdrasilTransport(isYgg bool) {
+	s.sendMu.Lock()
+	defer s.sendMu.Unlock()
+	s.isYggdrasilTransport = isYgg
+	if isYgg {
+		s.ackTimeout = YggdrasilAckTimeout
+		s.maxRetries = YggdrasilMaxRetries
+	} else {
+		s.ackTimeout = DefaultAckTimeout
+		s.maxRetries = DefaultMaxRetries
 	}
 }

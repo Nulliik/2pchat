@@ -1339,8 +1339,10 @@ fun ContactsTab(
                                 java.security.SecureRandom().nextBytes(tokenBytes)
                                 val tokenVal = "2pchat_inv_" + tokenBytes.joinToString("") { "%02x".format(it) }
                                 val onion = TorManager.getOnionAddress(context).orEmpty()
-                                val onionQuery = if (onion.isNotEmpty()) "&onion=${android.net.Uri.encode(onion)}" else ""
-                                inviteLinkState = "2pchat://connect?token=$tokenVal&name=$username&fp=$fingerprint$onionQuery"
+                                val onionQuery = if (onion.isNotEmpty()) "&onion=$onion" else ""
+                                val ygg = P2PMessageRelay.getYggdrasilAddress().trim()
+                                val yggQuery = if (ygg.isNotEmpty()) "&ygg=${android.net.Uri.encode(ygg)}" else ""
+                                inviteLinkState = "2pchat://connect?token=$tokenVal&name=$username&fp=$fingerprint$onionQuery$yggQuery"
                                 coroutineScope.launch(Dispatchers.IO) {
                                     P2PBridgeProvider.get(context).announceSelf(
                                         tokenVal,

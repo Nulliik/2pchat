@@ -395,9 +395,10 @@ object YggdrasilLivenessProbe {
                 return MeshResult(MeshState.DEAD, label, null, "socks code=$replyCode")
             }
             val rttMs = (System.nanoTime() - start) / 1_000_000L
-            socket.soTimeout = HTTP_CHECK_TIMEOUT_MS
-            val http = httpCheck(socket, target.host)
-            return connectedTargetResult(target, label, rttMs, http, " via socks")
+            repeat(8) {
+                if (input.read() < 0) return MeshResult(MeshState.DEAD, label, null, "short socks reply")
+            }
+            return MeshResult(MeshState.LIVE, label, rttMs, "connected via socks")
         }
     }
 

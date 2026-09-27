@@ -216,16 +216,7 @@ func (m *Manager) ApplyPolicy(p transport.NetworkPolicy) {
 		if peerPolicy, ok := m.peerPolicies[peerFP]; ok {
 			effectivePolicy = p.Intersect(peerPolicy)
 		}
-		var class transport.TransportClass
-		if sess != nil && sess.IsTorTransport() {
-			class = transport.TransportTor
-		} else {
-			var err error
-			class, err = transport.ClassifyEndpoint(endpoint)
-			if err != nil {
-				class = transport.TransportInvalid
-			}
-		}
+		class := classifySessionClass(sess, endpoint)
 		if !effectivePolicy.Allows(class) {
 			toClose = append(toClose, sess)
 		}
@@ -244,18 +235,50 @@ func (m *Manager) ApplyPolicy(p transport.NetworkPolicy) {
 	}
 }
 
+func classifySessionClass(sess *Session, endpoint string) transport.TransportClass {
+	if sess != nil && sess.IsTorTransport() {
+		return transport.TransportTor
+	}
+	if sess != nil && sess.IsYggdrasilTransport() {
+		return transport.TransportYggdrasil
+	}
+	host, _, err := net.SplitHostPort(endpoint)
+	if err == nil && host == "127.0.0.2" {
+		return transport.TransportYggdrasil
+	}
+	class, err := transport.ClassifyEndpoint(endpoint)
+	if err != nil {
+		return transport.TransportInvalid
+	}
+	return class
+}
+
 // SetPeerPolicy stores a contact-specific NetworkPolicy keyed by peer fingerprint.
 // A zero-value policy clears the contact-specific override, inheriting global policy.
+// Immediately closes an existing session if it violates the newly configured policy.
 func (m *Manager) SetPeerPolicy(peerFP string, p transport.NetworkPolicy) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	cleanFP := strings.TrimSpace(peerFP)
+	var violatingSess *Session
 	if cleanFP != "" {
 		if p == (transport.NetworkPolicy{}) {
 			delete(m.peerPolicies, cleanFP)
 		} else {
 			m.peerPolicies[cleanFP] = p
+			effectivePolicy := m.policy.Intersect(p)
+			if sess, ok := m.sessions[cleanFP]; ok && sess != nil {
+				endpoint := m.peerEndp[cleanFP]
+				class := classifySessionClass(sess, endpoint)
+				if !effectivePolicy.Allows(class) {
+					violatingSess = sess
+				}
+			}
 		}
+	}
+	m.mu.Unlock()
+
+	if violatingSess != nil {
+		_ = violatingSess.Close()
 	}
 }
 

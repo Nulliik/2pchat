@@ -130,6 +130,9 @@ fun ConnectionModeBottomSheet(
     fun selectMode(mode: PeerTransportPreference) {
         currentPreference = mode
         P2PPreferences.setPeerTransportPreference(context, peerName, mode)
+        if (mode == PeerTransportPreference.YGGDRASIL_ONLY) {
+            com.example.twopchat.yggdrasil.YggdrasilCoordinator.start(context)
+        }
         if (mode == PeerTransportPreference.TOR_ONLY) {
             if (!isTorRunning) {
                 TorManager.startTor(context)

@@ -49,6 +49,7 @@ private fun endpointTransportKind(endpoint: String?): ConnectionTransportKind {
         else -> endpointValue.substringBeforeLast(':', endpointValue)
     }
     return when {
+        host == "127.0.0.2" -> ConnectionTransportKind.YGGDRASIL
         isYggdrasilIpv6(host) -> ConnectionTransportKind.YGGDRASIL
         host.isNotBlank() -> ConnectionTransportKind.DIRECT
         else -> ConnectionTransportKind.UNKNOWN

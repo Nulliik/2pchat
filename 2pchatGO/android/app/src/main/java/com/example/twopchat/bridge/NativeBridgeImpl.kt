@@ -282,6 +282,24 @@ class NativeBridgeImpl(
                 SafeLog.w(TAG, "[GoCore] Inbound clearnet connection ($transportHint) from group-inferred peer ${SafeLog.fp(peerFP)} rejected by policy")
                 return@connected
             }
+            val pref = P2PPreferences.getPeerTransportPreference(appContext, resolvedName)
+            val policyViolation = when (pref) {
+                P2PPreferences.PeerTransportPreference.AUTO -> false
+                P2PPreferences.PeerTransportPreference.YGGDRASIL_ONLY -> transportHint != "Yggdrasil"
+                P2PPreferences.PeerTransportPreference.TOR_ONLY -> transportHint != "Tor Onion"
+                P2PPreferences.PeerTransportPreference.DIRECT_ONLY -> transportHint != "Direct P2P"
+            }
+            if (policyViolation) {
+                SafeLog.w(TAG, "[GoCore] Inbound connection ($transportHint) from $resolvedName (${SafeLog.fp(peerFP)}) violates contact policy $pref; terminating")
+                val flags = when (pref) {
+                    P2PPreferences.PeerTransportPreference.TOR_ONLY -> 8
+                    P2PPreferences.PeerTransportPreference.DIRECT_ONLY -> 3
+                    P2PPreferences.PeerTransportPreference.YGGDRASIL_ONLY -> 4
+                    P2PPreferences.PeerTransportPreference.AUTO -> 0
+                }
+                NativeBridge.setPeerPolicy(peerFP, flags)
+                return@connected
+            }
             activeEndpoints[peerFP] = endpoint
             activeTransports[peerFP] = transportHint
             SafeLog.i(TAG, "[GoCore] Active route for ${SafeLog.fp(peerFP)}: $transportHint")
@@ -463,11 +481,35 @@ class NativeBridgeImpl(
                 NativeBridge.setDiscoverySeqCounter(initialSeq)
                 val mode = P2PPreferences.getDiscoverySecurityMode(appContext)
                 NativeBridge.setDiscoveryStrictSignatures(mode == P2PPreferences.DiscoverySecurityMode.STRICT)
+                syncStoredPeerPolicies(appContext)
             } catch (_: Exception) {
                 // intentionally ignored: appContext uninitialized in pure JVM unit tests
             }
         }
         return initSuccess
+    }
+
+    private fun syncStoredPeerPolicies(context: Context) {
+        try {
+            val dbHelper = com.example.twopchat.data.ChatDatabaseHelper.getInstance(context)
+            val peers = dbHelper.getAllChatPeerNames()
+            for (peer in peers) {
+                val pref = P2PPreferences.getPeerTransportPreference(context, peer)
+                if (pref == P2PPreferences.PeerTransportPreference.AUTO) continue
+                val flags = when (pref) {
+                    P2PPreferences.PeerTransportPreference.TOR_ONLY -> 8
+                    P2PPreferences.PeerTransportPreference.DIRECT_ONLY -> 3
+                    P2PPreferences.PeerTransportPreference.YGGDRASIL_ONLY -> 4
+                    P2PPreferences.PeerTransportPreference.AUTO -> 0
+                }
+                val fp = P2PPreferences.getPeerFingerprint(context, peer) ?: peer
+                if (fp.isNotBlank() && flags != 0) {
+                    NativeBridge.setPeerPolicy(fp, flags)
+                }
+            }
+        } catch (e: Throwable) {
+            SafeLog.w(TAG, "Failed syncing stored peer policies to Go core", e)
+        }
     }
 
     override fun setIpv4Enabled(enabled: Boolean) {
@@ -546,18 +588,19 @@ class NativeBridgeImpl(
             return@withContext true
         }
 
-        // 2. If Go Core has no active session, resolve endpoints and initiate connection
+        val ctx = com.example.twopchat.yggdrasil.GlobalApplication.appContext
         val fullEndpoint = if (endpoint.isNotBlank()) {
             endpoint
         } else {
-            val context = com.example.twopchat.yggdrasil.GlobalApplication.appContext
-            P2PPreferences.getPeerOnionAddress(context, peerName)
+            P2PPreferences.getPeerOnionAddress(ctx, peerName)
                 ?: try {
-                    com.example.twopchat.data.ChatDatabaseHelper.getInstance(context).getPeerOnionAddress(peerName).orEmpty()
+                    com.example.twopchat.data.ChatDatabaseHelper.getInstance(ctx).getPeerOnionAddress(peerName).orEmpty()
                 } catch (_: Throwable) { "" }
         }
 
-        val candidateList = retainedCandidates(peerName, resolvedFP, fullEndpoint, includeReserve = true)
+        val pref = P2PPreferences.getPeerTransportPreference(ctx, peerName)
+        val rawCandidates = retainedCandidates(peerName, resolvedFP, fullEndpoint, includeReserve = true)
+        val candidateList = P2PPreferences.filterEndpointsByPreference(rawCandidates, pref)
         if (candidateList.isNotEmpty()) {
             val hasDirect = candidateList.any { !it.contains(".onion", ignoreCase = true) }
 
@@ -680,12 +723,21 @@ class NativeBridgeImpl(
             ?: nameToFpMap[peerName]
 
         val target = resolvedFP ?: peerName
-        val isLive = isPeerOnline(peerName, resolvedFP)
+        val context = com.example.twopchat.yggdrasil.GlobalApplication.appContext
+        val pref = P2PPreferences.getPeerTransportPreference(context, peerName)
+        val fp = resolvedFP ?: nameToFpMap[peerName] ?: resolveFingerprint(peerName)
+        val activeTransport = fp?.let { activeTransports[it] } ?: activeTransports[peerName]
+        val transportMatchesPref = when (pref) {
+            P2PPreferences.PeerTransportPreference.AUTO -> true
+            P2PPreferences.PeerTransportPreference.YGGDRASIL_ONLY -> activeTransport == "Yggdrasil"
+            P2PPreferences.PeerTransportPreference.TOR_ONLY -> activeTransport == "Tor Onion"
+            P2PPreferences.PeerTransportPreference.DIRECT_ONLY -> activeTransport == "Direct P2P"
+        }
+        val isLive = isPeerOnline(peerName, resolvedFP) && transportMatchesPref
 
         val fullEndpoint = if (endpoint.isNotBlank()) {
             endpoint
         } else {
-            val context = com.example.twopchat.yggdrasil.GlobalApplication.appContext
             P2PPreferences.getPeerOnionAddress(context, peerName)
                 ?: try {
                     com.example.twopchat.data.ChatDatabaseHelper.getInstance(context).getPeerOnionAddress(peerName).orEmpty()
@@ -693,7 +745,8 @@ class NativeBridgeImpl(
         }
 
         if (!isLive) {
-            val candidateList = retainedCandidates(peerName, resolvedFP, fullEndpoint, includeReserve = true)
+            val rawCandidates = retainedCandidates(peerName, resolvedFP, fullEndpoint, includeReserve = true)
+            val candidateList = P2PPreferences.filterEndpointsByPreference(rawCandidates, pref)
             if (candidateList.isEmpty()) return@withContext false
             val hasOnion = candidateList.any { it.contains(".onion") }
             dialRetainedCandidates(peerName, resolvedFP, candidateList, includeReserve = true)
@@ -737,8 +790,18 @@ class NativeBridgeImpl(
 
     private fun scheduleReconnect(peerName: String, endpoint: String, fingerprint: String?, includeReserve: Boolean): Boolean {
         if (endpoint.isBlank() && fingerprint.isNullOrBlank()) return false
-        if (isPeerOnline(peerName, fingerprint)) {
-            SafeLog.d(TAG, "[GoCore] Peer $peerName (${SafeLog.fp(fingerprint)}) is already online; skipping reconnect")
+        val context = com.example.twopchat.yggdrasil.GlobalApplication.appContext
+        val pref = P2PPreferences.getPeerTransportPreference(context, peerName)
+        val fp = fingerprint?.takeIf { it.isNotBlank() } ?: resolveFingerprint(peerName)
+        val activeTransport = fp?.let { activeTransports[it] } ?: activeTransports[peerName]
+        val transportMatchesPref = when (pref) {
+            P2PPreferences.PeerTransportPreference.AUTO -> true
+            P2PPreferences.PeerTransportPreference.YGGDRASIL_ONLY -> activeTransport == "Yggdrasil"
+            P2PPreferences.PeerTransportPreference.TOR_ONLY -> activeTransport == "Tor Onion"
+            P2PPreferences.PeerTransportPreference.DIRECT_ONLY -> activeTransport == "Direct P2P"
+        }
+        if (isPeerOnline(peerName, fingerprint) && transportMatchesPref) {
+            SafeLog.d(TAG, "[GoCore] Peer $peerName (${SafeLog.fp(fingerprint)}) is already online on matching transport $activeTransport; skipping reconnect")
             return true
         }
         val reconnectKey = fingerprint?.takeIf { it.isNotBlank() } ?: peerName
@@ -782,23 +845,28 @@ class NativeBridgeImpl(
     private fun dialRetainedCandidates(peerName: String, fingerprint: String?, candidates: List<String>, includeReserve: Boolean, policyFlags: Int = 0): Boolean {
         val context = com.example.twopchat.yggdrasil.GlobalApplication.appContext
         val preference = P2PPreferences.getPeerTransportPreference(context, peerName)
+        val policyFiltered = P2PPreferences.filterEndpointsByPreference(candidates, preference)
         val effectiveFlags = if (policyFlags != 0) policyFlags else when (preference) {
             P2PPreferences.PeerTransportPreference.TOR_ONLY -> 8
             P2PPreferences.PeerTransportPreference.YGGDRASIL_ONLY -> 4
             P2PPreferences.PeerTransportPreference.DIRECT_ONLY -> 3
             P2PPreferences.PeerTransportPreference.AUTO -> 0
         }
+        val targetFp = fingerprint?.takeIf { it.isNotBlank() } ?: resolveFingerprint(peerName)
+        if (!targetFp.isNullOrBlank() && effectiveFlags != 0) {
+            NativeBridge.setPeerPolicy(targetFp, effectiveFlags)
+        }
         val bootstrap = P2PMessageRelay.bootstrapEndpointsForInitialHandshake(peerName)
         val discovery = P2PMessageRelay.localDiscoveryEndpoints(peerName)
         val fresh = if (fingerprint.isNullOrBlank()) {
-            candidates
+            policyFiltered
         } else {
             val persistedFresh = PeerEndpointStore.candidates(context, peerName, fingerprint, includeReserve = false)
             val ephemeral = (bootstrap + discovery).toSet()
-            val matched = candidates.filter { it in persistedFresh || it in ephemeral }
-            if (matched.isEmpty() && candidates.isNotEmpty()) candidates else matched
+            val matched = policyFiltered.filter { it in persistedFresh || it in ephemeral }
+            if (matched.isEmpty() && policyFiltered.isNotEmpty()) policyFiltered else matched
         }
-        val reserve = if (includeReserve) candidates.filter { it !in fresh } else emptyList()
+        val reserve = if (includeReserve) policyFiltered.filter { it !in fresh } else emptyList()
         if (fresh.isEmpty() && reserve.isEmpty()) return false
         return NativeBridge.probePeer(fresh, fingerprint.orEmpty(), effectiveFlags, reserve)
     }
@@ -808,12 +876,20 @@ class NativeBridgeImpl(
         if (!fingerprint.isNullOrBlank()) {
             registerNameMapping(fingerprint, peerName)
         }
-        if (isPeerOnline(peerName, fingerprint)) {
-            SafeLog.d(TAG, "[GoCore] Peer $peerName (${SafeLog.fp(fingerprint)}) is already online; aborting retained route dial")
-            return true
-        }
         val context = com.example.twopchat.yggdrasil.GlobalApplication.appContext
         val pref = P2PPreferences.getPeerTransportPreference(context, peerName)
+        val fp = fingerprint?.takeIf { it.isNotBlank() } ?: resolveFingerprint(peerName)
+        val activeTransport = fp?.let { activeTransports[it] } ?: activeTransports[peerName]
+        val transportMatchesPref = when (pref) {
+            P2PPreferences.PeerTransportPreference.AUTO -> true
+            P2PPreferences.PeerTransportPreference.YGGDRASIL_ONLY -> activeTransport == "Yggdrasil"
+            P2PPreferences.PeerTransportPreference.TOR_ONLY -> activeTransport == "Tor Onion"
+            P2PPreferences.PeerTransportPreference.DIRECT_ONLY -> activeTransport == "Direct P2P"
+        }
+        if (isPeerOnline(peerName, fingerprint) && transportMatchesPref) {
+            SafeLog.d(TAG, "[GoCore] Peer $peerName (${SafeLog.fp(fingerprint)}) is already online on matching transport $activeTransport; aborting retained route dial")
+            return true
+        }
 
         val isTorRunning = com.example.twopchat.tor.TorManager.isTorRunning.value
         val isTorConnecting = com.example.twopchat.tor.TorManager.isTorConnecting.value
