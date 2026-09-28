@@ -31,8 +31,10 @@ class Soak:
         self.events.flush()
 
     def adb(self, serial, *args):
+        # APP_SEND blocks until the peer send lock is free; a concurrent 120 MB
+        # transfer can hold it for minutes, so give the shell room to wait.
         return subprocess.check_output([self.args.adb, "-s", serial, *args],
-                                       encoding="utf-8", errors="replace", timeout=30)
+                                       encoding="utf-8", errors="replace", timeout=240)
 
     def shell(self, serial, *args):
         return self.adb(serial, "shell", shlex.join(args))
@@ -55,7 +57,7 @@ class Soak:
         for key, value in extras.items():
             command += ["--es", key, str(value)]
         self.shell(serial, *command)
-        deadline = time.monotonic() + 20
+        deadline = time.monotonic() + 130
         while time.monotonic() < deadline:
             for line, result in self.parse(self.logs(serial)):
                 if line not in before and result.get("action") == action:
