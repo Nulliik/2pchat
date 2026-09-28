@@ -472,19 +472,12 @@ internal class YggdrasilUserSpaceStack(
                 var offset = 0
                 while (offset < read && !session.isClosed.get() && running.get()) {
                     awaitSendWindow(session)
+                    if (!running.get() || session.isClosed.get()) break
                     val segLen = minOf(read - offset, MAX_TCP_PAYLOAD)
                     val chunk = buf.copyOfRange(offset, offset + segLen)
                     val currentSeq = session.seqSent.getAndAdd(segLen.toLong())
                     sendTrackedPayload(session, targetIpBytes, localPort, targetPort, currentSeq, chunk)
                     offset += segLen
-                    if (offset < read) {
-                        try {
-                            Thread.sleep(SEND_WINDOW_WAIT_MS)
-                        } catch (_: InterruptedException) {
-                            Thread.currentThread().interrupt()
-                            break
-                        }
-                    }
                 }
             }
 
@@ -754,19 +747,12 @@ internal class YggdrasilUserSpaceStack(
                 var offset = 0
                 while (offset < read && !session.isClosed.get() && running.get()) {
                     awaitSendWindow(session)
+                    if (!running.get() || session.isClosed.get()) break
                     val segLen = minOf(read - offset, MAX_TCP_PAYLOAD)
                     val chunk = buf.copyOfRange(offset, offset + segLen)
                     val currentSeq = session.seqSent.getAndAdd(segLen.toLong())
                     sendTrackedPayload(session, srcIp, dstPort, srcPort, currentSeq, chunk)
                     offset += segLen
-                    if (offset < read) {
-                        try {
-                            Thread.sleep(SEND_WINDOW_WAIT_MS)
-                        } catch (_: InterruptedException) {
-                            Thread.currentThread().interrupt()
-                            break
-                        }
-                    }
                 }
             }
 
@@ -1076,11 +1062,13 @@ internal class YggdrasilUserSpaceStack(
          * were observed to black-hole on real mesh paths.
          */
         const val MAX_TCP_PAYLOAD = 900
-        // Four segments (at most 3.6 KiB of application data) is deliberately
-        // conservative for public Yggdrasil routes. It bounds buffering and
-        // prevents an avatar/profile burst from creating a mesh-wide retry
-        // storm before cumulative ACKs have returned.
-        private const val MAX_IN_FLIGHT_SEGMENTS = 4
+        // 32 segments (~29 KiB in flight) matches the window a real TCP would
+        // open over a 2-3 hop mesh path at measured RTT; public Yggdrasil links
+        // carry hundreds of Mbps, so the mesh is not the limit. Backpressure is
+        // bounded by the cumulative ACK plus the existing RTO backoff, not by
+        // artificial pacing: per-segment sleeps and ACK polling used to cap
+        // throughput far below the window (window/RTT) the link could sustain.
+        const val MAX_IN_FLIGHT_SEGMENTS = 32
         private const val SEND_WINDOW_WAIT_MS = 5L
         private const val LOCAL_CORE_CONNECT_TIMEOUT_MS = 5_000
         private const val RETRANSMIT_SCAN_MS = 150L
