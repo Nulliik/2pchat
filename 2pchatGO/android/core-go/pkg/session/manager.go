@@ -28,7 +28,7 @@ import (
 type EventCallbacks struct {
 	// Only an authenticated outbound route can report success. Incoming socket
 	// source ports and relay endpoints are never advertised as reusable routes.
-	OnEndpointResult   func(peerFP, endpoint string, success bool)
+	OnEndpointResult func(peerFP, endpoint string, success bool)
 	// seq is a monotonic event sequence issued under a single mutex at
 	// emission time. Receivers MUST treat seq==0 as unordered and reject
 	// any event whose seq is not greater than the last accepted seq.
@@ -1223,6 +1223,8 @@ func transportClassForSession(s *Session) string {
 }
 
 // SendFile streams a local file to a connected peer in 256 KiB chunks.
+// The return value describes the completed stream, not merely a queued job:
+// Android uses it to set the visible transfer state and clean temporary media.
 func (m *Manager) SendFile(peerFP, filePath, messageID, fileName, caption, emoji, albumID string, albumIndex, albumCount int) (string, error) {
 	m.mu.RLock()
 	s, exists := m.resolveSessionLocked(peerFP)
@@ -1236,10 +1238,10 @@ func (m *Manager) SendFile(peerFP, filePath, messageID, fileName, caption, emoji
 		messageID = fmt.Sprintf("file_%d", time.Now().UnixNano())
 	}
 
-	go func() {
+	{
 		var metadata *transport.FileMetadata
 		var nextChunkIndex uint32
-		_ = m.fileTransferMgr.SendFileStream(
+		err := m.fileTransferMgr.SendFileStream(
 			context.Background(),
 			peerFP,
 			messageID,
@@ -1288,7 +1290,10 @@ func (m *Manager) SendFile(peerFP, filePath, messageID, fileName, caption, emoji
 				return err
 			},
 		)
-	}()
+		if err != nil {
+			return "", err
+		}
+	}
 
 	return messageID, nil
 }

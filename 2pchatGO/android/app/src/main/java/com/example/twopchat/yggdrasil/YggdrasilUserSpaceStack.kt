@@ -14,6 +14,7 @@ import java.net.Socket
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.ConcurrentSkipListMap
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
@@ -99,10 +100,12 @@ internal class YggdrasilUserSpaceStack(
     // retryable because it does not set this flag.
     private val stopRequested = AtomicBoolean(false)
     internal val isRunning: Boolean get() = running.get()
-    // TCP data, ACKs and retransmissions originate on different threads. The
-    // gomobile buffer boundary does not provide a packet-atomic multi-writer
-    // contract, so serialize every outbound mesh packet here.
-    private val yggSendLock = Any()
+    // A gomobile write may wait for its receive side to drain. Never perform
+    // that write (or wait for queue capacity) on the mesh reader: sending an
+    // ACK there deadlocks the whole node under sustained traffic. One writer
+    // preserves packet atomicity. The bounded queue drops on overload; TCP
+    // retransmission and tracker retries recover just as for mesh packet loss.
+    private val outboundPackets = ArrayBlockingQueue<ByteArray>(64)
 
     // The node address is stable for the lifetime of the key (it only
     // changes on key regeneration, which stops the whole stack). If the
@@ -239,6 +242,8 @@ internal class YggdrasilUserSpaceStack(
                     SafeLog.e(TAG, "Failed to bind Yggdrasil UDP relay", e)
                 }
 
+                workerThreads.add(thread(name = "Ygg-Mesh-Sender") { meshSendLoop() })
+
                 // 2. Start Mesh Packet Receiver
                 val tRecv = thread(name = "Ygg-Mesh-Receiver") {
                     meshReceiveLoop()
@@ -288,6 +293,7 @@ internal class YggdrasilUserSpaceStack(
             pendingInboundSessions.clear()
             udpSessions.clear()
             udpClientPorts.clear()
+            outboundPackets.clear()
 
             workerThreads.forEach { it.interrupt() }
             workerThreads.clear()
@@ -844,12 +850,29 @@ internal class YggdrasilUserSpaceStack(
         raw[40 + 16] = ((csum ushr 8) and 0xFF).toByte()
         raw[40 + 17] = (csum and 0xFF).toByte()
 
-        try {
-            synchronized(yggSendLock) {
-                mesh.sendPacket(raw, totalLen.toLong())
+        enqueueMeshPacket(raw)
+    }
+
+    private fun enqueueMeshPacket(packet: ByteArray) {
+        // Only the short offer is synchronized with stop. No socket or JNI
+        // call holds the lifecycle lock, and no producer waits for the writer.
+        synchronized(lifecycleLock) {
+            if (running.get()) outboundPackets.offer(packet)
+        }
+    }
+
+    private fun meshSendLoop() {
+        while (running.get()) {
+            try {
+                val packet = outboundPackets.take()
+                if (!running.get()) return
+                mesh.sendPacket(packet, packet.size.toLong())
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+                return
+            } catch (error: Exception) {
+                if (running.get()) SafeLog.w(TAG, "Failed sending packet to mesh: ${error.javaClass.simpleName}")
             }
-        } catch (e: Exception) {
-            SafeLog.w(TAG, "Failed sending TCP packet buffer to mesh: ${e.javaClass.simpleName}")
         }
     }
 
@@ -962,11 +985,7 @@ internal class YggdrasilUserSpaceStack(
         }.array()
         val csum = computeTransportChecksum(raw, 40, udpLen, srcIp, dstIp, 17)
         raw[46] = ((csum ushr 8) and 0xFF).toByte(); raw[47] = (csum and 0xFF).toByte()
-        runCatching {
-            synchronized(yggSendLock) {
-                mesh.sendPacket(raw, raw.size.toLong())
-            }
-        }
+        enqueueMeshPacket(raw)
     }
 
     private fun computeTcpChecksum(

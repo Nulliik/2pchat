@@ -28,6 +28,10 @@ private const val PREF_YGG_RUNTIME_PEERS = "yggdrasil_runtime_peers"
 private const val PREF_YGG_RUNTIME_ROUTES = "yggdrasil_runtime_routes"
 private const val PREF_YGG_RUNTIME_TREE_NODES = "yggdrasil_runtime_tree_nodes"
 
+internal fun shouldRestartDegradedProxy(partialProbes: Int, nowMs: Long, lastRestartMs: Long): Boolean =
+    partialProbes >= 2 &&
+        (lastRestartMs == 0L || nowMs - lastRestartMs >= 5 * 60_000L)
+
 class YggdrasilProxyService : Service() {
     companion object {
         const val STATE_INTENT = "com.example.twopchat.yggdrasil.PacketTunnelProvider.STATE_MESSAGE"
@@ -83,6 +87,7 @@ class YggdrasilProxyService : Service() {
     private var updateJob: Job? = null
     private var multicastLock: WifiManager.MulticastLock? = null
     private var userStack: YggdrasilUserSpaceStack? = null
+    private var lastDegradedRestartMs = 0L
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -400,6 +405,7 @@ class YggdrasilProxyService : Service() {
         val probeStartedAt = System.currentTimeMillis()
         var lastLiveness = 0L
         var lastPeerRetry = 0L
+        var consecutivePartialProbes = 0
         updates@ while (currentCoroutineContext().isActive && started.get()) {
             val ygg = yggdrasil ?: break@updates
             val treeJSON = runCatching { ygg.treeJSON }.getOrNull()
@@ -462,6 +468,18 @@ class YggdrasilProxyService : Service() {
                         report.summaryLine(),
                         if (report.verdict == YggdrasilLivenessProbe.Verdict.DEAD) "WARN" else "INFO",
                     )
+                    consecutivePartialProbes = if (report.verdict == YggdrasilLivenessProbe.Verdict.PARTIAL) {
+                        consecutivePartialProbes + 1
+                    } else {
+                        0
+                    }
+                    if (shouldRestartDegradedProxy(consecutivePartialProbes, curTime, lastDegradedRestartMs)) {
+                        lastDegradedRestartMs = curTime
+                        yggLog(applicationContext, "Mesh data plane timed out on repeated probes; restarting proxy engine", "WARN")
+                        stop(stopService = false)
+                        start()
+                        return
+                    }
                     if (YggdrasilLivenessProbe.shouldRetryPeers(report, curTime, lastPeerRetry)) {
                         lastPeerRetry = curTime
                         ygg.retryPeersNow()

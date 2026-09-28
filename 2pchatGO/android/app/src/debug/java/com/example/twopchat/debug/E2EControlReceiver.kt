@@ -83,10 +83,15 @@ class E2EControlReceiver : BroadcastReceiver() {
                         val yggEndpoint = P2PPreferences.filterEndpointsByPreference(
                             endpoint.split(','), P2PPreferences.PeerTransportPreference.YGGDRASIL_ONLY
                         ).firstOrNull() ?: error("no Yggdrasil endpoint for contact")
-                        val completion = java.util.concurrent.CompletableFuture<Boolean>()
                         P2PMessageRelay.sendFile(context, name, yggEndpoint, file.absolutePath,
-                            caption = "ADB Yggdrasil $filename") { completion.complete(it) }
-                        result.put("accepted", completion.get(60, java.util.concurrent.TimeUnit.SECONDS))
+                            caption = "ADB Yggdrasil $filename") { completed ->
+                            Log.i(TAG, JSONObject()
+                                .put("action", "APP_FILE_RESULT")
+                                .put("filename", filename)
+                                .put("completed", completed)
+                                .toString())
+                        }
+                        result.put("requested", true)
                     }
                     ACTION_RETRY_YGG -> {
                         YggdrasilCoordinator.connect(context)

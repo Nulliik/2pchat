@@ -15,6 +15,98 @@ import org.junit.Test
 
 class YggdrasilShimStallRecoveryTest {
     @Test
+    fun `mesh receive keeps draining while ACK send waits for receive progress`() {
+        val meshA = YggdrasilShimGapDeliveryTest.FakeMesh("200:1000:aaaa::1")
+        val meshB = YggdrasilShimGapDeliveryTest.FakeMesh("200:1000:bbbb::2")
+        meshA.linkTo(meshB)
+        val enteredSend = CountDownLatch(1)
+        val receiveProgress = CountDownLatch(1)
+        val arm = AtomicBoolean(true)
+        val blocked = AtomicBoolean(false)
+        val drained = java.util.concurrent.atomic.AtomicInteger()
+        val firstPayload = java.util.concurrent.atomic.AtomicReference<ByteArray>()
+        val sourceMesh = object : MeshTransport by meshA {
+            override fun sendPacket(data: ByteArray, length: Long) {
+                if (data.size > 60 && data[53].toInt() == 0x18) {
+                    firstPayload.compareAndSet(null, data.copyOf())
+                }
+                meshA.sendPacket(data, length)
+            }
+        }
+        val coupledMesh = object : MeshTransport by meshB {
+            override fun sendPacket(data: ByteArray, length: Long) {
+                // The real gomobile/actor boundary can backpressure a write
+                // until its read side drains. Model that dependency, rather
+                // than a timed route outage that eventually heals itself.
+                if (data.size >= 60 && data[53].toInt() == 0x10 && arm.compareAndSet(true, false)) {
+                    blocked.set(true)
+                    enteredSend.countDown()
+                    check(receiveProgress.await(10, TimeUnit.SECONDS))
+                }
+                meshB.sendPacket(data, length)
+            }
+
+            override fun receivePacket(buffer: ByteArray): Int {
+                val size = meshB.receivePacket(buffer)
+                if (size > 0 && blocked.get() && drained.incrementAndGet() >= 128) {
+                    receiveProgress.countDown()
+                }
+                return size
+            }
+        }
+        ServerSocket(0).use { listener ->
+            val payload = ByteArray(256 * 1024) { (it * 31).toByte() }
+            val received = java.util.concurrent.CompletableFuture<ByteArray>()
+            val reader = thread(isDaemon = true) {
+                try {
+                    listener.accept().use { socket ->
+                        socket.soTimeout = 15_000
+                        received.complete(socket.getInputStream().readNBytes(payload.size))
+                    }
+                } catch (error: Throwable) {
+                    received.completeExceptionally(error)
+                }
+            }
+            val socksPort = freePort()
+            val stackA = YggdrasilUserSpaceStack(sourceMesh, socksPort, 1)
+            val stackB = YggdrasilUserSpaceStack(coupledMesh, freePort(), listener.localPort,
+                inboundSourceAddress = "127.0.0.1")
+            try {
+                stackA.start()
+                stackB.start()
+                connect(socksPort, listener.localPort).use { client ->
+                    val sent = java.util.concurrent.CompletableFuture<Unit>()
+                    thread(isDaemon = true) {
+                        try {
+                            client.getOutputStream().write(payload)
+                            sent.complete(Unit)
+                        } catch (error: Throwable) {
+                            sent.completeExceptionally(error)
+                        }
+                    }
+                    assertTrue("ACK send was not exercised", enteredSend.await(5, TimeUnit.SECONDS))
+                    // More ACKs than the outbound queue can hold. A blocking
+                    // put would recreate the deadlock even with a writer thread.
+                    val duplicate = checkNotNull(firstPayload.get())
+                    repeat(128) { meshA.sendPacket(duplicate, duplicate.size.toLong()) }
+                    assertTrue("ACK send blocked the only mesh reader",
+                        receiveProgress.await(2, TimeUnit.SECONDS))
+                    org.junit.Assert.assertArrayEquals(payload, received.get(15, TimeUnit.SECONDS))
+                    sent.get(5, TimeUnit.SECONDS)
+                }
+            } finally {
+                receiveProgress.countDown()
+                stackA.stop()
+                stackB.stop()
+                meshA.close()
+                meshB.close()
+                listener.close()
+                reader.join(2_000)
+            }
+        }
+    }
+
+    @Test
     fun `acknowledged route gap does not trigger stall timeout`() {
         val meshA = YggdrasilShimGapDeliveryTest.FakeMesh("200:1000:aaaa::1")
         val meshB = YggdrasilShimGapDeliveryTest.FakeMesh("200:1000:bbbb::2")
