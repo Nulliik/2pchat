@@ -71,12 +71,15 @@ class E2EControlReceiver : BroadcastReceiver() {
                         require(name.isNotBlank() && body.isNotBlank())
                         val completion = java.util.concurrent.CompletableFuture<Boolean>()
                         P2PMessageRelay.sendMessageToPeer(context, name, body) { completion.complete(it) }
-                        result.put("accepted", completion.get(10, java.util.concurrent.TimeUnit.SECONDS))
+                        // A concurrent large-file transfer can hold the peer send lock for
+                        // minutes; the debug harness must wait, not time out.
+                        result.put("accepted", completion.get(120, java.util.concurrent.TimeUnit.SECONDS))
                     }
                     ACTION_APP_FILE -> {
                         val name = intent.getStringExtra(EXTRA_NICKNAME).orEmpty()
                         val filename = intent.getStringExtra("filename").orEmpty()
-                        require(name.isNotBlank() && filename in setOf("test_image.jpg", "test_video.mp4"))
+                        val allowed = setOf("test_image.jpg", "test_video.mp4", "test_big.dat", "test_huge.dat")
+                        require(name.isNotBlank() && filename in allowed)
                         val file = java.io.File(context.filesDir, filename)
                         require(file.isFile) { "test media is missing" }
                         val endpoint = P2PPreferences.getEffectiveEndpointsForPeer(context, name)
