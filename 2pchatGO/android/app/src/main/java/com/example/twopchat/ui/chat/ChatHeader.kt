@@ -522,9 +522,11 @@ internal fun ConnectionTypeBadge(
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
-    // Filter RTT metric: noise reduction (< 50ms omitted), formatted as integer ms
-    val shouldShowRtt = rttMs != null && rttMs >= 50
-    val rttText = if (shouldShowRtt) " • ${rttMs} ms" else ""
+    // Show the last known RTT continuously. The map value only changes when a new
+    // pong arrives (and is smoothed there), so the badge never flickers between
+    // samples; the old >= 50 ms noise gate re-hid the number whenever latency
+    // dipped below the threshold.
+    val rttText = if (rttMs != null && rttMs > 0) " • ${rttMs} ms" else ""
 
     val badgeData = when (transportType) {
         TransportType.ONION -> {

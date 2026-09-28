@@ -2375,10 +2375,15 @@ object P2PMessageRelay {
                                 "pong" -> {
                                     val sentAt = json.optLong("sent_at_ms")
                                     if (sentAt > 0L) {
-                                        val rtt = (System.currentTimeMillis() - sentAt).coerceIn(0L, 60_000L)
+                                        val sample = (System.currentTimeMillis() - sentAt).coerceIn(0L, 60_000L)
                                         serviceScope.launch(Dispatchers.Main) {
-                                            peerRttMs[resolvedSender] = rtt
-                                            peerRttMs[sender] = rtt
+                                            // Smooth successive samples so the badge number does not
+                                            // jump between pings; the last known value stays visible.
+                                            for (key in listOf(resolvedSender, sender).distinct()) {
+                                                val prev = peerRttMs[key]
+                                                peerRttMs[key] =
+                                                    if (prev == null || prev <= 0L) sample else (prev * 2 + sample + 1L) / 3L
+                                            }
                                         }
                                     }
                                     return
