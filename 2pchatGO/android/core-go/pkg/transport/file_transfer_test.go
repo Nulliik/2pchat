@@ -6,12 +6,15 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/binary"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"twopchat/core/pkg/crypto"
 )
 
 func TestFileTransferManagerSendAndCancel(t *testing.T) {
@@ -201,6 +204,93 @@ func TestReceiveChunkOutOfOrderAndDuplicate(t *testing.T) {
 
 	if !bytes.Equal(savedBytes, testData) {
 		t.Fatal("assembled file plaintext does not match original data")
+	}
+}
+
+// Regression for graph-guided finding Ф1 (CWE-770): a peer holding FileKey
+// (sender-generated) could forge a chunk with out-of-range chunkIdx in the
+// nonce; Bitmask.IsSet returns false for out-of-range so the old guard let
+// it decrypt and WriteAt at an unbounded offset of the .part file.
+func TestReceiveChunkRejectsOutOfRangeChunkIndex(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFilePath := filepath.Join(tmpDir, "sample.bin")
+	testData := make([]byte, 1024*1024) // 4 chunks of 256 KiB
+	rand.Read(testData)
+	if err := os.WriteFile(testFilePath, testData, 0600); err != nil {
+		t.Fatalf("failed to write test file: %v", err)
+	}
+
+	mgr := NewFileTransferManager(nil)
+	var metaPayload string
+	var legitChunk string
+	err := mgr.SendFileStream(
+		context.Background(), "peer_fp_abc", "msg_oor", testFilePath,
+		"sample.bin", "caption", "🚀",
+		func(payload []byte) error {
+			if metaPayload == "" {
+				metaPayload = EncodeMetadataB64(payload)
+			} else if legitChunk == "" {
+				legitChunk = EncodeMetadataB64(payload)
+			}
+			return nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("SendFileStream failed: %v", err)
+	}
+
+	metaBytes, err := base64.StdEncoding.DecodeString(metaPayload)
+	if err != nil {
+		t.Fatalf("meta b64: %v", err)
+	}
+	meta, err := DecodeMetadataJSON(metaBytes)
+	if err != nil || meta == nil {
+		t.Fatalf("DecodeMetadataJSON failed: %v", err)
+	}
+
+	// Forge chunk for chunkIdx == NumChunks (just past the last legitimate chunk)
+	forgeIdx := uint64(meta.NumChunks)
+	var nonce [crypto.SecretBoxNonceSize]byte
+	copy(nonce[:FileNoncePrefixSize], meta.FileNoncePrefix)
+	binary.BigEndian.PutUint64(nonce[FileNoncePrefixSize:], forgeIdx)
+	forged, err := crypto.SecretBoxEncryptWithNonce(meta.FileKey, nonce[:], bytes.Repeat([]byte{0x41}, DefaultChunkSize))
+	if err != nil {
+		t.Fatalf("forged encrypt: %v", err)
+	}
+
+	downloadsDir := filepath.Join(tmpDir, "downloads")
+	receiver := NewFileTransferManager(nil)
+	if res, err := receiver.ReceiveChunk("peer_fp_abc", "msg_oor", metaPayload, downloadsDir); err != nil || res != nil {
+		t.Fatalf("metadata delivery failed: res=%v err=%v", res, err)
+	}
+
+	res, err := receiver.ReceiveChunk("peer_fp_abc", "msg_oor", EncodeMetadataB64(forged), downloadsDir)
+	if err == nil {
+		t.Fatalf("out-of-range chunk index %d accepted (res=%v): unbounded WriteAt possible", forgeIdx, res)
+	}
+
+	// Negative index (high bit of the uint64 set) must also be rejected.
+	binary.BigEndian.PutUint64(nonce[FileNoncePrefixSize:], 1<<63)
+	forgedNeg, err := crypto.SecretBoxEncryptWithNonce(meta.FileKey, nonce[:], bytes.Repeat([]byte{0x42}, DefaultChunkSize))
+	if err != nil {
+		t.Fatalf("forged encrypt (neg): %v", err)
+	}
+	if res, err := receiver.ReceiveChunk("peer_fp_abc", "msg_oor", EncodeMetadataB64(forgedNeg), downloadsDir); err == nil {
+		t.Fatalf("negative chunk index accepted (res=%v)", res)
+	}
+
+	// A legitimate chunk (chunk 0, same FileKey) must still be accepted.
+	if legitChunk == "" {
+		t.Fatal("sender stream produced no chunks")
+	}
+	if _, err := receiver.ReceiveChunk("peer_fp_abc", "msg_oor", legitChunk, downloadsDir); err != nil {
+		t.Fatalf("legitimate chunk rejected after guard: %v", err)
+	}
+
+	// Rejected chunks leave the inbound transfer open; release the .part
+	// handle so TempDir cleanup succeeds on Windows.
+	if tr, ok := receiver.inbound["msg_oor"]; ok && tr.PartFile != nil {
+		_ = tr.PartFile.Close()
 	}
 }
 

@@ -625,6 +625,14 @@ func (m *FileTransferManager) ReceiveChunk(
 		chunkIdx = transfer.Bitmask.Count()
 	}
 
+	// Bound-check attacker-controlled chunk index BEFORE decrypt/write:
+	// Bitmask.IsSet returns false for out-of-range indices, so the guard
+	// below would otherwise let a peer WriteAt at an arbitrary offset.
+	if chunkIdx < 0 || chunkIdx >= transfer.Meta.NumChunks {
+		m.mu.Unlock()
+		return nil, fmt.Errorf("chunk index %d out of range (numChunks=%d)", chunkIdx, transfer.Meta.NumChunks)
+	}
+
 	if !transfer.Bitmask.IsSet(chunkIdx) {
 		// Decrypt chunk on the fly
 		plaintext, err := crypto.SecretBoxDecrypt(transfer.Meta.FileKey, payload)
