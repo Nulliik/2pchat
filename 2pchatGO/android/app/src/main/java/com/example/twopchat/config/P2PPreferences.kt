@@ -513,6 +513,7 @@ object P2PPreferences : com.example.twopchat.security.SensitiveMemoryHolder {
                 testingPrefsProvider = { prefs }
             } else {
                 testingPrefsProvider = null
+                encryptedPreferencesProvider = null
             }
             invalidateFingerprintCache()
             TrackerPreferences.clearInMemoryState()
@@ -650,43 +651,31 @@ object P2PPreferences : com.example.twopchat.security.SensitiveMemoryHolder {
             }
             val appContext = context.applicationContext
             val preferences = try {
-                val masterKey = com.example.twopchat.security.KeystoreProvider.getOrBuildMasterKey(appContext)
-                val p = EncryptedSharedPreferences.create(
-                    appContext,
-                    ENCRYPTED_FILE_NAME,
-                    masterKey,
-                    EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-                    EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
-                )
-                p.all
-                p
+                encryptedPreferencesProvider?.invoke(appContext) ?: createEncryptedPreferences(appContext)
             } catch (e: Exception) {
-                SafeLog.e("P2PPreferences", "Failed to initialize EncryptedSharedPreferences; attempting recovery", e)
-                try {
-                    val prefsFile = java.io.File(appContext.filesDir.parent, "shared_prefs/$ENCRYPTED_FILE_NAME.xml")
-                    if (prefsFile.exists()) {
-                        prefsFile.delete()
-                    }
-                    val masterKey = com.example.twopchat.security.KeystoreProvider.getOrBuildMasterKey(appContext)
-                    val recovered = EncryptedSharedPreferences.create(
-                        appContext,
-                        ENCRYPTED_FILE_NAME,
-                        masterKey,
-                        EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-                        EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
-                    )
-                    recovered.all
-                    recovered
-                } catch (recoveryEx: Exception) {
-                    SafeLog.e("P2PPreferences", "EncryptedSharedPreferences recovery failed; falling back to standard prefs", recoveryEx)
-                    appContext.getSharedPreferences(ENCRYPTED_FILE_NAME, Context.MODE_PRIVATE)
-                }
+                SafeLog.e("P2PPreferences", "Failed to initialize EncryptedSharedPreferences", e)
+                throw IllegalStateException("Encrypted preferences are unavailable; refusing plaintext fallback", e)
             }
             migrateLegacyPreferences(appContext, preferences)
             cachedPrefs = preferences
             preferences
         }
     }
+
+    private fun createEncryptedPreferences(context: Context): SharedPreferences {
+        val masterKey = com.example.twopchat.security.KeystoreProvider.getOrBuildMasterKey(context)
+        return EncryptedSharedPreferences.create(
+            context,
+            ENCRYPTED_FILE_NAME,
+            masterKey,
+            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
+        ).also { it.all }
+    }
+
+    @androidx.annotation.VisibleForTesting
+    @Volatile
+    var encryptedPreferencesProvider: ((Context) -> SharedPreferences)? = null
 
     /**
      * Asynchronously warms up EncryptedSharedPreferences on a background thread (Dispatchers.IO)

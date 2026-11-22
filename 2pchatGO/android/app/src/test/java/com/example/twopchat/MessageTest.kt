@@ -20,6 +20,20 @@ import java.util.TimeZone
 
 class MessageTest {
     @Test
+    fun deliveryDisplayState_mapsOutgoingAndIncomingStates() {
+        assertEquals(MessageDeliveryStatus.DisplayState.QUEUED, MessageDeliveryStatus.displayState("PENDING", true))
+        assertEquals(MessageDeliveryStatus.DisplayState.SENDING, MessageDeliveryStatus.displayState("SENDING_FILE", true))
+        assertEquals(MessageDeliveryStatus.DisplayState.FAILED, MessageDeliveryStatus.displayState("FAILED", true))
+        assertEquals(MessageDeliveryStatus.DisplayState.FAILED, MessageDeliveryStatus.displayState("CANCELLED", true))
+        assertEquals(MessageDeliveryStatus.DisplayState.SENT, MessageDeliveryStatus.displayState("SENT", true))
+        assertEquals(MessageDeliveryStatus.DisplayState.DELIVERED, MessageDeliveryStatus.displayState("DELIVERED", true))
+        assertEquals(MessageDeliveryStatus.DisplayState.READ, MessageDeliveryStatus.displayState("READ", true))
+        assertEquals(MessageDeliveryStatus.DisplayState.READ, MessageDeliveryStatus.displayState(null, true, isSavedMessages = true))
+        assertNull(MessageDeliveryStatus.displayState("FAILED", false))
+        assertNull(MessageDeliveryStatus.displayState("UNKNOWN", true))
+    }
+
+    @Test
     fun message_initiallyHasNullReplyToMetadata() {
         val msg = Message(
             id = "1",
@@ -105,6 +119,14 @@ class MessageTest {
         assertEquals("CANCELLED", MessageDeliveryStatus.merge("CANCELLED", "RECEIVING"))
         assertEquals("CANCELLED", MessageDeliveryStatus.merge("CANCELLED", "SENT"))
         assertEquals("FAILED", MessageDeliveryStatus.merge("FAILED", "RECEIVING"))
+    }
+
+    @Test
+    fun deliveryStatus_explicitRetryCanLeaveTerminalStateAndComplete() {
+        assertEquals("SENDING", MessageDeliveryStatus.merge("FAILED", "SENDING"))
+        assertEquals("SENT", MessageDeliveryStatus.merge("SENDING", "SENT"))
+        assertEquals("SENDING", MessageDeliveryStatus.merge("CANCELLED", "SENDING"))
+        assertEquals("DELIVERED", MessageDeliveryStatus.merge("SENDING", "DELIVERED"))
     }
 
     @Test

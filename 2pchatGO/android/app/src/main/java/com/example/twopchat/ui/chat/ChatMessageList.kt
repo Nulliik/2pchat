@@ -300,15 +300,16 @@ internal fun ChatMessageList(
             val animateOnAppearance = remember(msg.id) {
                 arrivalAnimationTracker.consume(msg.id)
             }
-            val isPendingOrSending = msg.status?.startsWith("PENDING") == true ||
-                msg.status?.startsWith("SENDING") == true ||
-                msg.status?.startsWith("FAILED") == true
-            val isRead = msg.isMe && !isPendingOrSending && (
-                msg.status?.startsWith("READ") == true || peerName == "Saved Messages"
+            val deliveryState = MessageDeliveryStatus.displayState(
+                status = msg.status,
+                isMine = msg.isMe,
+                isSavedMessages = peerName == "Saved Messages",
             )
-            val isDelivered = msg.isMe && !isPendingOrSending && (
-                isRead || msg.status?.startsWith("DELIVERED") == true
-            )
+            val isPendingOrSending = deliveryState == MessageDeliveryStatus.DisplayState.QUEUED ||
+                deliveryState == MessageDeliveryStatus.DisplayState.SENDING
+            val isFailed = deliveryState == MessageDeliveryStatus.DisplayState.FAILED
+            val isRead = deliveryState == MessageDeliveryStatus.DisplayState.READ
+            val isDelivered = deliveryState == MessageDeliveryStatus.DisplayState.DELIVERED || isRead
             val isSelected = msg.id in selectedIds
             if (isSearchMode && searchQuery.isNotEmpty() && onJumpToMessage != null) {
                 Box(modifier = Modifier.fillMaxWidth().clickable { onJumpToMessage(msg) }) {
@@ -321,6 +322,7 @@ internal fun ChatMessageList(
                         isSelectMode = isSelectMode,
                         isRead = isRead,
                         isDelivered = isDelivered,
+                        isFailed = isFailed,
                         peerName = peerName,
                         myAvatarBitmap = myAvatarBitmap,
                         appLanguage = appLanguage,
@@ -353,6 +355,7 @@ internal fun ChatMessageList(
                     isSelectMode = isSelectMode,
                     isRead = isRead,
                     isDelivered = isDelivered,
+                    isFailed = isFailed,
                     peerName = peerName,
                     myAvatarBitmap = myAvatarBitmap,
                     appLanguage = appLanguage,

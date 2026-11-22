@@ -36,6 +36,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.layout.ContentScale
@@ -104,6 +106,7 @@ internal fun ChatMessageBubble(
     isSelectMode: Boolean,
     isRead: Boolean,
     isDelivered: Boolean,
+    isFailed: Boolean = false,
     peerName: String,
     myAvatarBitmap: Bitmap?,
     appLanguage: String,
@@ -126,6 +129,10 @@ internal fun ChatMessageBubble(
     onHighlightFinished: () -> Unit = {},
 ) {
     val isHighlighted = msg.id == highlightedMessageId
+    val failedStatusLabel = Localizations.tr(
+        appLanguage, ru = "Не отправлено", en = "Not sent", de = "Nicht gesendet",
+        es = "No enviado", fr = "Non envoyé", pt = "Não enviado", tr = "Gönderilemedi"
+    )
     var highlightAlpha by remember(msg.id, isHighlighted) { mutableFloatStateOf(if (isHighlighted) 0.5f else 0.0f) }
     val formattedTime = remember(msg.id, msg.status, msg.sentAtEpochMs, appLanguage) {
         MessageTimestampFormatter.format(msg, appLanguage)
@@ -411,6 +418,8 @@ internal fun ChatMessageBubble(
                                         isSelectMode = isSelectMode,
                                         isRead = isRead,
                                         isDelivered = isDelivered,
+                                        isFailed = isFailed,
+                                        failedStatusLabel = failedStatusLabel,
                                         appLanguage = appLanguage,
                                         primaryColor = primaryColor,
                                         textColor = textColor,
@@ -613,6 +622,13 @@ internal fun ChatMessageBubble(
                                                                     color = Color.White.copy(alpha = 0.8f),
                                                                     strokeWidth = 1.2.dp
                                                                 )
+                                                            } else if (isFailed) {
+                                                                Text(
+                                                                    text = failedStatusLabel,
+                                                                    color = Color(0xFFFF8A80),
+                                                                    fontSize = 9.sp,
+                                                                    modifier = Modifier.semantics { contentDescription = failedStatusLabel }
+                                                                )
                                                             } else {
                                                                 Icon(
                                                                     painter = painterResource(id = if (isDelivered) com.example.twopchat.R.drawable.ic_msg_double_check else com.example.twopchat.R.drawable.ic_msg_single_check),
@@ -660,6 +676,13 @@ internal fun ChatMessageBubble(
                                                                     modifier = Modifier.size(10.dp),
                                                                     color = textColor.copy(alpha = 0.6f),
                                                                     strokeWidth = 1.2.dp
+                                                                )
+                                                            } else if (isFailed) {
+                                                                Text(
+                                                                    text = failedStatusLabel,
+                                                                    color = Color(0xFFB3261E),
+                                                                    fontSize = 10.sp,
+                                                                    modifier = Modifier.semantics { contentDescription = failedStatusLabel }
                                                                 )
                                                             } else {
                                                                 AnimatedContent(
@@ -895,6 +918,13 @@ internal fun ChatMessageBubble(
                                                                 color = Color.White.copy(alpha = 0.8f),
                                                                 strokeWidth = 1.2.dp
                                                             )
+                                                        } else if (isFailed) {
+                                                            Text(
+                                                                text = failedStatusLabel,
+                                                                color = Color(0xFFFF8A80),
+                                                                fontSize = 9.sp,
+                                                                modifier = Modifier.semantics { contentDescription = failedStatusLabel }
+                                                            )
                                                         } else {
                                                             Icon(
                                                                 painter = painterResource(id = if (isDelivered) com.example.twopchat.R.drawable.ic_msg_double_check else com.example.twopchat.R.drawable.ic_msg_single_check),
@@ -942,6 +972,13 @@ internal fun ChatMessageBubble(
                                                                 modifier = Modifier.size(10.dp),
                                                                 color = textColor.copy(alpha = 0.6f),
                                                                 strokeWidth = 1.2.dp
+                                                            )
+                                                        } else if (isFailed) {
+                                                            Text(
+                                                                text = failedStatusLabel,
+                                                                color = Color(0xFFFF8A80),
+                                                                fontSize = 9.sp,
+                                                                modifier = Modifier.semantics { contentDescription = failedStatusLabel }
                                                             )
                                                         } else {
                                                             Icon(
@@ -1311,7 +1348,14 @@ internal fun ChatMessageBubble(
                                                 onSurfaceVariant.copy(alpha = 0.5f)
                                             }
 
-                                            if (isPending) {
+                                            if (isFailed) {
+                                                Text(
+                                                    text = failedStatusLabel,
+                                                    color = Color(0xFFB3261E),
+                                                    fontSize = 9.sp,
+                                                    modifier = Modifier.semantics { contentDescription = failedStatusLabel }
+                                                )
+                                            } else if (isPending) {
                                                 Text(
                                                     text = "🕒",
                                                     color = statusColor,
@@ -2035,6 +2079,8 @@ private fun MediaAlbumGridBubble(
     isSelectMode: Boolean,
     isRead: Boolean,
     isDelivered: Boolean,
+    isFailed: Boolean,
+    failedStatusLabel: String,
     appLanguage: String,
     primaryColor: Color,
     textColor: Color,
@@ -2248,6 +2294,13 @@ private fun MediaAlbumGridBubble(
                                 color = Color.White.copy(alpha = 0.8f),
                                 strokeWidth = 1.2.dp
                             )
+                        } else if (isFailed) {
+                            Text(
+                                text = failedStatusLabel,
+                                color = Color(0xFFFF8A80),
+                                fontSize = 9.sp,
+                                modifier = Modifier.semantics { contentDescription = failedStatusLabel }
+                            )
                         } else {
                             Icon(
                                 painter = painterResource(id = if (isDelivered) com.example.twopchat.R.drawable.ic_msg_double_check else com.example.twopchat.R.drawable.ic_msg_single_check),
@@ -2293,6 +2346,13 @@ private fun MediaAlbumGridBubble(
                                 modifier = Modifier.size(11.dp),
                                 color = primaryColor,
                                 strokeWidth = 1.2.dp
+                            )
+                        } else if (isFailed) {
+                            Text(
+                                text = failedStatusLabel,
+                                color = Color(0xFFB3261E),
+                                fontSize = 10.sp,
+                                modifier = Modifier.semantics { contentDescription = failedStatusLabel }
                             )
                         } else {
                             Icon(

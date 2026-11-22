@@ -181,7 +181,7 @@ object Localizations {
         "help_circuit_rotation_title" to "Tor Circuit Rotation ('New Identity')",
         "help_circuit_rotation_desc" to "The 'New Identity' action sends a SIGNAL NEWNYM command to the Tor ControlPort. This immediately rotates your Exit Node and active session IP. Use this if a node is throttled, blocked, or slow.",
         "help_sqlcipher_title" to "SQLCipher Database Encryption (AES-256)",
-        "help_sqlcipher_desc" to "All local chats, profiles, and media in 2PChat are encrypted on-disk using SQLCipher (256-bit AES-CBC). Cryptographic keys are protected by hardware-backed Android/iOS Keystore, preventing extraction via physical access or backups.",
+        "help_sqlcipher_desc" to "Chat and group databases are encrypted on-device with SQLCipher. Some attachment blocks are encrypted separately, but downloaded or exported media may be stored as ordinary files in the app-private storage. Android Keystore protects database keys; whether keys are hardware-backed depends on the device. Backups are disabled by the app, but data can still be exposed on an unlocked or compromised device.",
         "help_onion_exchange_title" to "Automatic Onion Address Exchange",
         "help_onion_exchange_desc" to "When establishing a session over any transport (LAN, Yggdrasil, or Trackers), peers automatically and anonymously exchange their v3 .onion addresses inside the encrypted Double Ratchet handshake for future direct Tor messaging.",
         "help_transport_badges_title" to "Chat Header Connection Badges",
@@ -477,7 +477,7 @@ object Localizations {
         "help_circuit_rotation_title" to "Ротация цепочки Tor («New Identity»)",
         "help_circuit_rotation_desc" to "Функция «Сменить цепочку» отправляет сигнал SIGNAL NEWNYM в Tor ControlPort. Это мгновенно меняет выходной узел (Exit Node) и IP-адрес вашей сессии. Используйте это, если один из узлов заблокирован или работает медленно.",
         "help_sqlcipher_title" to "Шифрование базы данных SQLCipher (AES-256)",
-        "help_sqlcipher_desc" to "Все сообщения, профили и файлы в 2PChat шифруются прямо на устройстве с помощью баз данных SQLCipher (AES-256-CBC). Ключи шифрования защищены в аппаратном Keystore Android/iOS, предотвращая извлечение данных при физическом доступе или бэкапе.",
+        "help_sqlcipher_desc" to "Базы чатов и групп шифруются SQLCipher на устройстве. Некоторые блоки вложений шифруются отдельно, но загруженные или экспортированные медиа могут храниться как обычные файлы в приватном хранилище приложения. Защита ключей Android Keystore зависит от поддержки устройства; шифрование не защищает данные на разблокированном или скомпрометированном устройстве.",
         "help_onion_exchange_title" to "Автоматический обмен .onion адресами",
         "help_onion_exchange_desc" to "При первом установлении сессии по любому каналу (LAN, Yggdrasil или трекеры) приложения автоматически и анонимно обмениваются своими v3 .onion адресами внутри шифрованного канала Double Ratchet для будущих прямых анонимных подключений.",
         "help_transport_badges_title" to "Обозначения цветов в шапке чата",
@@ -773,7 +773,7 @@ object Localizations {
         "help_circuit_rotation_title" to "Tor-Schaltungs-Rotation ('Neue Identität')",
         "help_circuit_rotation_desc" to "Die Aktion 'Neue Identität' sendet ein SIGNAL NEWNYM an den Tor ControlPort. Dies wechselt sofort Ihren Exit-Knoten und Ihre IP-Adresse.",
         "help_sqlcipher_title" to "SQLCipher-Datenbankverschlüsselung (AES-256)",
-        "help_sqlcipher_desc" to "Alle lokalen Chats, Profile und Medien in 2PChat werden mit SQLCipher (256-Bit-AES-CBC) verschlüsselt und durch den Hardware-Keystore geschützt.",
+        "help_sqlcipher_desc" to "Chat- und Gruppendatenbanken werden auf dem Gerät mit SQLCipher verschlüsselt. Einige Anhangblöcke werden separat verschlüsselt, heruntergeladene oder exportierte Medien können jedoch als normale Dateien im privaten App-Speicher liegen. Der Hardware-Schutz des Keystore hängt vom Gerät ab; Verschlüsselung schützt nicht vor Zugriff auf ein entsperrtes oder kompromittiertes Gerät.",
 
 
         // Settings Main Menu Sections & Items
@@ -1066,7 +1066,7 @@ object Localizations {
         "help_circuit_rotation_title" to "Rotación de circuito Tor ('Nueva identidad')",
         "help_circuit_rotation_desc" to "La acción 'Nueva identidad' envía una orden SIGNAL NEWNYM al ControlPort de Tor. Esto rota inmediatamente su nodo de salida y dirección IP.",
         "help_sqlcipher_title" to "Cifrado de base de datos SQLCipher (AES-256)",
-        "help_sqlcipher_desc" to "Todos los chats, perfiles y archivos locales se cifran con SQLCipher (AES-256-CBC) y están protegidos por el Keystore de hardware de Android/iOS.",
+        "help_sqlcipher_desc" to "Las bases de datos de chats y grupos se cifran con SQLCipher en el dispositivo. Algunos bloques adjuntos se cifran por separado, pero los medios descargados o exportados pueden almacenarse como archivos normales en el almacenamiento privado de la aplicación. La protección de hardware del Keystore depende del dispositivo; el cifrado no protege un dispositivo desbloqueado o comprometido.",
 
 
         // Settings Main Menu Sections & Items
@@ -1359,7 +1359,7 @@ object Localizations {
         "help_circuit_rotation_title" to "Rotation de circuit Tor ('Nouvelle identité')",
         "help_circuit_rotation_desc" to "L'action 'Nouvelle identité' envoie un signal SIGNAL NEWNYM au ControlPort de Tor. Cela change immédiatement votre nœud de sortie et votre IP.",
         "help_sqlcipher_title" to "Chiffrement de base de données SQLCipher (AES-256)",
-        "help_sqlcipher_desc" to "Tous les messages, profils et fichiers locaux sont chiffrés sur le disque avec SQLCipher (AES-256-CBC) et protégés par le Keystore matériel.",
+        "help_sqlcipher_desc" to "Les bases de données des conversations et des groupes sont chiffrées avec SQLCipher sur l’appareil. Certains blocs de pièces jointes sont chiffrés séparément, mais les médias téléchargés ou exportés peuvent rester des fichiers ordinaires dans le stockage privé de l’application. La protection matérielle du Keystore dépend de l’appareil; le chiffrement ne protège pas un appareil déverrouillé ou compromis.",
 
 
         // Settings Main Menu Sections & Items
@@ -1652,7 +1652,7 @@ object Localizations {
         "help_circuit_rotation_title" to "Rotação de circuito Tor ('Nova identidade')",
         "help_circuit_rotation_desc" to "A ação 'Nova identidade' envia um comando SIGNAL NEWNYM para a ControlPort do Tor. Isso altera imediatamente o nó de saída e o IP da sessão.",
         "help_sqlcipher_title" to "Criptografia de banco de dados SQLCipher (AES-256)",
-        "help_sqlcipher_desc" to "Todos os chats, perfis e mídias locais são criptografados com SQLCipher (AES-256-CBC) e protegidos pelo Keystore de hardware do Android/iOS.",
+        "help_sqlcipher_desc" to "Os bancos de dados de conversas e grupos são criptografados com SQLCipher no dispositivo. Alguns blocos de anexos são criptografados separadamente, mas mídias baixadas ou exportadas podem ficar como arquivos comuns no armazenamento privado do app. A proteção de hardware do Keystore depende do dispositivo; a criptografia não protege um dispositivo desbloqueado ou comprometido.",
 
 
         // Settings Main Menu Sections & Items
@@ -1925,7 +1925,7 @@ object Localizations {
         "help_circuit_rotation_title" to "Tor Devre Yenileme ('Yeni Kimlik')",
         "help_circuit_rotation_desc" to "'Yeni Kimlik' eylemi, Tor ControlPort'a bir SIGNAL NEWNYM komutu gönderir. Bu, Çıkış Düğümünüzü ve aktif IP'nizi hemen değiştirir. Bir düğüm yavaşladığında veya engellendiğinde kullanın.",
         "help_sqlcipher_title" to "SQLCipher Veritabanı Şifrelemesi (AES-256)",
-        "help_sqlcipher_desc" to "2PChat'teki tüm yerel sohbetler, profiller ve medyalar SQLCipher (256-bit AES-CBC) kullanılarak diskte şifrelenir. Kriptografik anahtarlar, donanım destekli Android Keystore tarafından korunur.",
+        "help_sqlcipher_desc" to "Sohbet ve grup veritabanları cihazda SQLCipher ile şifrelenir. Bazı ek dosya blokları ayrıca şifrelenir; ancak indirilen veya dışa aktarılan medya uygulamanın özel alanında normal dosyalar olarak tutulabilir. Keystore donanım koruması cihaza bağlıdır; şifreleme kilidi açılmış veya ele geçirilmiş cihazı korumaz.",
         "help_onion_exchange_title" to "Otomatik Onion Adresi Değişimi",
         "help_onion_exchange_desc" to "Herhangi bir taşıyıcı üzerinden (LAN, Yggdrasil veya İzleyiciler) bir oturum başlatıldığında, eşler şifreli Double Ratchet el sıkışması içinde v3 .onion adreslerini gelecekteki doğrudan Tor mesajlaşması için otomatik ve anonim olarak paylaşır.",
         "help_transport_badges_title" to "Sohbet Başlığı Bağlantı Rozetleri",

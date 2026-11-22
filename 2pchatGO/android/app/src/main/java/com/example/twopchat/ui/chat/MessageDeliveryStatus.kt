@@ -1,14 +1,30 @@
 package com.example.twopchat.ui.chat
 
 object MessageDeliveryStatus {
+    enum class DisplayState { QUEUED, SENDING, FAILED, SENT, DELIVERED, READ }
+
+    fun displayState(status: String?, isMine: Boolean, isSavedMessages: Boolean = false): DisplayState? {
+        if (!isMine) return null
+        val base = status?.substringBefore('_')?.uppercase().orEmpty()
+        return when {
+            base == "FAILED" || base == "CANCELLED" -> DisplayState.FAILED
+            base == "PENDING" -> DisplayState.QUEUED
+            base == "SENDING" -> DisplayState.SENDING
+            base == "READ" || isSavedMessages -> DisplayState.READ
+            base == "DELIVERED" -> DisplayState.DELIVERED
+            base == "SENT" -> DisplayState.SENT
+            else -> null
+        }
+    }
+
     private val TERMINAL_TRANSFER_STATES = setOf("CANCELLED", "FAILED")
 
     fun merge(current: String?, delivery: String): String {
         val currentBase = current?.substringBefore('_')?.uppercase().orEmpty()
         val deliveryBase = delivery.substringBefore('_').uppercase()
-        // File-transfer terminal states must not be undone by a replayed offer or a
-        // late progress/status callback. A new explicit transfer can use a new ID.
-        if (currentBase in TERMINAL_TRANSFER_STATES) {
+        // Ignore late transfer callbacks after terminal state, but permit an explicit
+        // retry (PENDING/SENDING) to begin a fresh attempt with the same message ID.
+        if (currentBase in TERMINAL_TRANSFER_STATES && deliveryBase !in setOf("PENDING", "SENDING")) {
             return currentBase
         }
         val edited = current?.contains("edited", ignoreCase = true) == true
