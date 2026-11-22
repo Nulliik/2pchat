@@ -45,7 +45,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
 @Composable
-fun ChatProcessingAlbumDialog(appLanguage: String) {
+fun ChatProcessingAlbumDialog(appLanguage: String, mediaLabel: String? = null) {
     androidx.compose.ui.window.Dialog(onDismissRequest = {}) {
         Surface(
             shape = RoundedCornerShape(16.dp),
@@ -62,7 +62,7 @@ fun ChatProcessingAlbumDialog(appLanguage: String) {
                     modifier = Modifier.size(36.dp)
                 )
                 Text(
-                    text = if (appLanguage == "Русский") "Подготовка медиафайлов..." else "Preparing media files...",
+                    text = mediaLabel ?: if (appLanguage == "Русский") "Подготовка медиафайлов..." else "Preparing media files...",
                     color = MaterialTheme.colorScheme.onSurface,
                     fontSize = 15.sp,
                     fontWeight = FontWeight.Medium

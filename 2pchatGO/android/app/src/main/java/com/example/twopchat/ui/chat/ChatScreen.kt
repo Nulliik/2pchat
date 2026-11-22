@@ -1548,6 +1548,7 @@ fun ChatScreen(
     var pendingAlbumFiles by remember { mutableStateOf<List<File>?>(null) }
     var pendingAlbumTypes by remember { mutableStateOf<List<String>?>(null) }
     var isProcessingAlbum by remember { mutableStateOf(false) }
+    var isStagingVideo by remember { mutableStateOf(false) }
 
     fun handleMultipleUrisSelected(uris: List<Uri>) {
         if (uris.isEmpty()) return
@@ -1808,21 +1809,29 @@ fun ChatScreen(
         }
         if (uris.size == 1) {
             val uri = uris.first()
-            var fileName = "video.mp4"
-            runCatching {
-                context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
-                    val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
-                    if (nameIndex != -1 && cursor.moveToFirst()) {
-                        val queried = cursor.getString(nameIndex)
-                        if (!queried.isNullOrBlank()) {
-                            fileName = if (!queried.contains(".")) "$queried.mp4" else queried
+            isStagingVideo = true
+            coroutineScope.launch(Dispatchers.IO) {
+                var fileName = "video.mp4"
+                runCatching {
+                    context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                        val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                        if (nameIndex != -1 && cursor.moveToFirst()) {
+                            val queried = cursor.getString(nameIndex)
+                            if (!queried.isNullOrBlank()) {
+                                fileName = if (!queried.contains(".")) "$queried.mp4" else queried
+                            }
                         }
                     }
                 }
-            }
-            val tempFile = saveUriToTempFile(context, uri, fileName)
-            if (tempFile != null) {
-                editingVideoPath = tempFile.absolutePath
+                val tempFile = saveUriToTempFile(context, uri, fileName)
+                withContext(Dispatchers.Main) {
+                    isStagingVideo = false
+                    if (tempFile != null) {
+                        editingVideoPath = tempFile.absolutePath
+                    } else {
+                        Toast.makeText(context, if (appLanguage == "Русский") "Не удалось открыть видео" else "Could not open video", Toast.LENGTH_SHORT).show()
+                    }
+                }
             }
         } else {
             handleMultipleUrisSelected(uris)
@@ -1935,8 +1944,13 @@ fun ChatScreen(
         )
     }
 
-    if (isProcessingAlbum) {
-        ChatProcessingAlbumDialog(appLanguage = appLanguage)
+    if (isProcessingAlbum || isStagingVideo) {
+        val mediaLabel = if (isStagingVideo) {
+            if (appLanguage == "Русский") "Подготовка видео..." else "Preparing video..."
+        } else {
+            null
+        }
+        ChatProcessingAlbumDialog(appLanguage = appLanguage, mediaLabel = mediaLabel)
     }
 
 
@@ -1955,62 +1969,72 @@ fun ChatScreen(
             handleMultipleUrisSelected(uris)
             return@rememberLauncherForActivityResult
         }
-        for (uri in uris) {
-            var fileName = "file"
-            val mime = context.contentResolver.getType(uri).orEmpty()
-            context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
-                val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
-                if (nameIndex != -1 && cursor.moveToFirst()) {
-                    fileName = cursor.getString(nameIndex)
-                }
-            }
-            fileName = VoiceMessageSupport.ensureMediaExtension(fileName, mime)
-            val tempFile = saveUriToTempFile(context, uri, fileName)
-            if (tempFile != null) {
-                val time = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
-                val endpoint = P2PMessageRelay.peerEndpoints[peerName]
-                    ?: P2PPreferences.prefs(context).getString(P2PPreferences.lastEndpoint(peerName), null).orEmpty()
-                val isLive = com.example.twopchat.presence.PresenceRepository.isOnline(peerName)
-                val initialStatus = if (peerName == "Saved Messages") "SENT" else if (isLive) "SENDING" else "PENDING"
-                // Some document providers return extensionless generated names
-                // for photos and stickers. Preserve their MIME type instead of
-                // rendering them forever as generic sent_file_* attachments.
-                val detectedType = VoiceMessageSupport.attachmentType(fileName, mime)
-                val displayMsgText = if (detectedType == "IMAGE") "Sent an image" else if (detectedType == "VIDEO") "Sent a video" else fileName
-                val outMsg = Message(
-                    id = newMessageId(),
-                    text = displayMsgText,
-                    isMe = true,
-                    timestamp = time,
-                    attachmentType = detectedType,
-                    attachmentUri = tempFile.absolutePath,
-                    attachmentName = fileName,
-                    status = initialStatus
-                )
-                arrivalAnimationTracker.mark(outMsg.id)
-                initialMessages.add(outMsg)
-                if (persistEnabled || initialStatus == "PENDING" || initialStatus == "SENDING") {
-                    persistDatabase { db.saveMessage(peerName, outMsg) }
-                }
-                if (peerName != "Saved Messages") {
-                    P2PMessageRelay.sendFile(
-                        context = context,
-                        peerName = peerName,
-                        endpoint = endpoint,
-                        filePath = tempFile.absolutePath,
-                        messageId = outMsg.id,
-                        asDocument = true,
-                    ) { success ->
-                        val finalStatus = if (success) "SENT" else "PENDING"
-                        persistDatabase { db.updateMessageStatus(outMsg.id, finalStatus) }
-                        coroutineScope.launch {
-                            val idx = initialMessages.indexOfFirst { it.id == outMsg.id }
-                            if (idx != -1) {
-                                initialMessages[idx] = outMsg.copy(status = finalStatus)
+        isProcessingAlbum = true
+        coroutineScope.launch(Dispatchers.IO) {
+            try {
+                for (uri in uris) {
+                    var fileName = "file"
+                    val mime = context.contentResolver.getType(uri).orEmpty()
+                    runCatching {
+                        context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                            val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                            if (nameIndex != -1 && cursor.moveToFirst()) {
+                                fileName = cursor.getString(nameIndex)
+                            }
+                        }
+                    }
+                    fileName = VoiceMessageSupport.ensureMediaExtension(fileName, mime)
+                    val tempFile = saveUriToTempFile(context, uri, fileName)
+                    withContext(Dispatchers.Main) {
+                        if (tempFile == null) return@withContext
+                        val time = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
+                        val endpoint = P2PMessageRelay.peerEndpoints[peerName]
+                            ?: P2PPreferences.prefs(context).getString(P2PPreferences.lastEndpoint(peerName), null).orEmpty()
+                        val isLive = com.example.twopchat.presence.PresenceRepository.isOnline(peerName)
+                        val initialStatus = if (peerName == "Saved Messages") "SENT" else if (isLive) "SENDING" else "PENDING"
+                        // Some document providers return extensionless generated names
+                        // for photos and stickers. Preserve their MIME type instead of
+                        // rendering them forever as generic sent_file_* attachments.
+                        val detectedType = VoiceMessageSupport.attachmentType(fileName, mime)
+                        val displayMsgText = if (detectedType == "IMAGE") "Sent an image" else if (detectedType == "VIDEO") "Sent a video" else fileName
+                        val outMsg = Message(
+                            id = newMessageId(),
+                            text = displayMsgText,
+                            isMe = true,
+                            timestamp = time,
+                            attachmentType = detectedType,
+                            attachmentUri = tempFile.absolutePath,
+                            attachmentName = fileName,
+                            status = initialStatus
+                        )
+                        arrivalAnimationTracker.mark(outMsg.id)
+                        initialMessages.add(outMsg)
+                        if (persistEnabled || initialStatus == "PENDING" || initialStatus == "SENDING") {
+                            persistDatabase { db.saveMessage(peerName, outMsg) }
+                        }
+                        if (peerName != "Saved Messages") {
+                            P2PMessageRelay.sendFile(
+                                context = context,
+                                peerName = peerName,
+                                endpoint = endpoint,
+                                filePath = tempFile.absolutePath,
+                                messageId = outMsg.id,
+                                asDocument = true,
+                            ) { success ->
+                                val finalStatus = if (success) "SENT" else "PENDING"
+                                persistDatabase { db.updateMessageStatus(outMsg.id, finalStatus) }
+                                coroutineScope.launch {
+                                    val idx = initialMessages.indexOfFirst { it.id == outMsg.id }
+                                    if (idx != -1) {
+                                        initialMessages[idx] = outMsg.copy(status = finalStatus)
+                                    }
+                                }
                             }
                         }
                     }
                 }
+            } finally {
+                withContext(Dispatchers.Main) { isProcessingAlbum = false }
             }
         }
     }
