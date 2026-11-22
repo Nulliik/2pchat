@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -204,6 +205,57 @@ func TestReceiveChunkOutOfOrderAndDuplicate(t *testing.T) {
 
 	if !bytes.Equal(savedBytes, testData) {
 		t.Fatal("assembled file plaintext does not match original data")
+	}
+}
+
+// Concurrent duplicate metadata must initialize one transfer exactly once.
+func TestReceiveChunkConcurrentMetadataInitializesOnce(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFilePath := filepath.Join(tmpDir, "metadata-race.bin")
+	if err := os.WriteFile(testFilePath, []byte("payload"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	sender := NewFileTransferManager(nil)
+	var metaPayload string
+	if err := sender.SendFileStream(context.Background(), "peer", "metadata-race", testFilePath, "metadata-race.bin", "", "", func(payload []byte) error {
+		if metaPayload == "" {
+			metaPayload = EncodeMetadataB64(payload)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	receiver := NewFileTransferManager(nil)
+	const callers = 32
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	errs := make(chan error, callers)
+	for i := 0; i < callers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			_, err := receiver.ReceiveChunk("peer", "metadata-race", metaPayload, filepath.Join(tmpDir, "downloads"))
+			errs <- err
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(errs)
+	// Once the first caller publishes metadata, later duplicate frames may be
+	// interpreted as chunks and rejected; the invariant is one initialized state.
+	for range errs {
+	}
+
+	receiver.mu.RLock()
+	transfer := receiver.inbound["metadata-race"]
+	receiver.mu.RUnlock()
+	if transfer == nil || transfer.Meta == nil || transfer.PartFile == nil || transfer.Bitmask == nil {
+		t.Fatalf("metadata transfer not initialized: %+v", transfer)
+	}
+	if !receiver.CancelTransfer("metadata-race") {
+		t.Fatal("expected transfer cleanup")
 	}
 }
 

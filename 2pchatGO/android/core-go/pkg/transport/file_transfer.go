@@ -565,23 +565,29 @@ func (m *FileTransferManager) ReceiveChunk(
 	}
 	m.mu.Unlock()
 
-	// If metadata is not set yet, check if this payload is the metadata frame
-	if transfer.Meta == nil {
+	// Decode candidate metadata without holding the manager lock, then publish only
+	// if another caller has not initialized this transfer in the meantime.
+	m.mu.RLock()
+	needsMetadata := transfer.Meta == nil
+	m.mu.RUnlock()
+	if needsMetadata {
 		meta, err := DecodeMetadataJSON(payload)
 		if err == nil && meta != nil && meta.NumChunks > 0 {
 			m.mu.Lock()
-			transfer.Meta = meta
-			if err := os.MkdirAll(downloadsDir, 0755); err == nil {
-				transfer.PartPath = filepath.Join(downloadsDir, fmt.Sprintf(".part_%s", safeMessageID))
-				transfer.BitmaskPath = filepath.Join(downloadsDir, fmt.Sprintf(".part_%s.bitmask", safeMessageID))
-				partFile, err := os.OpenFile(transfer.PartPath, os.O_CREATE|os.O_RDWR, 0600)
-				if err == nil {
-					transfer.PartFile = partFile
-				}
-				if loadedBM, loadErr := LoadBitmaskFromFile(transfer.BitmaskPath); loadErr == nil && loadedBM.NumChunks() == meta.NumChunks {
-					transfer.Bitmask = loadedBM
-				} else {
-					transfer.Bitmask = NewTransferBitmask(meta.NumChunks)
+			if transfer.Meta == nil {
+				transfer.Meta = meta
+				if err := os.MkdirAll(downloadsDir, 0755); err == nil {
+					transfer.PartPath = filepath.Join(downloadsDir, fmt.Sprintf(".part_%s", safeMessageID))
+					transfer.BitmaskPath = filepath.Join(downloadsDir, fmt.Sprintf(".part_%s.bitmask", safeMessageID))
+					partFile, err := os.OpenFile(transfer.PartPath, os.O_CREATE|os.O_RDWR, 0600)
+					if err == nil {
+						transfer.PartFile = partFile
+					}
+					if loadedBM, loadErr := LoadBitmaskFromFile(transfer.BitmaskPath); loadErr == nil && loadedBM.NumChunks() == meta.NumChunks {
+						transfer.Bitmask = loadedBM
+					} else {
+						transfer.Bitmask = NewTransferBitmask(meta.NumChunks)
+					}
 				}
 			}
 			m.mu.Unlock()
@@ -599,7 +605,10 @@ func (m *FileTransferManager) ReceiveChunk(
 		}
 	}
 
-	if transfer.Meta == nil {
+	m.mu.RLock()
+	metadataMissing := transfer.Meta == nil
+	m.mu.RUnlock()
+	if metadataMissing {
 		return nil, errors.New("chunk arrived before file metadata")
 	}
 
