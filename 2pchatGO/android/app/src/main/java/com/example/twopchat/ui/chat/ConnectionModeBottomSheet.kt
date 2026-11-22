@@ -300,16 +300,17 @@ fun ConnectionModeBottomSheet(
                         // Active Transport Badge
                         val badgeColor = when (activeTransportType) {
                             TransportType.ONION -> Color(0xFFA78BFA)
-                            TransportType.DIRECT, TransportType.YGGDRASIL -> Color(0xFF10B981)
+                            TransportType.DIRECT, TransportType.YGGDRASIL, TransportType.RELAY -> Color(0xFF10B981)
                             TransportType.DISCONNECTED -> onSurfaceVariant
                         }
                         val badgeBg = when (activeTransportType) {
                             TransportType.ONION -> Color(0xFF7C3AED).copy(alpha = 0.20f)
-                            TransportType.DIRECT, TransportType.YGGDRASIL -> Color(0xFF10B981).copy(alpha = 0.15f)
+                            TransportType.DIRECT, TransportType.YGGDRASIL, TransportType.RELAY -> Color(0xFF10B981).copy(alpha = 0.15f)
                             TransportType.DISCONNECTED -> onSurfaceVariant.copy(alpha = 0.10f)
                         }
                         val badgeText = when (activeTransportType) {
                             TransportType.ONION -> "Tor Onion"
+                            TransportType.RELAY -> if (isRussian) "Ретранслятор" else "Blind Relay"
                             TransportType.DIRECT -> "Direct P2P"
                             TransportType.YGGDRASIL -> "Yggdrasil"
                             TransportType.DISCONNECTED -> if (isRussian) "Ожидание" else "Idle"

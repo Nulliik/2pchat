@@ -18,8 +18,8 @@ import (
 )
 
 const (
-	DefaultAckTimeout       = 5 * time.Second
-	TorAckTimeout           = 12 * time.Second
+	DefaultAckTimeout = 5 * time.Second
+	TorAckTimeout     = 12 * time.Second
 	// Yggdrasil runs over a mesh overlay plus the Android user-space TCP shim.
 	// A transient mesh route gap (peer device sleep, Android Doze, route
 	// flap, large-packet black-holing) stops ACKs for minutes on both
@@ -31,7 +31,7 @@ const (
 	// 7.59375) = ~312s (~5.2 minutes). A genuinely unreachable peer still
 	// closes after this budget and the outbox re-sends queued messages on
 	// the next successful dial.
-	YggdrasilAckTimeout = 15 * time.Second
+	YggdrasilAckTimeout     = 15 * time.Second
 	DefaultMaxRetries       = 2
 	YggdrasilMaxRetries     = 5
 	DefaultHandshakeTimeout = 30 * time.Second
@@ -69,12 +69,13 @@ type Session struct {
 	receivedIDs   map[string]bool
 	receivedOrder []string
 
-	sendMu               sync.RWMutex
-	isTorTransport       bool
-	isYggdrasilTransport bool
-	closeOnce            sync.Once
-	closeChan      chan struct{}
-	online         int32
+	sendMu                sync.RWMutex
+	isTorTransport        bool
+	isYggdrasilTransport  bool
+	isRelayTransport      bool
+	closeOnce             sync.Once
+	closeChan             chan struct{}
+	online                int32
 	counter               uint64
 	receivedCount         uint64
 	userMessagesExchanged uint64
@@ -110,6 +111,14 @@ func WithTorTransport(isTor bool) SessionOption {
 		if isTor {
 			s.ackTimeout = TorAckTimeout
 		}
+	}
+}
+
+// WithRelayTransport marks a session established through a Blind Relay.
+// It changes transport classification only; session security and protocol behavior are unchanged.
+func WithRelayTransport(isRelay bool) SessionOption {
+	return func(s *Session) {
+		s.isRelayTransport = isRelay
 	}
 }
 
@@ -259,7 +268,7 @@ func (s *Session) performInitiatorHandshake(expectedFingerprint string) error {
 		return fmt.Errorf("failed to unmarshal reply handshake JSON: %w", err)
 	}
 
-	if replyPayload.Role != "reply" || replyPayload.Version != crypto.HandshakeVersion {
+	if replyPayload.Type != "handshake" || replyPayload.Role != "reply" || replyPayload.Version != crypto.HandshakeVersion {
 		return fmt.Errorf("invalid reply handshake packet: role=%s, version=%d", replyPayload.Role, replyPayload.Version)
 	}
 
@@ -270,6 +279,9 @@ func (s *Session) performInitiatorHandshake(expectedFingerprint string) error {
 	remoteVerifyBytes, err := base64.StdEncoding.DecodeString(replyPayload.VerifyPub)
 	if err != nil {
 		return fmt.Errorf("failed to decode remote VerifyPub: %w", err)
+	}
+	if len(remoteVerifyBytes) != ed25519.PublicKeySize {
+		return fmt.Errorf("invalid remote VerifyPub size: expected %d, got %d", ed25519.PublicKeySize, len(remoteVerifyBytes))
 	}
 	remotePrekeyBytes, err := base64.StdEncoding.DecodeString(replyPayload.SignedPrekeyPub)
 	if err != nil {
@@ -282,6 +294,9 @@ func (s *Session) performInitiatorHandshake(expectedFingerprint string) error {
 	remoteSessionSig, err := base64.StdEncoding.DecodeString(replyPayload.Signature)
 	if err != nil {
 		return fmt.Errorf("failed to decode remote Signature: %w", err)
+	}
+	if len(remotePrekeySig) != ed25519.SignatureSize || len(remoteSessionSig) != ed25519.SignatureSize {
+		return fmt.Errorf("invalid remote handshake signature size: prekey=%d session=%d", len(remotePrekeySig), len(remoteSessionSig))
 	}
 
 	remoteIdPub, err := crypto.X25519PublicKeyFromBytes(remoteIdBytes)
@@ -341,7 +356,7 @@ func (s *Session) performResponderHandshake(expectedFingerprint string) error {
 		return fmt.Errorf("failed to unmarshal init handshake JSON: %w", err)
 	}
 
-	if initPayload.Role != "init" || initPayload.Version != crypto.HandshakeVersion {
+	if initPayload.Type != "handshake" || initPayload.Role != "init" || initPayload.Version != crypto.HandshakeVersion {
 		return fmt.Errorf("responder expected init handshake, got role=%s, version=%d", initPayload.Role, initPayload.Version)
 	}
 
@@ -352,6 +367,9 @@ func (s *Session) performResponderHandshake(expectedFingerprint string) error {
 	remoteVerifyBytes, err := base64.StdEncoding.DecodeString(initPayload.VerifyPub)
 	if err != nil {
 		return fmt.Errorf("failed to decode initiator VerifyPub: %w", err)
+	}
+	if len(remoteVerifyBytes) != ed25519.PublicKeySize {
+		return fmt.Errorf("invalid initiator VerifyPub size: expected %d, got %d", ed25519.PublicKeySize, len(remoteVerifyBytes))
 	}
 	remotePrekeyBytes, err := base64.StdEncoding.DecodeString(initPayload.SignedPrekeyPub)
 	if err != nil {
@@ -368,6 +386,9 @@ func (s *Session) performResponderHandshake(expectedFingerprint string) error {
 	remoteEphBytes, err := base64.StdEncoding.DecodeString(initPayload.EphemeralPub)
 	if err != nil {
 		return fmt.Errorf("failed to decode initiator EphemeralPub: %w", err)
+	}
+	if len(remotePrekeySig) != ed25519.SignatureSize || len(remoteSessionSig) != ed25519.SignatureSize {
+		return fmt.Errorf("invalid initiator handshake signature size: prekey=%d session=%d", len(remotePrekeySig), len(remoteSessionSig))
 	}
 
 	// Verify signatures
@@ -935,6 +956,20 @@ func (s *Session) SetTorTransport(isTor bool) {
 	} else {
 		s.ackTimeout = DefaultAckTimeout
 	}
+}
+
+// IsRelayTransport returns true if the session uses a Blind Relay tunnel.
+func (s *Session) IsRelayTransport() bool {
+	s.sendMu.RLock()
+	defer s.sendMu.RUnlock()
+	return s.isRelayTransport
+}
+
+// SetRelayTransport configures whether the session uses a Blind Relay tunnel.
+func (s *Session) SetRelayTransport(isRelay bool) {
+	s.sendMu.Lock()
+	defer s.sendMu.Unlock()
+	s.isRelayTransport = isRelay
 }
 
 // IsYggdrasilTransport returns true if the session is configured for Yggdrasil transport.

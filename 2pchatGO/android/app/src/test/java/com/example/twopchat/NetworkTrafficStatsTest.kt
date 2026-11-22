@@ -26,6 +26,10 @@ class NetworkTrafficStatsTest {
             TrafficProtocol.TOR_ONION,
             trafficProtocol("Tor Onion", "192.168.1.20:50001"),
         )
+        assertEquals(
+            TrafficProtocol.RELAY,
+            trafficProtocol("Blind Relay", "10.0.2.2:50001"),
+        )
     }
 
     @Test

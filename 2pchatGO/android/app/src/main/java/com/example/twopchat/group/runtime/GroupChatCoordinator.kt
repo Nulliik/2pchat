@@ -188,6 +188,8 @@ object GroupChatCoordinator {
         val response: CompletableDeferred<GroupSyncBatch>,
     )
     private val pendingSyncRequests = ConcurrentHashMap<String, PendingSync>()
+    private data class QueuedSyncPeer(val member: StoredGroupMember, val force: Boolean)
+    private val queuedSyncPeers = ConcurrentHashMap<String, ConcurrentHashMap<String, QueuedSyncPeer>>()
     private val syncingGroups = ConcurrentHashMap.newKeySet<String>()
     private val startupScheduled = AtomicBoolean(false)
     private val recoveryNeeded = AtomicBoolean(true)
@@ -434,6 +436,7 @@ object GroupChatCoordinator {
             dirtyGroupRefreshes.clear()
             pendingTombstones.clear()
             syncingGroups.clear()
+            queuedSyncPeers.clear()
             lastSyncRequestAtMs.clear()
             scope = newRuntimeScope()
         }
@@ -5893,7 +5896,13 @@ object GroupChatCoordinator {
     }
 
     private fun sendSyncRequests(group: StoredGroup, peer: StoredGroupMember, force: Boolean = false) {
-        if (!syncingGroups.add(group.groupId)) return
+        if (!syncingGroups.add(group.groupId)) {
+            queuedSyncPeers.computeIfAbsent(group.groupId) { ConcurrentHashMap() }
+                .merge(peer.deviceId, QueuedSyncPeer(peer, force)) { old, new ->
+                    QueuedSyncPeer(new.member, old.force || new.force)
+                }
+            return
+        }
         scope.launch {
             try {
                 val now = System.currentTimeMillis()
@@ -5922,6 +5931,18 @@ object GroupChatCoordinator {
                 lastSyncRequestAtMs.entries.removeIf { now - it.value > SYNC_REQUEST_COOLDOWN_MS * 2 }
             } finally {
                 syncingGroups.remove(group.groupId)
+                val queued = queuedSyncPeers.remove(group.groupId)?.values.orEmpty()
+                val queuedPeer = queued.firstOrNull()
+                if (queuedPeer != null) {
+                    val currentGroup = db().getGroup(group.groupId)
+                    if (currentGroup != null) {
+                        sendSyncRequests(
+                            currentGroup,
+                            queuedPeer.member,
+                            force = queued.any { it.force },
+                        )
+                    }
+                }
             }
         }
     }

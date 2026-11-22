@@ -605,21 +605,26 @@ fun ChatScreen(
             }
 
             val fastHistoryLimit = fastHistoryMessageLimit(unreadMessagesOnOpen)
-            val recentPersistedMessages = if (persistEnabled) {
-                withContext(Dispatchers.IO) {
-                    try {
-                        db.getMessagesForPeerPaged(
-                            peerName = peerName,
-                            limit = fastHistoryLimit,
-                            offset = 0,
-                        )
-                    } catch (e: Exception) {
-                        SafeLog.e("ChatScreen", "Failed to load messages for $peerName", e)
-                        emptyList()
+            val historyCache = com.example.twopchat.ui.chat.state.ChatHistoryCache
+            val (historyGeneration, recentPersistedMessages) = if (persistEnabled) {
+                historyCache.withHistoryAccess {
+                    val generation = historyCache.generation(peerName)
+                    val messages = withContext(Dispatchers.IO) {
+                        try {
+                            db.getMessagesForPeerPaged(
+                                peerName = peerName,
+                                limit = fastHistoryLimit,
+                                offset = 0,
+                            )
+                        } catch (e: Exception) {
+                            SafeLog.e("ChatScreen", "Failed to load messages for $peerName", e)
+                            emptyList()
+                        }
                     }
+                    generation to messages
                 }
             } else {
-                emptyList()
+                historyCache.generation(peerName) to emptyList()
             }
             var fastSnapshot = if (recentPersistedMessages.isEmpty() && persistEnabled) {
                 initialMessages.filter { it.status == "PENDING" }
@@ -644,7 +649,7 @@ fun ChatScreen(
                 initialMessages.addAll(fastSnapshot)
             }
             if (recentPersistedMessages.isNotEmpty()) {
-                com.example.twopchat.ui.chat.state.ChatHistoryCache.put(peerName, recentPersistedMessages)
+                historyCache.putIfUnchanged(peerName, recentPersistedMessages, historyGeneration)
                 coroutineScope.launch(Dispatchers.IO) {
                     recentPersistedMessages.forEach { msg ->
                         if (msg.attachmentType == "FILE") {
@@ -2262,7 +2267,13 @@ fun ChatScreen(
                 onClearHistory = {
                     val fp = sharedPrefs.getString("peer_fingerprint_$peerName", null)
                     val aliases = listOfNotNull(fp).filter { it.isNotBlank() }
-                    persistDatabase { db.clearMessagesForPeer(peerName, aliases) }
+                    val historyCache = com.example.twopchat.ui.chat.state.ChatHistoryCache
+                    historyCache.invalidate(listOf(peerName) + aliases)
+                    coroutineScope.launch(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
+                        historyCache.clearHistory(peerName, aliases) {
+                            withContext(Dispatchers.IO) { db.clearMessagesForPeer(peerName, aliases) }
+                        }
+                    }
                     initialMessages.clear()
                     chatViewModel.loadedPersistedMessageCount.intValue = 0
                     chatViewModel.hasMoreHistory.value = false

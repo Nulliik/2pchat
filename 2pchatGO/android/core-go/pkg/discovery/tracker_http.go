@@ -15,6 +15,8 @@ import (
 	"twopchat/core/pkg/transport"
 )
 
+const maxHTTPTrackerResponseSize = 1 << 20 // 1 MiB; ample for numwant=50, bounded against hostile trackers.
+
 // HTTPTrackerClient implements HTTP/HTTPS BitTorrent tracker announces.
 type HTTPTrackerClient struct {
 	httpClient *http.Client
@@ -123,9 +125,12 @@ func (c *HTTPTrackerClient) Announce(
 		return nil, fmt.Errorf("tracker returned HTTP status: %d", resp.StatusCode)
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxHTTPTrackerResponseSize+1))
 	if err != nil {
 		return nil, fmt.Errorf("failed to read tracker response body: %w", err)
+	}
+	if len(body) > maxHTTPTrackerResponseSize {
+		return nil, fmt.Errorf("tracker response exceeds maximum size of %d bytes", maxHTTPTrackerResponseSize)
 	}
 
 	return parseHTTPAnnounceResponse(body, isYggdrasilTrackerHost(u.Hostname()))

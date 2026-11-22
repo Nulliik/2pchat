@@ -239,6 +239,7 @@ data class GroupRosterSnapshot(
 object GroupControlFrames {
     const val TYPE_ROSTER_SNAPSHOT = GroupWireProtocol.TYPE_ROSTER_SNAPSHOT
     const val MAX_ROSTER_MEMBERS_PER_PAGE = 256
+    const val MAX_REQUESTED_EPOCHS = 64
     const val MAX_ROSTER_PAGES =
         (GroupWireProtocol.MAX_GROUP_MEMBERS_IN_INVITE + MAX_ROSTER_MEMBERS_PER_PAGE - 1) /
             MAX_ROSTER_MEMBERS_PER_PAGE
@@ -338,7 +339,12 @@ object GroupControlFrames {
     fun parseKeyRequest(json: JSONObject): GroupKeyRequest {
         requireFrame(json, GroupWireProtocol.TYPE_KEY_REQUEST)
         val epochsJson = json.optJSONArray("requested_epochs") ?: JSONArray()
+        require(epochsJson.length() <= MAX_REQUESTED_EPOCHS) {
+            "too many requested epochs"
+        }
         val epochs = (0 until epochsJson.length()).map { epochsJson.getLong(it) }
+        require(epochs.all { it > 0L }) { "requested epochs must be positive" }
+        require(epochs.toSet().size == epochs.size) { "duplicate requested epochs" }
         return GroupKeyRequest(
             requestId = json.requiredControlToken("request_id", 128),
             groupId = json.requiredControlToken("group_id", 128),

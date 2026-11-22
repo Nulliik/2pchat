@@ -108,6 +108,21 @@ class GroupScreensTest {
   }
 
   @Test
+  fun groupProfileRendersBeforeAndAfterSuccessionStateLoads() {
+    val state = GroupInfoUiState(
+      metadata = GroupMetadata(groupId = "profile-load", title = "Profile", memberCount = 2),
+      currentUserRole = GroupRole.MEMBER,
+    )
+    composeTestRule.setContent {
+      MaterialTheme { GroupInfoScreen(state = state, controller = object : GroupUiController {}) }
+    }
+
+    composeTestRule.onNodeWithTag("group_info_list").assertExists()
+    composeTestRule.onNodeWithTag("group_succession_card").assertExists()
+    composeTestRule.onNodeWithTag("grace_period_banner").assertDoesNotExist()
+  }
+
+  @Test
   fun mediaTab_composesOnlyVisibleRows() {
     val mediaMessages = List(90) { index ->
       GroupTimelineMessage(
@@ -525,6 +540,48 @@ class GroupScreensTest {
 
     composeTestRule.onNodeWithTag("delivery_read-message", useUnmergedTree = true)
       .assertContentDescriptionEquals("Delivered")
+  }
+
+  @Test
+  fun albumMoreOverlay_opensGalleryAtFirstHiddenAttachment() {
+    val attachments = (0..5).map { index ->
+      GroupAttachmentUi(
+        attachmentId = "album-$index",
+        fileName = "image-$index.png",
+        mimeType = "image/png",
+        sizeLabel = "1 KiB",
+        availableBlocks = 1,
+        totalBlocks = 1,
+        isDownloaded = true,
+        localPath = "/tmp/group-album-$index.png",
+      )
+    }
+    composeTestRule.setContent {
+      MaterialTheme {
+        GroupChatScreen(
+          state = GroupChatUiState(
+            groupId = "album-group",
+            title = "Album",
+            memberCount = 2,
+            messages = listOf(
+              GroupTimelineMessage(
+                messageId = "album-message",
+                authorId = "alice",
+                authorName = "Alice",
+                text = "",
+                timestampLabel = "12:00",
+                attachments = attachments,
+              ),
+            ),
+          ),
+          controller = object : GroupUiController {},
+        )
+      }
+    }
+
+    composeTestRule.onNodeWithTag("album_more_album-3", useUnmergedTree = true).performClick()
+    composeTestRule.onNodeWithText("5 / 6").assertExists()
+    composeTestRule.onNodeWithText("+2").assertDoesNotExist()
   }
 
   @Test

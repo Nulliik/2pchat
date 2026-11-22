@@ -392,6 +392,7 @@ private fun protocolLabel(protocol: TrafficProtocol, isRussian: Boolean): String
     TrafficProtocol.DIRECT_P2P -> "Direct P2P"
     TrafficProtocol.YGGDRASIL -> "Yggdrasil P2P"
     TrafficProtocol.TOR_ONION -> "Tor Onion"
+    TrafficProtocol.RELAY -> "Blind Relay"
     TrafficProtocol.UNKNOWN -> if (isRussian) "Неизвестный маршрут" else "Unknown route"
 }
 

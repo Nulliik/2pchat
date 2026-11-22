@@ -3796,7 +3796,8 @@ private fun GroupMediaAlbumBubble(
                                 attachments.getOrNull(3) ?: defaultAtt,
                                 Modifier.weight(1f).fillMaxHeight(),
                                 onMediaClick,
-                                extraCount = if (uris.size > 4) uris.size - 4 else 0
+                                extraCount = if (uris.size > 4) uris.size - 4 else 0,
+                                extraTargetPath = uris.getOrNull(4)
                             )
                         }
                     }
@@ -3813,7 +3814,8 @@ private fun GroupAlbumCell(
     att: GroupAttachmentUi,
     modifier: Modifier = Modifier,
     onMediaClick: (String) -> Unit,
-    extraCount: Int = 0
+    extraCount: Int = 0,
+    extraTargetPath: String? = null
 ) {
     val isImage = type == "IMAGE" || att.mimeType.startsWith("image/")
     val isVideo = type == "VIDEO" || att.mimeType.startsWith("video/")
@@ -3840,10 +3842,16 @@ private fun GroupAlbumCell(
         modifier = modifier
             .background(Color.DarkGray)
             .clickable {
-                if (targetPath.isNotBlank()) {
-                    onMediaClick(targetPath)
+                val pathToOpen = if (extraCount > 0) {
+                    extraTargetPath?.takeIf { it.isNotBlank() } ?: targetPath
+                } else {
+                    targetPath
                 }
-            },
+                if (pathToOpen.isNotBlank()) {
+                    onMediaClick(pathToOpen)
+                }
+            }
+            .then(if (extraCount > 0) Modifier.testTag("album_more_${att.attachmentId}") else Modifier),
         contentAlignment = Alignment.Center
     ) {
         if (bmp != null) {

@@ -103,12 +103,18 @@ func (s *SenderSessionState) RatchetKeyForIteration(targetIteration uint32) (*Se
 		return key, nil
 	}
 
+	if s.ChainKey == nil {
+		return nil, errors.New("sender chain key is unavailable")
+	}
 	if s.ChainKey.Iteration > targetIteration {
 		return nil, errors.New("cannot ratchet backwards: message key already consumed")
 	}
 
 	const maxSkip = 2000
-	if targetIteration-s.ChainKey.Iteration > maxSkip {
+	delta := targetIteration - s.ChainKey.Iteration
+	// Bound the complete skipped-key cache, not only this jump. Repeated
+	// individually valid jumps must not grow the cache without limit.
+	if targetIteration == ^uint32(0) || delta > maxSkip || uint64(len(s.SkippedKeys))+uint64(delta) > maxSkip {
 		return nil, errors.New("too many skipped message keys")
 	}
 

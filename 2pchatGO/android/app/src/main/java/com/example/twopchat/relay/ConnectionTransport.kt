@@ -4,6 +4,7 @@ enum class TransportType {
     DIRECT,      // LAN / Direct IPv4 / Direct IPv6 (High Speed)
     YGGDRASIL,   // Yggdrasil Mesh IPv6 (High Speed)
     ONION,       // Tor Onion Service v3 (High Privacy)
+    RELAY,       // Blind Relay tunnel (end-to-end encrypted)
     DISCONNECTED // Offline / Connecting
 }
 
@@ -11,6 +12,7 @@ internal enum class ConnectionTransportKind {
     DIRECT,
     YGGDRASIL,
     ONION,
+    RELAY,
     UNKNOWN,
 }
 
@@ -25,6 +27,7 @@ internal fun connectionTransportKind(
     // when no live label is available.
     val normalized = rawTransport.orEmpty().trim().lowercase()
     when {
+        "relay" in normalized -> return ConnectionTransportKind.RELAY
         "onion" in normalized || "tor" in normalized -> return ConnectionTransportKind.ONION
         "ygg" in normalized || "overlay" in normalized -> return ConnectionTransportKind.YGGDRASIL
         "direct" in normalized || "ipv4" in normalized || "clearnet" in normalized ||
@@ -69,6 +72,7 @@ internal fun canonicalConnectionTransport(
     endpoint: String? = null,
 ): String? = when (connectionTransportKind(rawTransport, endpoint)) {
     ConnectionTransportKind.ONION -> "Tor Onion"
+    ConnectionTransportKind.RELAY -> "Blind Relay"
     ConnectionTransportKind.DIRECT -> "Direct P2P"
     ConnectionTransportKind.YGGDRASIL -> "Yggdrasil"
     ConnectionTransportKind.UNKNOWN -> null
@@ -99,6 +103,7 @@ fun resolveTransportType(
     if (!isOnline) return TransportType.DISCONNECTED
     return when (connectionTransportKind(rawTransport, endpoint)) {
         ConnectionTransportKind.ONION -> TransportType.ONION
+        ConnectionTransportKind.RELAY -> TransportType.RELAY
         ConnectionTransportKind.DIRECT -> TransportType.DIRECT
         ConnectionTransportKind.YGGDRASIL -> TransportType.YGGDRASIL
         ConnectionTransportKind.UNKNOWN -> TransportType.DIRECT

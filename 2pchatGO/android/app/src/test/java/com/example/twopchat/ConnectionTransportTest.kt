@@ -19,6 +19,8 @@ class ConnectionTransportTest {
         assertEquals("Yggdrasil", canonicalConnectionTransport("yggdrasil"))
         assertEquals("Tor Onion", canonicalConnectionTransport("Tor Onion"))
         assertEquals("Tor Onion", canonicalConnectionTransport("onion"))
+        assertEquals("Blind Relay", canonicalConnectionTransport("relay"))
+        assertEquals("Blind Relay", canonicalConnectionTransport("Relay tunnel"))
     }
 
     @Test
@@ -35,6 +37,7 @@ class ConnectionTransportTest {
     @Test
     fun `resolves correct TransportType enum for UI badges`() {
         assertEquals(TransportType.ONION, resolveTransportType("Tor Onion", isOnline = true))
+        assertEquals(TransportType.RELAY, resolveTransportType("relay", isOnline = true))
         assertEquals(
             TransportType.ONION,
             resolveTransportType(null, "ta325zop5al47taygtk2d7sobpiozy5mku5mbk2u4hpcrovumvrna4ad.onion:50001", isOnline = true),

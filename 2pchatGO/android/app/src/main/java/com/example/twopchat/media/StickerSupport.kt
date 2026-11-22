@@ -1102,11 +1102,10 @@ object StickerSupport {
                 return validateWebP(target) != null
             }
             if (AnimatedStickerConverter.isAnimatedSource(source)) {
-                if (AnimatedStickerConverter.convertToAnimatedSticker(source, target)) {
-                    if (validateWebP(target) != null) {
-                        return true
-                    }
-                }
+                // Do not silently downgrade an animated input to a static sticker.
+                // A failed frame decode/mux must be reported as a rejected source.
+                if (!AnimatedStickerConverter.convertToAnimatedSticker(source, target)) return false
+                return validateWebP(target)?.takeIf { it.animated } != null
             }
             val bitmap = decodeStickerBitmap(source) ?: return false
             try {

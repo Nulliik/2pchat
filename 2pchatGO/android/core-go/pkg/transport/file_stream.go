@@ -29,6 +29,9 @@ const (
 	FileChunkFormatV2                = "binary-v2"
 	LegacyFileChunkFormatV1          = "binary-v1"
 	DefaultFileChunkAckWindow        = 4
+	// MaxTransferChunks bounds attacker-controlled bitmask allocations.
+	// At 16,777,216 chunks the bitmask is 2 MiB; larger values are rejected.
+	MaxTransferChunks = 1 << 24
 )
 
 // chunkBufferPool provides reusable 256 KiB buffers to minimize GC allocations during file streaming.
@@ -190,6 +193,21 @@ func DecodeMetadataJSON(data []byte) (*FileMetadata, error) {
 	if len(m.FileID) != FileIDSize {
 		return nil, errors.New("invalid file_id size")
 	}
+	if len(m.FileKey) != crypto.SecretBoxKeySize {
+		return nil, errors.New("invalid file_key size")
+	}
+	if len(m.FileNoncePrefix) != FileNoncePrefixSize {
+		return nil, errors.New("invalid file_nonce_prefix size")
+	}
+	if len(m.FileHash) != sha256.Size {
+		return nil, errors.New("invalid file_hash size")
+	}
+	if m.FileSize < 0 {
+		return nil, errors.New("invalid file size")
+	}
+	if m.NumChunks <= 0 || m.NumChunks > MaxTransferChunks {
+		return nil, fmt.Errorf("invalid num_chunks: %d", m.NumChunks)
+	}
 	if m.ChunkSize == 0 {
 		m.ChunkSize = DefaultChunkSize
 	}
@@ -201,6 +219,13 @@ func DecodeMetadataJSON(data []byte) (*FileMetadata, error) {
 	}
 	if m.ChunkFormat != FileChunkFormatV2 && m.ChunkFormat != LegacyFileChunkFormatV1 {
 		return nil, errors.New("unsupported file chunk format")
+	}
+	expectedChunks := m.FileSize / int64(m.ChunkSize)
+	if m.FileSize%int64(m.ChunkSize) != 0 || expectedChunks == 0 {
+		expectedChunks++
+	}
+	if expectedChunks != int64(m.NumChunks) {
+		return nil, fmt.Errorf("file size/chunk count mismatch: file_size=%d chunk_size=%d num_chunks=%d", m.FileSize, m.ChunkSize, m.NumChunks)
 	}
 	return &m, nil
 }
@@ -255,6 +280,7 @@ func EncryptFileStream(
 		FileNoncePrefix: noncePrefix[:],
 		FileSize:        fileSize,
 		NumChunks:       numChunks,
+		ChunkSize:       chunkSize,
 		FileName:        fileName,
 		Caption:         caption,
 		Emoji:           emoji,
@@ -355,6 +381,7 @@ func EncryptFileStreamWithResume(
 		FileNoncePrefix: noncePrefix[:],
 		FileSize:        fileSize,
 		NumChunks:       numChunks,
+		ChunkSize:       chunkSize,
 		FileHash:        hasher.Sum(nil),
 		FileName:        fileName,
 		Caption:         caption,

@@ -149,8 +149,9 @@ internal fun formatInviteEndpoint(value: String?, defaultPort: Int = 50001): Str
     if (Regex("^[a-z0-9]{16,56}\\.onion:\\d{1,5}$", RegexOption.IGNORE_CASE).matches(raw)) return raw
     if (Regex("^[a-z0-9]{16,56}\\.onion$", RegexOption.IGNORE_CASE).matches(raw)) return "$raw:$defaultPort"
     if (Regex("^\\[[0-9A-Fa-f:]+\\]:\\d{1,5}$").matches(raw)) return raw
-    if (Regex("^[0-9.]+:\\d{1,5}$").matches(raw)) return raw
-    if (Regex("^[0-9.]+$").matches(raw)) return "$raw:$defaultPort"
+    val ipv4WithPort = Regex("^([0-9.]+):(\\d{1,5})$").matchEntire(raw)
+    if (ipv4WithPort != null && isStrictIpv4(ipv4WithPort.groupValues[1])) return raw
+    if (isStrictIpv4(raw)) return "$raw:$defaultPort"
     if (Regex("^[0-9A-Fa-f:]+$").matches(raw) && raw.contains(':')) return "[$raw]:$defaultPort"
     return null
 }
@@ -194,6 +195,25 @@ internal fun isConnectablePeerSearchResult(
     val ownershipVerified = peer["ownership_verified"]?.toString()
         ?.equals("true", ignoreCase = true) == true
     return verified && (expectedFingerprint == null || ownershipVerified)
+}
+
+internal fun selectConnectablePeerSearchResult(
+    peers: List<Map<String, Any>>,
+    expectedFingerprint: String?,
+): Map<String, Any>? = peers.firstOrNull {
+    isConnectablePeerSearchResult(it, expectedFingerprint)
+}
+
+private fun isStrictIpv4(value: String): Boolean {
+    val octets = value.split('.').map { part ->
+        if (part.isEmpty() || !part.all(Char::isDigit)) return false
+        part.toIntOrNull()?.takeIf { it in 0..255 } ?: return false
+    }
+    if (octets.size != 4) return false
+    // Reject unspecified, loopback, link-local, multicast and broadcast destinations.
+    return octets[0] in 1..223 && octets[0] != 127 &&
+        !(octets[0] == 169 && octets[1] == 254) &&
+        !(octets[0] == 255 && octets[1] == 255 && octets[2] == 255 && octets[3] == 255)
 }
 
 internal fun parsePeerSearchAddress(value: String): PeerSearchAddress? {
@@ -563,44 +583,41 @@ fun ContactsTab(
                             "Invalid link/QR: missing connection code"
                         }
                     } else {
-                        listOf(directIp, publicIp, yggIp, onionIp)
-                            .mapNotNull(::formatInviteEndpoint)
-                            .distinct()
-                            .forEach { endpoint ->
-                            com.example.twopchat.relay.P2PMessageRelay.injectLocalDiscoveryCandidate(
-                                request.expectedLiveName, request.expectedFingerprint.orEmpty(), endpoint,
-                            )
-                        }
                         isResolvingInvite = true
                         resolveInviteStatus = if (appLanguage == "Русский") "Мгновенное подключение к собеседнику..." else "Connecting to peer..."
                         searchJob = coroutineScope.launch(Dispatchers.IO) {
                             try {
-                                val bridge = P2PBridgeProvider.get(context)
-                                val peers = withTimeout(30_000L) {
-                                    bridge.searchPeers(
-                                        query = request.lookupNickname,
-                                        expectedLiveName = request.expectedLiveName,
-                                        expectedFingerprint = request.expectedFingerprint,
-                                        sharedCode = request.sharedCode,
-                                    )
-                                }
                                 val directEndpoints = listOf(directIp, publicIp, yggIp, onionIp)
                                     .mapNotNull(::formatInviteEndpoint)
                                     .distinct()
-                                val resolvedPeer = peers.firstOrNull {
-                                    isConnectablePeerSearchResult(it, request.expectedFingerprint)
-                                } ?: peers.firstOrNull()
+                                // Tracker search can enrich discovery, but an explicit invite route must
+                                // remain usable as an untrusted bootstrap candidate if lookup fails.
+                                val peers = try {
+                                    val bridge = P2PBridgeProvider.get(context)
+                                    withTimeout(30_000L) {
+                                        bridge.searchPeers(
+                                            query = request.lookupNickname,
+                                            expectedLiveName = request.expectedLiveName,
+                                            expectedFingerprint = request.expectedFingerprint,
+                                            sharedCode = request.sharedCode,
+                                        )
+                                    }
+                                } catch (cancelled: CancellationException) {
+                                    throw cancelled
+                                } catch (error: Exception) {
+                                    if (directEndpoints.isEmpty()) throw error
+                                    emptyList()
+                                }
+                                val resolvedPeer = selectConnectablePeerSearchResult(peers, request.expectedFingerprint)
                                 val endpoints = resolvedPeer?.get("endpoints") as? List<*>
-                                val endpointStr = if (endpoints != null && endpoints.isNotEmpty()) {
-                                    endpoints.joinToString(",") { it.toString() }
-                                } else if (directEndpoints.isNotEmpty()) {
-                                    directEndpoints.joinToString(",")
-                                } else {
-                                    request.expectedLiveName
+                                val endpointStr = when {
+                                    endpoints != null && endpoints.isNotEmpty() -> endpoints.joinToString(",") { it.toString() }
+                                    directEndpoints.isNotEmpty() -> directEndpoints.joinToString(",")
+                                    else -> ""
                                 }
                                 withContext(Dispatchers.Main) {
                                     if (generation != searchGeneration) return@withContext
-                                if (endpointStr.isNotEmpty() || request.expectedLiveName.isNotBlank()) {
+                                if (endpointStr.isNotBlank()) {
                                     val activeSet = sharedPrefs.getStringSet("active_chats", emptySet()) ?: emptySet()
                                     val effectiveName = resolvePeerKeyForContact(
                                         context = context,
@@ -617,28 +634,16 @@ fun ContactsTab(
                                             .putString("peer_fingerprint_${effectiveName}", request.expectedFingerprint.orEmpty())
                                             .putString("discovery_code_${effectiveName}", request.sharedCode)
                                             .apply()
-                                    } else if (request.expectedFingerprint?.isNotBlank() == true) {
-                                        sharedPrefs.edit().putString("peer_fingerprint_${effectiveName}", request.expectedFingerprint).apply()
                                     }
                                     if (endpointStr.isNotBlank() && endpointStr != effectiveName) {
-                                        sharedPrefs.edit().putString("last_endpoint_${effectiveName}", endpointStr).apply()
-                                        if (endpointStr.contains(".onion")) {
-                                            P2PPreferences.setPeerOnionAddress(context, effectiveName, endpointStr)
-                                            val invEps = endpointStr.split(",").map { it.trim() }.filter { it.isNotEmpty() }
-                                            if (invEps.isNotEmpty() && invEps.all { it.contains(".onion", ignoreCase = true) }) {
-                                                P2PPreferences.setPeerTransportPreference(context, effectiveName, P2PPreferences.PeerTransportPreference.TOR_ONLY)
-                                            }
-                                            ChatDatabaseHelper.getInstance(context).savePeerOnionAddress(
-                                                peerName = effectiveName,
-                                                onionAddress = endpointStr,
-                                                fingerprint = request.expectedFingerprint?.takeIf { it.isNotBlank() },
-                                                endpoint = endpointStr,
+                                        // Invite routes are bootstrap candidates only. The authenticated
+                                        // session handshake owns route promotion and persistence.
+                                        com.example.twopchat.relay.P2PMessageRelay.rememberBootstrapPeerEndpoint(effectiveName, endpointStr)
+                                        endpointStr.split(",").map { it.trim() }.filter { it.isNotEmpty() }.forEach { endpoint ->
+                                            com.example.twopchat.relay.P2PMessageRelay.injectLocalDiscoveryCandidate(
+                                                effectiveName, request.expectedFingerprint.orEmpty(), endpoint,
                                             )
                                         }
-                                        if (!request.expectedFingerprint.isNullOrBlank()) {
-                                            P2PBridgeProvider.get(context).updatePeerNameMapping(request.expectedFingerprint, effectiveName)
-                                        }
-                                        com.example.twopchat.relay.P2PMessageRelay.rememberAuthenticatedPeerEndpoint(effectiveName, endpointStr)
                                     }
                                     com.example.twopchat.relay.P2PMessageRelay.triggerImmediateReconnect(context)
                                     if (!requestedGroupId.isNullOrBlank() && !groupInviteToken.isNullOrBlank()) {
@@ -703,27 +708,11 @@ fun ContactsTab(
 
                     isResolvingInvite = true
                     resolveInviteStatus = if (appLanguage == "Русский") "Подключение к скрытому сервису Tor..." else "Connecting to Tor hidden service..."
+                    com.example.twopchat.relay.P2PMessageRelay.rememberBootstrapPeerEndpoint(effectiveName, directOnion.onionEndpoint)
                     com.example.twopchat.relay.P2PMessageRelay.injectLocalDiscoveryCandidate(
                         effectiveName, "", directOnion.onionEndpoint,
                     )
                     com.example.twopchat.relay.ActiveChatStore.add(sharedPrefs, effectiveName)
-                    if (!activeSet.contains(effectiveName)) {
-                        sharedPrefs.edit()
-                            .putString("transport_${effectiveName}", "Tor Onion")
-                            .putString("last_endpoint_${effectiveName}", directOnion.onionEndpoint)
-                            .apply()
-                    } else {
-                        sharedPrefs.edit().putString("last_endpoint_${effectiveName}", directOnion.onionEndpoint).apply()
-                    }
-                    P2PPreferences.setPeerOnionAddress(context, effectiveName, directOnion.onionEndpoint)
-                    P2PPreferences.setPeerTransportPreference(context, effectiveName, P2PPreferences.PeerTransportPreference.TOR_ONLY)
-                    ChatDatabaseHelper.getInstance(context).savePeerOnionAddress(
-                        peerName = effectiveName,
-                        onionAddress = directOnion.onionEndpoint,
-                        fingerprint = null,
-                        endpoint = directOnion.onionEndpoint,
-                    )
-                    com.example.twopchat.relay.P2PMessageRelay.rememberAuthenticatedPeerEndpoint(effectiveName, directOnion.onionEndpoint)
                     com.example.twopchat.relay.P2PMessageRelay.triggerImmediateReconnect(context)
                     resolveInviteStatus = ""
                     isResolvingInvite = false
@@ -752,19 +741,11 @@ fun ContactsTab(
 
                     isResolvingInvite = true
                     resolveInviteStatus = if (appLanguage == "Русский") "Подключение к прямому P2P адресу..." else "Connecting to direct P2P endpoint..."
+                    com.example.twopchat.relay.P2PMessageRelay.rememberBootstrapPeerEndpoint(effectiveName, directIP.endpoint)
                     com.example.twopchat.relay.P2PMessageRelay.injectLocalDiscoveryCandidate(
                         effectiveName, "", directIP.endpoint,
                     )
                     com.example.twopchat.relay.ActiveChatStore.add(sharedPrefs, effectiveName)
-                    if (!activeSet.contains(effectiveName)) {
-                        sharedPrefs.edit()
-                            .putString("transport_${effectiveName}", "DIRECT P2P")
-                            .putString("last_endpoint_${effectiveName}", directIP.endpoint)
-                            .apply()
-                    } else {
-                        sharedPrefs.edit().putString("last_endpoint_${effectiveName}", directIP.endpoint).apply()
-                    }
-                    com.example.twopchat.relay.P2PMessageRelay.rememberAuthenticatedPeerEndpoint(effectiveName, directIP.endpoint)
                     com.example.twopchat.relay.P2PMessageRelay.triggerImmediateReconnect(context)
                     resolveInviteStatus = ""
                     isResolvingInvite = false

@@ -101,6 +101,19 @@ class MessageTest {
     }
 
     @Test
+    fun deliveryStatus_terminalFileStatesRejectReplayedOffer() {
+        assertEquals("CANCELLED", MessageDeliveryStatus.merge("CANCELLED", "RECEIVING"))
+        assertEquals("CANCELLED", MessageDeliveryStatus.merge("CANCELLED", "SENT"))
+        assertEquals("FAILED", MessageDeliveryStatus.merge("FAILED", "RECEIVING"))
+    }
+
+    @Test
+    fun deliveryStatus_allowsTerminalStateToBeRecorded() {
+        assertEquals("CANCELLED", MessageDeliveryStatus.merge("RECEIVING", "CANCELLED"))
+        assertEquals("FAILED", MessageDeliveryStatus.merge("SENDING", "FAILED"))
+    }
+
+    @Test
     fun albumAssembly_handlesOutOfOrderArrivalWithoutLosingParts() {
         val totalParts = 3
         val albumUris = mutableListOf("", "", "")

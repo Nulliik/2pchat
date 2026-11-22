@@ -15,6 +15,58 @@ import (
 	"twopchat/core/pkg/transport"
 )
 
+func TestResponderRejectsNonHandshakeType(t *testing.T) {
+	localID, err := crypto.GenerateIdentityKeyPair()
+	if err != nil { t.Fatal(err) }
+	prekeyPriv, prekeyPub, err := crypto.GenerateX25519Keypair()
+	if err != nil { t.Fatal(err) }
+	server, client := net.Pipe()
+	defer client.Close()
+	result := make(chan error, 1)
+	go func() { _, err := NewSession(server, false, localID, prekeyPriv, prekeyPub, "", time.Second); result <- err }()
+	malformed, err := json.Marshal(&HandshakeJSON{Type: "message", Version: crypto.HandshakeVersion, Role: "init"})
+	if err != nil { t.Fatal(err) }
+	if err := transport.WriteFrame(client, malformed); err != nil { t.Fatal(err) }
+	select {
+	case err := <-result:
+		if err == nil { t.Fatal("expected non-handshake type to fail") }
+	case <-time.After(2 * time.Second): t.Fatal("handshake did not terminate")
+	}
+}
+
+func TestResponderMalformedEd25519KeyReturnsErrorNotPanic(t *testing.T) {
+	localID, err := crypto.GenerateIdentityKeyPair()
+	if err != nil {
+		t.Fatal(err)
+	}
+	prekeyPriv, prekeyPub, err := crypto.GenerateX25519Keypair()
+	if err != nil {
+		t.Fatal(err)
+	}
+	server, client := net.Pipe()
+	defer client.Close()
+	result := make(chan error, 1)
+	go func() {
+		_, err := NewSession(server, false, localID, prekeyPriv, prekeyPub, "", time.Second)
+		result <- err
+	}()
+	malformed, err := json.Marshal(&HandshakeJSON{Type: "handshake", Version: crypto.HandshakeVersion, Role: "init", VerifyPub: base64.StdEncoding.EncodeToString([]byte{1})})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := transport.WriteFrame(client, malformed); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-result:
+		if err == nil {
+			t.Fatal("expected malformed handshake to fail")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("handshake did not terminate")
+	}
+}
+
 // TestResponder_DoesNotRevealIdentityToUnknownInitiator verifies SEC-03:
 // When Bob runs as a responder expecting Alice (expectedFingerprint set),
 // an unknown initiator (Eve) who connects and sends a validly signed init
@@ -318,4 +370,3 @@ func TestManager_GlobalPolicyTorStrict_InboundClearnet_DropsBeforeHandshake(t *t
 		t.Fatal("Expected OnError to fire for rejected inbound clearnet connection in Tor Strict mode")
 	}
 }
-

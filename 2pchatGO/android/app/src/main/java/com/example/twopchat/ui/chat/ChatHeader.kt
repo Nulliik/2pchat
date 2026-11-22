@@ -540,6 +540,11 @@ internal fun ConnectionTypeBadge(
                 text = "$text$rttText",
             )
         }
+        TransportType.RELAY -> {
+            val text = Localizations.tr(appLanguage, ru = "Ретранслятор", en = "Blind Relay", de = "Blindes Relay", es = "Relay ciego", fr = "Relais aveugle", pt = "Relay cego", tr = "Kör röle")
+            val green = Color(0xFF10B981)
+            BadgeData(bg = green.copy(alpha = 0.15f), content = green, iconRes = null, iconEmoji = "🔁", text = "$text$rttText")
+        }
         TransportType.DIRECT -> {
             val text = "Direct P2P"
             val green = Color(0xFF10B981)

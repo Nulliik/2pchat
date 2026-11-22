@@ -131,6 +131,14 @@ class PeerSearchTest {
         assertEquals("[200:db8::10]:50001", formatInviteEndpoint("200:db8::10"))
         assertEquals("[200:db8::10]:4242", formatInviteEndpoint("[200:db8::10]:4242"))
         assertNull(formatInviteEndpoint("tracker.example"))
+        assertNull(formatInviteEndpoint("192.0.2.999"))
+        assertNull(formatInviteEndpoint("192.0.2.1.5"))
+        assertNull(formatInviteEndpoint("192..2.1"))
+        assertNull(formatInviteEndpoint("192.0.2.999:50001"))
+        assertNull(formatInviteEndpoint("0.0.0.0"))
+        assertNull(formatInviteEndpoint("127.0.0.1"))
+        assertNull(formatInviteEndpoint("169.254.1.2"))
+        assertNull(formatInviteEndpoint("224.0.0.1"))
     }
 
     @Test
@@ -182,6 +190,22 @@ class PeerSearchTest {
 
         assertFalse(isConnectablePeerSearchResult(trackerCandidate, expectedFingerprint = null))
         assertFalse(isConnectablePeerSearchResult(trackerCandidate, expectedFingerprint = "expected"))
+    }
+
+    @Test
+    fun `unverified invite results do not fall back to the first tracker candidate`() {
+        val untrusted = mapOf<String, Any>("verified" to false, "ownership_verified" to false)
+        val alsoUntrusted = mapOf<String, Any>("verified" to false, "ownership_verified" to false)
+        assertNull(selectConnectablePeerSearchResult(listOf(untrusted, alsoUntrusted), "expected"))
+    }
+
+    @Test
+    fun `selector chooses verified peer and enforces invite fingerprint ownership`() {
+        val untrusted = mapOf<String, Any>("verified" to false, "ownership_verified" to false)
+        val live = mapOf<String, Any>("verified" to true, "ownership_verified" to false)
+        val pinned = mapOf<String, Any>("verified" to true, "ownership_verified" to true)
+        assertEquals(live, selectConnectablePeerSearchResult(listOf(untrusted, live), null))
+        assertEquals(pinned, selectConnectablePeerSearchResult(listOf(live, pinned), "expected"))
     }
 
     @Test

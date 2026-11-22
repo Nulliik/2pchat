@@ -672,6 +672,7 @@ fun SharedMediaScreen(
                             val transportType = P2PMessageRelay.getPeerTransportType(currentPeerName)
                             val activeLabel = when (transportType) {
                                 TransportType.ONION -> "Tor Onion"
+                                TransportType.RELAY -> "Blind Relay"
                                 TransportType.DIRECT -> "Direct P2P"
                                 TransportType.YGGDRASIL -> "Yggdrasil"
                                 TransportType.DISCONNECTED -> if (appLanguage == "Русский") "Не в сети" else "Offline"

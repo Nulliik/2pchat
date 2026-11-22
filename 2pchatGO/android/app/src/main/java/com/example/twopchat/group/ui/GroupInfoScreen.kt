@@ -601,10 +601,12 @@ fun GroupInfoScreen(
             }
 
             // Succession Grace Period or Expiry Warning Banner
-            if (successionState?.showGracePeriodBanner == true || successionState?.canClaim == true || successionState?.showExpiryWarning == true) {
+            successionState?.takeIf {
+                it.showGracePeriodBanner || it.canClaim || it.showExpiryWarning
+            }?.let { currentSuccessionState ->
                 item(key = "succession_grace_period_banner") {
                     GracePeriodBanner(
-                        state = successionState!!,
+                        state = currentSuccessionState,
                         appLanguage = appLanguage,
                         onClaimClick = { showClaimSuccessionConfirmation = true }
                     )

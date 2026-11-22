@@ -6,9 +6,20 @@ import org.junit.Test
 
 class NetworkPolicyYggdrasilTest {
     @Test
-    fun `yggdrasil mode excludes LAN even when Tor is available`() {
-        assertEquals(12, ProxyConfig.transportPolicyFlags(torStrict = false, yggdrasilEnabled = true))
-        assertEquals(8, ProxyConfig.transportPolicyFlags(torStrict = true, yggdrasilEnabled = true))
-        assertEquals(31, ProxyConfig.transportPolicyFlags(torStrict = false, yggdrasilEnabled = false))
+    fun `strict mode denies all when Tor is disabled or not running`() {
+        assertEquals(0, ProxyConfig.transportPolicyFlags(torStrict = true, torUsable = false, yggdrasilEnabled = false))
+        assertEquals(0, ProxyConfig.transportPolicyFlags(torStrict = true, torUsable = false, yggdrasilEnabled = true))
+    }
+
+    @Test
+    fun `strict mode allows Onion only when Tor is enabled and running`() {
+        assertEquals(8, ProxyConfig.transportPolicyFlags(torStrict = true, torUsable = true, yggdrasilEnabled = false))
+        assertEquals(8, ProxyConfig.transportPolicyFlags(torStrict = true, torUsable = true, yggdrasilEnabled = true))
+    }
+
+    @Test
+    fun `yggdrasil mode excludes LAN when strict mode is off`() {
+        assertEquals(12, ProxyConfig.transportPolicyFlags(torStrict = false, torUsable = false, yggdrasilEnabled = true))
+        assertEquals(31, ProxyConfig.transportPolicyFlags(torStrict = false, torUsable = false, yggdrasilEnabled = false))
     }
 }

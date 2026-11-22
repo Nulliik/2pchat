@@ -53,6 +53,31 @@ func TestFileStreamingRoundtrip(t *testing.T) {
 	}
 }
 
+func TestDecodeMetadataRejectsMalformedChunkCountAndKeys(t *testing.T) {
+	base := &FileMetadata{FileID: []byte("abcdefghijkl"), FileKey: make([]byte, 32), FileNoncePrefix: make([]byte, 16), FileHash: make([]byte, 32), FileSize: 1, NumChunks: 1}
+	for _, tc := range []struct {
+		name   string
+		mutate func(*FileMetadata)
+	}{
+		{"zero chunks", func(m *FileMetadata) { m.NumChunks = 0 }},
+		{"oversized chunks", func(m *FileMetadata) { m.NumChunks = MaxTransferChunks + 1 }},
+		{"short key", func(m *FileMetadata) { m.FileKey = make([]byte, 1) }},
+		{"short nonce prefix", func(m *FileMetadata) { m.FileNoncePrefix = make([]byte, 1) }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := *base
+			tc.mutate(&m)
+			b, err := m.EncodeMetadataJSON()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := DecodeMetadataJSON(b); err == nil {
+				t.Fatal("expected malformed metadata to be rejected")
+			}
+		})
+	}
+}
+
 func TestDefaultChunkSizeIs256KiB(t *testing.T) {
 	if DefaultChunkSize != 256*1024 {
 		t.Fatalf("DefaultChunkSize = %d, want %d", DefaultChunkSize, 256*1024)

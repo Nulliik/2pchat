@@ -702,6 +702,7 @@ func (m *Manager) connectPeerInternal(endpoint, expectedFingerprint string, cont
 		expectedFingerprint,
 		30*time.Second,
 		WithYggdrasilTransport(endpointClass == transport.TransportYggdrasil),
+		WithRelayTransport(relayFallbackUsed),
 		WithCapabilities(m.capabilities),
 	)
 	if err != nil {
@@ -1216,6 +1217,9 @@ func (m *Manager) PeerStatesJSON() string {
 
 // transportClassForSession classifies the transport of an active session.
 func transportClassForSession(s *Session) string {
+	if s.IsRelayTransport() {
+		return "relay"
+	}
 	if s.IsTorTransport() {
 		return "tor"
 	}

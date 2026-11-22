@@ -126,11 +126,11 @@ func FromBytes(data []byte) (*TransferBitmask, error) {
 		return nil, errors.New("insufficient data for bitmask header")
 	}
 
-	numChunks := int(binary.BigEndian.Uint32(data[:4]))
-	if numChunks <= 0 {
-		return nil, errors.New("invalid numChunks in bitmask")
+	rawNumChunks := binary.BigEndian.Uint32(data[:4])
+	if rawNumChunks == 0 || rawNumChunks > MaxTransferChunks {
+		return nil, fmt.Errorf("invalid numChunks in bitmask: %d", rawNumChunks)
 	}
-
+	numChunks := int(rawNumChunks)
 	expectedBytes := (numChunks + 7) / 8
 	if len(data)-4 < expectedBytes {
 		return nil, fmt.Errorf("bitmask payload truncated: expected %d bytes, got %d", expectedBytes, len(data)-4)

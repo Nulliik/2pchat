@@ -19,6 +19,7 @@ internal enum class TrafficProtocol {
     DIRECT_P2P,
     YGGDRASIL,
     TOR_ONION,
+    RELAY,
     UNKNOWN,
 }
 
@@ -215,6 +216,7 @@ internal fun trafficProtocol(rawTransport: String?, endpoint: String?): TrafficP
         ConnectionTransportKind.ONION -> TrafficProtocol.TOR_ONION
         ConnectionTransportKind.DIRECT -> TrafficProtocol.DIRECT_P2P
         ConnectionTransportKind.YGGDRASIL -> TrafficProtocol.YGGDRASIL
+        ConnectionTransportKind.RELAY -> TrafficProtocol.RELAY
         ConnectionTransportKind.UNKNOWN -> TrafficProtocol.UNKNOWN
     }
 

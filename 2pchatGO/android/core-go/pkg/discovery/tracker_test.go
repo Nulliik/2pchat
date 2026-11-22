@@ -4,7 +4,11 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"io"
 	"net"
+	"net/http"
+	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -87,6 +91,38 @@ func TestUDPTrackerTorDisabled(t *testing.T) {
 	if err != ErrUDPDisabledUnderTor {
 		t.Fatalf("Expected ErrUDPDisabledUnderTor, got: %v", err)
 	}
+}
+
+func TestHTTPTrackerResponseSizeLimit(t *testing.T) {
+	t.Run("exact limit accepted", func(t *testing.T) {
+		prefix := "d8:intervali900e"
+		body := prefix + strings.Repeat("x", maxHTTPTrackerResponseSize-len(prefix))
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Length", strconv.Itoa(len(body)))
+			_, _ = io.WriteString(w, body)
+		}))
+		defer server.Close()
+
+		client := NewHTTPTrackerClient(nil, false, time.Second)
+		if _, err := client.Announce(context.Background(), server.URL, [20]byte{}, [20]byte{}, 50001); err != nil {
+			t.Fatalf("response at size limit rejected: %v", err)
+		}
+	})
+
+	t.Run("over limit rejected", func(t *testing.T) {
+		prefix := "d8:intervali900e"
+		body := prefix + strings.Repeat("x", maxHTTPTrackerResponseSize+1-len(prefix))
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Length", strconv.Itoa(len(body)))
+			_, _ = io.WriteString(w, body)
+		}))
+		defer server.Close()
+
+		client := NewHTTPTrackerClient(nil, false, time.Second)
+		if _, err := client.Announce(context.Background(), server.URL, [20]byte{}, [20]byte{}, 50001); err == nil || !strings.Contains(err.Error(), "exceeds maximum size") {
+			t.Fatalf("oversized response error = %v, want size-limit error", err)
+		}
+	})
 }
 
 func TestParseHTTPAnnounceResponse(t *testing.T) {

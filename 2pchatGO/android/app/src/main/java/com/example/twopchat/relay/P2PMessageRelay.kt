@@ -22,6 +22,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeoutOrNull
 import com.example.twopchat.data.ChatDatabaseHelper
@@ -67,8 +68,39 @@ internal fun isExpectedPeerFingerprint(persisted: String?, received: String, pee
     return false
 }
 
+internal fun wallpaperSystemMessageId(peerName: String, action: String, eventEpochMs: Long): String =
+    UUID.nameUUIDFromBytes("direct-wallpaper:$peerName:$action:$eventEpochMs".toByteArray(Charsets.UTF_8)).toString()
+
+/** Persist first; only then dispatch and acknowledge the incoming message. */
+internal fun <T> sendWithBackpressure(queue: Channel<T>, item: T) {
+    runBlocking { queue.send(item) }
+}
+
+internal fun persistThenDispatch(
+    persist: () -> Unit,
+    dispatch: () -> Unit,
+    receipt: () -> Unit,
+    onPersistFailure: (Exception) -> Unit = {},
+): Boolean {
+    var succeeded = false
+    try {
+        persist()
+        succeeded = true
+    } catch (e: Exception) {
+        if (e is CancellationException) throw e
+        onPersistFailure(e)
+    }
+    if (succeeded) {
+        dispatch()
+        receipt()
+    }
+    return succeeded
+}
+
 object P2PMessageRelay {
     private const val TAG = "P2PMessageRelay"
+    internal const val INCOMING_PERSISTENCE_QUEUE_CAPACITY = 4
+    internal const val INCOMING_PERSISTENCE_BATCH_SIZE = INCOMING_PERSISTENCE_QUEUE_CAPACITY
     private val logTimestampFormatter = ThreadLocal.withInitial {
         SimpleDateFormat("yyyy-MM-dd HH:mm:ss,SSS", Locale.getDefault())
     }
@@ -82,8 +114,10 @@ object P2PMessageRelay {
     internal fun closeAccountAdmission() {
         accountRuntime.close()
         ActiveChatStore.rejectAccountWork()
-        while (incomingPersistenceQueue.tryReceive().isSuccess) {
-            // Drain in-flight persistence tasks
+        val queue = incomingPersistenceQueue
+        queue.close()
+        while (queue.tryReceive().isSuccess) {
+            // Intentionally discard pending tasks while the account is being wiped.
         }
     }
 
@@ -91,6 +125,7 @@ object P2PMessageRelay {
 
     internal fun completeProfileInstallation(): Boolean = synchronized(startStopLock) {
         if (AccountDataWiper.isWiping || !accountRuntime.open()) return false
+        resetIncomingPersistenceQueue()
         ActiveChatStore.openAccount()
         true
     }
@@ -964,45 +999,77 @@ object P2PMessageRelay {
         val message: Message,
         val notificationText: String,
         val countAsNew: Boolean,
-        val preview: LastMessagePreviewStore.Update,
+        val preview: String,
     )
 
-    private val incomingPersistenceQueue = Channel<IncomingPersistenceTask>(Channel.UNLIMITED)
+    @Volatile private var incomingPersistenceQueue = Channel<IncomingPersistenceTask>(INCOMING_PERSISTENCE_QUEUE_CAPACITY)
     private val incomingBatchProcessorStarted = AtomicBoolean(false)
 
-    private fun ensureIncomingBatchProcessorStarted() {
-        if (incomingBatchProcessorStarted.compareAndSet(false, true)) {
-            serviceScope.launch(Dispatchers.IO) {
-                while (isActive) {
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    private fun resetIncomingPersistenceQueue() {
+        synchronized(startStopLock) {
+            if (incomingPersistenceQueue.isClosedForSend && !incomingBatchProcessorStarted.get()) {
+                incomingPersistenceQueue = Channel(INCOMING_PERSISTENCE_QUEUE_CAPACITY)
+                incomingBatchProcessorStarted.set(false)
+            }
+        }
+    }
+
+    private fun ensureIncomingBatchProcessorStarted(): Channel<IncomingPersistenceTask> =
+        synchronized(startStopLock) {
+            val queue = incomingPersistenceQueue
+            if (incomingBatchProcessorStarted.compareAndSet(false, true)) {
+                serviceScope.launch(Dispatchers.IO) {
                     try {
-                        val firstTask = incomingPersistenceQueue.receive()
-                        val batch = mutableListOf(firstTask)
-                        val deadline = System.currentTimeMillis() + 35L
-                        while (batch.size < 50) {
-                            val next = incomingPersistenceQueue.tryReceive().getOrNull()
-                            if (next != null) {
-                                batch.add(next)
-                            } else {
-                                val remaining = deadline - System.currentTimeMillis()
-                                if (remaining > 0) {
-                                    delay(minOf(remaining, 10L))
-                                    val waited = incomingPersistenceQueue.tryReceive().getOrNull()
-                                    if (waited != null) {
-                                        batch.add(waited)
-                                    } else {
-                                        break
-                                    }
-                                } else {
-                                    break
-                                }
+                        processIncomingPersistenceQueue(queue) { isActive }
+                    } finally {
+                        synchronized(startStopLock) {
+                            if (incomingPersistenceQueue === queue) {
+                                incomingBatchProcessorStarted.set(false)
                             }
                         }
-                        processIncomingPersistenceBatch(batch)
-                    } catch (e: Exception) {
-                        if (e is CancellationException) throw e
-                        SafeLog.e(TAG, "Error processing incoming persistence batch", e)
                     }
                 }
+            }
+            queue
+        }
+
+    private suspend fun processIncomingPersistenceQueue(
+        queue: Channel<IncomingPersistenceTask>,
+        isActive: () -> Boolean,
+    ) {
+        while (isActive()) {
+            try {
+                val firstTask = try {
+                    queue.receive()
+                } catch (_: kotlinx.coroutines.channels.ClosedReceiveChannelException) {
+                    break
+                }
+                val batch = mutableListOf(firstTask)
+                val deadline = System.currentTimeMillis() + 35L
+                while (batch.size < INCOMING_PERSISTENCE_BATCH_SIZE) {
+                    val next = queue.tryReceive().getOrNull()
+                    if (next != null) {
+                        batch.add(next)
+                    } else {
+                        val remaining = deadline - System.currentTimeMillis()
+                        if (remaining > 0) {
+                            delay(minOf(remaining, 10L))
+                            val waited = queue.tryReceive().getOrNull()
+                            if (waited != null) {
+                                batch.add(waited)
+                            } else {
+                                break
+                            }
+                        } else {
+                            break
+                        }
+                    }
+                }
+                processIncomingPersistenceBatch(batch)
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                SafeLog.e(TAG, "Error processing incoming persistence batch", e)
             }
         }
     }
@@ -1028,13 +1095,35 @@ object P2PMessageRelay {
             val isLocked = P2PPreferences.isAppLocked()
             val persistHistory = prefs.getBoolean("persist_chat_history", true)
 
+            // Locked/history-disabled modes intentionally suppress delivery receipts, but still
+            // allow the existing in-memory/UI behavior.
+            var persistenceSucceeded = isLocked || !persistHistory
             if (!isLocked && persistHistory) {
-                try {
-                    val messages = senderTasks.map { it.message }
-                    saveMessages(context, sender, messages)
-                } catch (e: Exception) {
-                    if (e is CancellationException) throw e
-                    log(context, "Failed to persist incoming message batch: ${e.message}", "ERROR", e)
+                val messages = senderTasks.map { it.message }
+                persistenceSucceeded = persistThenDispatch(
+                    persist = { saveMessages(context, sender, messages) },
+                    dispatch = {},
+                    receipt = {},
+                    onPersistFailure = { e ->
+                        log(context, "Failed to persist incoming message batch: ${e.message}", "ERROR", e)
+                    },
+                )
+            }
+            // A failed history write must not create a visible-but-unpersisted message. No receipt
+            // is sent either, so the sender can retry; locked/history-disabled policy still dispatches.
+            if (!persistenceSucceeded && !isLocked && persistHistory) continue
+
+            senderTasks.forEach { task ->
+                val currentSender = ActiveChatStore.resolve(task.lifecycle) ?: return@forEach
+                runOnMain {
+                    synchronized(ActiveChatStore.persistenceLock) {
+                        if (ActiveChatStore.resolve(task.lifecycle) != null) {
+                            messageListeners.forEach { it.onMessageReceived(currentSender, task.message) }
+                        }
+                    }
+                }
+                if (!isLocked && persistHistory && persistenceSucceeded && !task.message.isMe && task.message.id.isNotBlank()) {
+                    sendDeliveryReceipt(task.context, currentSender, peerEndpoints[currentSender], task.message.id)
                 }
             }
 
@@ -1046,8 +1135,9 @@ object P2PMessageRelay {
             val newCount = senderTasks.count { it.countAsNew }
             val unreadKey = P2PPreferences.unreadCount(sender)
 
-            if (!isLocked) {
-                senderTasks.forEach { LastMessagePreviewStore.persist(prefs, sender, it.preview, encrypt) }
+            senderTasks.forEach { task ->
+                val previewUpdate = LastMessagePreviewStore.publish(sender, task.preview)
+                if (!isLocked) LastMessagePreviewStore.persist(prefs, sender, previewUpdate, encrypt)
             }
             ActiveChatStore.update(prefs, { it + sender }) {
                 if (newCount > 0 && !isChatOpenWithSender) {
@@ -1079,7 +1169,7 @@ object P2PMessageRelay {
         val canonicalName = ActiveChatStore.resolve(lifecycle) ?: return null
         IncomingPersistenceTask(
             context, prefs, lifecycle, message, notificationText, countAsNew,
-            LastMessagePreviewStore.publish(canonicalName, notificationText),
+            notificationText,
         )
     }
 
@@ -1091,16 +1181,16 @@ object P2PMessageRelay {
         countAsNew: Boolean = true,
     ) {
         val task = prepareIncomingPersistence(context, sender, message, notificationText, countAsNew) ?: return
-        runOnMain {
-            synchronized(ActiveChatStore.persistenceLock) {
-                val currentSender = ActiveChatStore.resolve(task.lifecycle) ?: return@synchronized
-                messageListeners.forEach { it.onMessageReceived(currentSender, message) }
-            }
-        }
-        ensureIncomingBatchProcessorStarted()
-        incomingPersistenceQueue.trySend(task)
-        if (!message.isMe && message.id.isNotBlank()) {
-            sendDeliveryReceipt(context, sender, peerEndpoints[sender], message.id)
+        resetIncomingPersistenceQueue()
+        val queue = ensureIncomingBatchProcessorStarted()
+        // Never notify or acknowledge until persistence has accepted this task.
+        try {
+            // This callback runs on NativeBridge's background event consumer, not the UI/JNI thread.
+            // Suspend admission here so saturation propagates into its bounded reliable lane.
+            sendWithBackpressure(queue, task)
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            log(context, "Incoming persistence queue closed before message ${message.id} was accepted", "WARN")
         }
     }
 
@@ -2084,7 +2174,7 @@ object P2PMessageRelay {
                                                 tr = "Eşiniz bu sohbet için yeni bir duvar kağıdı ayarladı"
                                             )
                                             val sysMsg = Message(
-                                                id = UUID.randomUUID().toString(),
+                                                id = wallpaperSystemMessageId(resolvedSender, "set", System.currentTimeMillis()),
                                                 text = wallpaperSetText,
                                                 isMe = false,
                                                 timestamp = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date()),
@@ -2092,7 +2182,7 @@ object P2PMessageRelay {
                                             )
                                             persistAndDispatchIncoming(appContext, resolvedSender, sysMsg, notificationText = wallpaperSetText, countAsNew = false)
                                             if (resolvedSender != sender) {
-                                                persistAndDispatchIncoming(appContext, sender, sysMsg, notificationText = wallpaperSetText, countAsNew = false)
+                                                persistAndDispatchIncoming(appContext, sender, sysMsg.copy(id = wallpaperSystemMessageId(sender, "set", sysMsg.sentAtEpochMs)), notificationText = wallpaperSetText, countAsNew = false)
                                             }
                                         } catch (e: Exception) {
                                             log(appContext, "Failed to apply incoming wallpaper: ${e.message}", "ERROR", e)
@@ -2123,7 +2213,7 @@ object P2PMessageRelay {
                                                 tr = "Eşiniz bu sohbetin duvar kağıdını kaldırdı"
                                             )
                                             val sysMsg = Message(
-                                                id = UUID.randomUUID().toString(),
+                                                id = wallpaperSystemMessageId(resolvedSender, "removed", System.currentTimeMillis()),
                                                 text = wallpaperRemovedText,
                                                 isMe = false,
                                                 timestamp = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date()),
@@ -2131,7 +2221,7 @@ object P2PMessageRelay {
                                             )
                                             persistAndDispatchIncoming(appContext, resolvedSender, sysMsg, notificationText = wallpaperRemovedText, countAsNew = false)
                                             if (resolvedSender != sender) {
-                                                persistAndDispatchIncoming(appContext, sender, sysMsg, notificationText = wallpaperRemovedText, countAsNew = false)
+                                                persistAndDispatchIncoming(appContext, sender, sysMsg.copy(id = wallpaperSystemMessageId(sender, "removed", sysMsg.sentAtEpochMs)), notificationText = wallpaperRemovedText, countAsNew = false)
                                             }
                                         } catch (e: Exception) {
                                             log(appContext, "Failed to clear wallpaper: ${e.message}", "ERROR", e)

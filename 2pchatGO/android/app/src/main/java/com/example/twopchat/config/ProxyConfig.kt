@@ -5,8 +5,13 @@ import com.example.twopchat.NativeBridge
 import com.example.twopchat.tor.*
 
 object ProxyConfig {
-    internal fun transportPolicyFlags(torStrict: Boolean, yggdrasilEnabled: Boolean): Int = when {
-        torStrict -> 8
+    internal fun transportPolicyFlags(
+        torStrict: Boolean,
+        torUsable: Boolean,
+        yggdrasilEnabled: Boolean
+    ): Int = when {
+        torStrict && !torUsable -> 0 // Deny all until Tor can carry Onion traffic.
+        torStrict -> 8 // AllowOnion only.
         yggdrasilEnabled -> 12 // AllowYggdrasil | AllowOnion; LAN and clearnet discovery are disabled.
         else -> 31
     }
@@ -86,9 +91,12 @@ object ProxyConfig {
             ""
         }
         NativeBridge.setTorProxy(effective.enabled, proxyAddr)
+        val torEnabled = P2PPreferences.isTorEnabled(context)
+        val torRunning = TorManager.isTorRunning.value
         val policyFlags = transportPolicyFlags(
-            effective.enabled && P2PPreferences.isTorStrictMode(context),
-            P2PPreferences.prefs(context).getBoolean("settings_yggdrasil", false),
+            torStrict = P2PPreferences.isTorStrictMode(context),
+            torUsable = torEnabled && torRunning,
+            yggdrasilEnabled = P2PPreferences.prefs(context).getBoolean("settings_yggdrasil", false),
         )
         return NativeBridge.applyPolicy(policyFlags)
     }

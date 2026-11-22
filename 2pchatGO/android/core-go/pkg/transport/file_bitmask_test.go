@@ -7,6 +7,13 @@ import (
 	"testing"
 )
 
+func TestFromBytesRejectsOversizedChunkCountBeforeAllocation(t *testing.T) {
+	data := []byte{0xff, 0xff, 0xff, 0xff}
+	if _, err := FromBytes(data); err == nil {
+		t.Fatal("expected oversized chunk count to be rejected")
+	}
+}
+
 func TestTransferBitmask_BasicOperations(t *testing.T) {
 	bm := NewTransferBitmask(10)
 	if bm.NumChunks() != 10 {
