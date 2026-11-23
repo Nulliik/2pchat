@@ -85,6 +85,16 @@ internal fun mergeRecentHistoryMessages(
  * authoritative except that an in-memory READ update cannot be reverted by an
  * older query snapshot which still contains a pre-read delivery state.
  */
+internal fun mergeHistoryAfterSuccessfulRead(
+    persistedMessages: List<Message>?,
+    currentMessages: List<Message>,
+    defaultMessages: List<Message>,
+    persistHistory: Boolean,
+): List<Message>? {
+    if (persistedMessages == null) return null
+    return mergeHistorySnapshot(persistedMessages, currentMessages, defaultMessages, persistHistory)
+}
+
 internal fun mergeHistorySnapshot(
     persistedMessages: List<Message>,
     currentMessages: List<Message>,

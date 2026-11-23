@@ -606,6 +606,7 @@ fun ChatScreen(
 
             val fastHistoryLimit = fastHistoryMessageLimit(unreadMessagesOnOpen)
             val historyCache = com.example.twopchat.ui.chat.state.ChatHistoryCache
+            var historyLoadFailed = false
             val (historyGeneration, recentPersistedMessages) = if (persistEnabled) {
                 historyCache.withHistoryAccess {
                     val generation = historyCache.generation(peerName)
@@ -616,8 +617,11 @@ fun ChatScreen(
                                 limit = fastHistoryLimit,
                                 offset = 0,
                             )
+                        } catch (e: kotlinx.coroutines.CancellationException) {
+                            throw e
                         } catch (e: Exception) {
                             SafeLog.e("ChatScreen", "Failed to load messages for $peerName", e)
+                            historyLoadFailed = true
                             emptyList()
                         }
                     }
@@ -633,6 +637,10 @@ fun ChatScreen(
                     currentMessages = initialMessages.toList(),
                     recentPersistedMessages = recentPersistedMessages,
                 )
+            }
+            if (historyLoadFailed) {
+                isFastHistoryLoaded = true
+                return@LaunchedEffect
             }
             if (fastSnapshot.isEmpty()) fastSnapshot = localDefaults
             fastSnapshot = fastSnapshot.map { msg ->
@@ -894,9 +902,7 @@ fun ChatScreen(
         val trimmed = rawText.trim().take(4096)
         if (trimmed.isNotEmpty()) {
             val time = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
-            val endpoint = P2PMessageRelay.peerEndpoints[peerName]
-            val isConnected = com.example.twopchat.presence.PresenceRepository.isOnline(peerName) || peerName == "Saved Messages"
-            val initialStatus = if (isConnected) "SENT" else "PENDING"
+            val initialStatus = if (peerName == "Saved Messages") "SENT" else "PENDING"
             val outMsg = Message(
                 id = newMessageId(),
                 text = trimmed,
@@ -907,7 +913,7 @@ fun ChatScreen(
             arrivalAnimationTracker.mark(outMsg.id)
             initialMessages.add(outMsg)
             triggerHaptic()
-            if (persistEnabled || initialStatus == "PENDING") {
+            if (persistEnabled || initialStatus == "PENDING" || initialStatus == "SENDING") {
                 persistDatabase { db.saveMessage(peerName, outMsg) }
             }
             if (peerName != "Saved Messages") {
@@ -927,13 +933,13 @@ fun ChatScreen(
             }.toString()
             if (peerName != "Saved Messages") {
                 P2PMessageRelay.sendMessageToPeer(context, peerName, payload) { success ->
-                    if (!success) {
-                        persistDatabase { db.updateMessageStatus(outMsg.id, "PENDING") }
-                        coroutineScope.launch {
-                            val idx = initialMessages.indexOfFirst { it.id == outMsg.id }
-                            if (idx in initialMessages.indices) {
-                                initialMessages[idx] = outMsg.copy(status = "PENDING")
-                            }
+                    // True means accepted by the local delivery queue, not acknowledged by the peer.
+                    val finalStatus = if (success) "PENDING" else "FAILED"
+                    persistDatabase { db.updateMessageStatus(outMsg.id, finalStatus) }
+                    coroutineScope.launch {
+                        val idx = initialMessages.indexOfFirst { it.id == outMsg.id }
+                        if (idx in initialMessages.indices) {
+                            initialMessages[idx] = outMsg.copy(status = finalStatus)
                         }
                     }
                 }

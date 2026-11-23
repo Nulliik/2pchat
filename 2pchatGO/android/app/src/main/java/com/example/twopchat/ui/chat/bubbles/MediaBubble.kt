@@ -1,6 +1,5 @@
 package com.example.twopchat.ui.chat.bubbles
 
-import android.graphics.BitmapFactory
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
@@ -10,7 +9,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
+import com.example.twopchat.ui.chat.rememberSampledImage
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -19,7 +18,6 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.twopchat.ui.chat.Message
-import java.io.File
 
 @Composable
 fun MediaBubble(
@@ -28,16 +26,11 @@ fun MediaBubble(
     onMediaClick: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val bitmap = remember(message.attachmentUri) {
-        message.attachmentUri?.let { path ->
-            try {
-                val file = File(path)
-                if (file.exists()) BitmapFactory.decodeFile(file.absolutePath) else null
-            } catch (_: Exception) {
-                null
-            }
-        }
-    }
+    val bitmap = rememberSampledImage(
+        filePath = message.attachmentUri,
+        targetWidth = 400,
+        targetHeight = 260,
+    )
 
     Column(modifier = modifier.padding(4.dp)) {
         if (bitmap != null) {

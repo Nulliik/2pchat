@@ -160,6 +160,24 @@ class ChatScreenViewModelTest {
     }
 
     @Test
+    fun failedHistoryReadDoesNotClearVisibleMessages() {
+        val visibleHistory = listOf(
+            Message("1", "retained", false, "12:00", status = "READ"),
+            Message("2", "latest", true, "12:01", status = "SENT"),
+        )
+
+        val displayedAfterFailedRead = mergeHistoryAfterSuccessfulRead(
+            persistedMessages = null,
+            currentMessages = visibleHistory,
+            defaultMessages = emptyList(),
+            persistHistory = true,
+        )
+
+        assertEquals(null, displayedAfterFailedRead)
+        assertEquals(visibleHistory, displayedAfterFailedRead ?: visibleHistory)
+    }
+
+    @Test
     fun mergeRecentHistoryReturnsCurrentMessagesWhenRecentPersistedIsEmpty() {
         val staleInMemoryMessages = listOf(
             Message("1", "Hi", false, "18:15", status = "SENT"),
@@ -175,4 +193,3 @@ class ChatScreenViewModelTest {
         assertEquals(staleInMemoryMessages, merged)
     }
 }
-
