@@ -321,7 +321,20 @@ object NativeBridge {
 
     fun getPeerProtocol(peerFingerprint: String): String? {
         if (!isLoaded || peerFingerprint.isBlank()) return null
-        return nativeGetPeerProtocol(peerFingerprint)
+        return readPeerProtocol(peerFingerprint, ::nativeGetPeerProtocol)
+    }
+
+    internal fun readPeerProtocol(
+        peerFingerprint: String,
+        nativeCall: (String) -> String?,
+    ): String? = try {
+        nativeCall(peerFingerprint)
+    } catch (e: LinkageError) {
+        SafeLog.e(TAG, "nativeGetPeerProtocol linkage failed", e)
+        null
+    } catch (e: Exception) {
+        SafeLog.e(TAG, "nativeGetPeerProtocol failed", e)
+        null
     }
 
     private external fun nativeGetPeerProtocol(peerFingerprint: String): String?
